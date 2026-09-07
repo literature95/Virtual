@@ -109,6 +109,24 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  /// 重命名对话
+  Future<void> renameConversation(String id, String title) async {
+    final conv = _db.getConversation(id);
+    if (conv != null && title.trim().isNotEmpty) {
+      await _db.saveConversation(conv.copyWith(title: title.trim()));
+      await loadConversations();
+    }
+  }
+
+  /// 清空指定对话的所有消息（保留对话本身）
+  Future<void> clearMessages(String conversationId) async {
+    _db.clearMessages(conversationId);
+    if (_currentConversation?.id == conversationId) {
+      _messages = [];
+      notifyListeners();
+    }
+  }
+
   // ========== 消息加载 ==========
 
   /// 加载指定对话的消息
@@ -193,7 +211,8 @@ class ChatProvider extends ChangeNotifier {
     if (personaId != null && personaId.isNotEmpty) {
       persona = _db.getPersonas().firstWhere(
             (p) => p.id == personaId,
-            orElse: () => _db.getActivePersona() ??
+            orElse: () =>
+                _db.getActivePersona() ??
                 Persona(
                   id: 'default',
                   name: 'User',
@@ -213,11 +232,14 @@ class ChatProvider extends ChangeNotifier {
       source: MessageSource.user,
       variant: MessageVariant.standard,
       content: content.trim(),
-      attachments: images?.map((path) => MessageAttachment(
-        id: _uuid.v4(),
-        type: MessageAttachmentType.image,
-        path: path,
-      )).toList() ?? [],
+      attachments: images
+              ?.map((path) => MessageAttachment(
+                    id: _uuid.v4(),
+                    type: MessageAttachmentType.image,
+                    path: path,
+                  ))
+              .toList() ??
+          [],
       isGenerating: false,
       createdAt: DateTime.now(),
     );
@@ -273,8 +295,7 @@ class ChatProvider extends ChangeNotifier {
               messages: messages,
               settings: chatSettings,
             )
-          : _nonStreamToStream(
-              adapter, modelId, messages, chatSettings);
+          : _nonStreamToStream(adapter, modelId, messages, chatSettings);
 
       await for (final chunk in stream) {
         if (_isStopRequested) break;
@@ -298,9 +319,8 @@ class ChatProvider extends ChangeNotifier {
         if (index != -1) {
           _messages[index] = _messages[index].copyWith(
             content: accumulatedContent,
-            reasoning: accumulatedReasoning.isNotEmpty
-                ? accumulatedReasoning
-                : null,
+            reasoning:
+                accumulatedReasoning.isNotEmpty ? accumulatedReasoning : null,
           );
           notifyListeners();
         }
@@ -410,10 +430,8 @@ class ChatProvider extends ChangeNotifier {
     Persona? persona = _db.getActivePersona();
 
     // 历史消息（用户消息之前的 + 用户消息本身）
-    final historyMessages = _messages
-        .sublist(0, msgIndex)
-        .where((m) => !m.isHidden)
-        .toList();
+    final historyMessages =
+        _messages.sublist(0, msgIndex).where((m) => !m.isHidden).toList();
 
     // 构建 Prompt
     final messages = PromptService.buildMessages(
@@ -439,8 +457,7 @@ class ChatProvider extends ChangeNotifier {
               messages: messages,
               settings: chatSettings,
             )
-          : _nonStreamToStream(
-              adapter, modelId, messages, chatSettings);
+          : _nonStreamToStream(adapter, modelId, messages, chatSettings);
 
       await for (final chunk in stream) {
         if (_isStopRequested) break;
@@ -454,9 +471,8 @@ class ChatProvider extends ChangeNotifier {
         if (idx != -1) {
           _messages[idx] = _messages[idx].copyWith(
             content: accumulatedContent,
-            reasoning: accumulatedReasoning.isNotEmpty
-                ? accumulatedReasoning
-                : null,
+            reasoning:
+                accumulatedReasoning.isNotEmpty ? accumulatedReasoning : null,
           );
           notifyListeners();
         }
@@ -547,8 +563,7 @@ class ChatProvider extends ChangeNotifier {
     if (ep == null) return null;
 
     // 优先使用对话绑定的端点
-    final endpointId = _currentEndpointId ??
-        _currentConversation?.endpointId;
+    final endpointId = _currentEndpointId ?? _currentConversation?.endpointId;
     if (endpointId != null && endpointId.isNotEmpty) {
       try {
         return ep.llmEndpoints.firstWhere((e) => e.id == endpointId);

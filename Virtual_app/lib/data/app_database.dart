@@ -160,6 +160,14 @@ class AppDatabase extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 清空指定对话的所有消息
+  Future<void> clearMessages(String conversationId) async {
+    final key = '$_kMessages$conversationId';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(key);
+    notifyListeners();
+  }
+
   // ========== 端点 ==========
   List<LlmEndpoint> getLlmEndpoints() {
     return _readList(_kEndpoints)

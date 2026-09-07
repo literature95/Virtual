@@ -4,6 +4,7 @@ import '../models/character.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
 import '../models/persona.dart';
+import '../utils/image_data.dart';
 
 /// Prompt 构建服务
 ///
@@ -75,6 +76,30 @@ class PromptService {
 
       final role = _roleToString(msg.role);
       final content = _applyMacros(msg.content, macros);
+      final images = msg.attachments
+          .where((a) => a.type == MessageAttachmentType.image)
+          .toList();
+
+      if (images.isNotEmpty) {
+        // 多模态消息：文本 + 图片（OpenAI 视觉格式）
+        final parts = <Map<String, dynamic>>[];
+        if (content.isNotEmpty) {
+          parts.add({'type': 'text', 'text': content});
+        }
+        for (final a in images) {
+          final url = imageDataUrlFromPath(a.path);
+          if (url != null) {
+            parts.add({
+              'type': 'image_url',
+              'image_url': {'url': url},
+            });
+          }
+        }
+        if (parts.isNotEmpty) {
+          messages.add({'role': role, 'content': parts});
+          continue;
+        }
+      }
       messages.add({
         'role': role,
         'content': content,

@@ -124,4 +124,19 @@ class CharacterProvider extends ChangeNotifier {
 
   List<Character> get favorites =>
       _characters.where((c) => c.isFavorite).toList();
+
+  /// 复制角色（生成新 id，名称加"副本"，重置收藏与使用计数）
+  Future<Character?> duplicateCharacter(String id) async {
+    final source = getCharacter(id);
+    if (source == null) return null;
+    final copy = source.copyWith(
+      id: _uuid.v4(),
+      name: '${source.name} 副本',
+      isFavorite: false,
+      usageCount: 0,
+    );
+    await _db.saveCharacter(copy);
+    await loadCharacters();
+    return copy;
+  }
 }

@@ -1,12 +1,17 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
-import '../../providers/chat_provider.dart';
-import '../../providers/settings_provider.dart';
-import '../../providers/character_provider.dart';
 import '../../models/chat_message.dart';
+import '../../providers/chat_provider.dart';
+import '../../providers/character_provider.dart';
+import '../../providers/endpoint_provider.dart';
+import '../../providers/settings_provider.dart';
 
 /// 聊天页面
 ///
@@ -25,7 +30,11 @@ class _ChatPageState extends State<ChatPage> {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   final _focusNode = FocusNode();
+  final _imagePicker = ImagePicker();
   bool _isInputModeKeyboard = true;
+
+  /// 待发送的图片（本地路径）
+  final List<String> _pendingImages = [];
 
   @override
   void initState() {
@@ -57,16 +66,277 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty && _pendingImages.isEmpty) return;
 
     _textController.clear();
+    final images = _pendingImages.isEmpty ? null : List.of(_pendingImages);
+    if (mounted) setState(_pendingImages.clear);
     final chatProvider = context.read<ChatProvider>();
-    await chatProvider.sendMessage(text);
+    await chatProvider.sendMessage(text, images: images);
     _scrollToBottom();
   }
 
   Future<void> _stopGeneration() async {
     context.read<ChatProvider>().stopGeneration();
+  }
+
+  /// 选择图片加入待发送列表
+  Future<void> _pickImages() async {
+    try {
+      final files = await _imagePicker.pickMultiImage(
+        imageQuality: 85,
+        limit: 4,
+      );
+      if (files.isNotEmpty && mounted) {
+        setState(() => _pendingImages.addAll(files.map((f) => f.path)));
+      }
+    } catch (_) {
+      // 用户取消或选择器不可用
+    }
+  }
+
+  /// 输入栏上方的待发送图片预览条
+  Widget _buildPendingImagesBar() {
+    if (_pendingImages.isEmpty) return const SizedBox.shrink();
+    return Container(
+      height: 84,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: _pendingImages
+            .map((path) => Stack(
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      width: 72,
+                      height: 72,
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        color:
+                            Theme.of(context).colorScheme.surfaceContainerHigh,
+                      ),
+                      child: Image.file(File(path),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(
+                              Icons.broken_image_outlined,
+                              size: 24)),
+                    ),
+                    Positioned(
+                      top: 0,
+                      right: 8,
+                      child: GestureDetector(
+                        onTap: () =>
+                            setState(() => _pendingImages.remove(path)),
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.close,
+                              size: 13, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                ))
+            .toList(),
+      ),
+    );
+  }
+
+  /// 聊天页「更多选项」：导出 Markdown / 清空消息 / 模型信息
+  void _showMoreMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.text_snippet_outlined),
+              title: const Text('导出为 Markdown'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                _exportMarkdown();
+              },
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.delete_sweep_outlined, color: Colors.red),
+              title: const Text('清空消息', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                _confirmClearMessages();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.memory_outlined),
+              title: const Text('模型信息'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                _showModelInfo();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 导出当前对话为 Markdown（复制到剪贴板 + 可选保存为文件）
+  Future<void> _exportMarkdown() async {
+    final chat = context.read<ChatProvider>();
+    final charProvider = context.read<CharacterProvider>();
+    final conv = chat.currentConversation;
+    final messages = chat.messages;
+    if (conv == null || messages.isEmpty) return;
+
+    final character = charProvider.getCharacter(conv.characterId);
+    final charName = character?.name ?? 'AI';
+    final buf = StringBuffer()
+      ..writeln('# ${conv.title}')
+      ..writeln()
+      ..writeln('> 角色：$charName · 导出于 ${DateTime.now()}')
+      ..writeln();
+    for (final m in messages) {
+      final who = m.role == MessageRole.user ? '我' : charName;
+      buf.writeln('**$who**');
+      buf.writeln();
+      if (m.content.trim().isNotEmpty) buf.writeln(m.content);
+      final imgs = m.attachments
+          .where((a) => a.type == MessageAttachmentType.image)
+          .toList();
+      if (imgs.isNotEmpty) {
+        for (final a in imgs) {
+          buf.writeln('![图片](${a.path})');
+        }
+      }
+      buf.writeln();
+    }
+    final markdown = buf.toString();
+
+    await Clipboard.setData(ClipboardData(text: markdown));
+    if (!mounted) return;
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('已复制到剪贴板'),
+        content: const Text('是否同时保存为 .md 文件？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('不用了')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('保存文件')),
+        ],
+      ),
+    );
+    if (save == true && mounted) {
+      final name =
+          'chat-${conv.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}.md';
+      final path = await FilePicker.platform.saveFile(
+        fileName: name,
+        type: FileType.custom,
+        allowedExtensions: const ['md'],
+      );
+      if (path != null) {
+        File(path).writeAsStringSync(markdown);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              behavior: SnackBarBehavior.floating,
+              content: Text('已保存到 $path'),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// 清空当前对话消息（二次确认）
+  Future<void> _confirmClearMessages() async {
+    final chat = context.read<ChatProvider>();
+    final conv = chat.currentConversation;
+    if (conv == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('清空消息'),
+        content: const Text('确定清空当前对话的所有消息吗？此操作无法撤销。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('清空'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await chat.clearMessages(conv.id);
+  }
+
+  /// 当前使用的端点与模型信息
+  void _showModelInfo() {
+    final chat = context.read<ChatProvider>();
+    final endpointProvider = context.read<EndpointProvider>();
+    final endpointId =
+        chat.currentConversation?.endpointId ?? chat.currentEndpointId;
+    final endpoint = endpointId != null
+        ? endpointProvider.llmEndpoints
+            .where((e) => e.id == endpointId)
+            .firstOrNull
+        : null;
+    final modelId = chat.currentConversation?.modelId ?? chat.currentModelId;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('模型信息'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _infoRow('接入点', endpoint?.name ?? '未设置'),
+            _infoRow('平台', endpoint?.platform ?? '-'),
+            _infoRow('模型', modelId ?? '默认'),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 64,
+            child: Text(label,
+                style: const TextStyle(color: Colors.grey, fontSize: 13.5)),
+          ),
+          Expanded(
+            child: Text(value, style: const TextStyle(fontSize: 13.5)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -85,9 +355,7 @@ class _ChatPageState extends State<ChatPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.more_horiz),
-            onPressed: () {
-              // TODO: 更多选项
-            },
+            onPressed: _showMoreMenu,
           ),
         ],
       ),
@@ -121,6 +389,7 @@ class _ChatPageState extends State<ChatPage> {
               },
             ),
           ),
+          _buildPendingImagesBar(),
           _buildInputBar(),
         ],
       ),
@@ -130,8 +399,9 @@ class _ChatPageState extends State<ChatPage> {
   Widget _buildInputBar() {
     return Consumer<ChatProvider>(
       builder: (context, provider, _) {
-        final canSend =
-            !provider.isGenerating && _textController.text.trim().isNotEmpty;
+        final canSend = !provider.isGenerating &&
+            (_textController.text.trim().isNotEmpty ||
+                _pendingImages.isNotEmpty);
 
         return Container(
           padding: const EdgeInsets.all(8),
@@ -182,9 +452,7 @@ class _ChatPageState extends State<ChatPage> {
                         ),
                         suffixIcon: IconButton(
                           icon: const Icon(Icons.add_circle_outline),
-                          onPressed: () {
-                            // TODO: 添加图片等
-                          },
+                          onPressed: _pickImages,
                         ),
                       ),
                       onChanged: (_) => setState(() {}),
@@ -336,7 +604,11 @@ class _MessageBubbleState extends State<_MessageBubble> {
       );
     }
 
-    if (msg.content.isEmpty) {
+    final imageAttachments = msg.attachments
+        .where((a) => a.type == MessageAttachmentType.image)
+        .toList();
+
+    if (msg.content.isEmpty && imageAttachments.isEmpty) {
       return const SizedBox.shrink();
     }
 
@@ -344,8 +616,39 @@ class _MessageBubbleState extends State<_MessageBubble> {
         ? Theme.of(context).colorScheme.onPrimary
         : Theme.of(context).colorScheme.onSurface;
 
-    // 使用 Markdown 渲染
-    return MarkdownBody(
+    // 图片附件（多模态消息）
+    final imageWidgets = imageAttachments.isEmpty
+        ? null
+        : Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: imageAttachments
+                .map((a) => ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.file(
+                        File(a.path),
+                        width: 150,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 150,
+                          height: 90,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHigh,
+                          child:
+                              const Icon(Icons.broken_image_outlined, size: 28),
+                        ),
+                      ),
+                    ))
+                .toList(),
+          );
+
+    if (msg.content.isEmpty && imageWidgets != null) {
+      return imageWidgets;
+    }
+
+    // 使用 Markdown 渲染（有图片时上下包裹）
+    final markdown = MarkdownBody(
       data: msg.content,
       selectable: true,
       shrinkWrap: true,
@@ -406,6 +709,19 @@ class _MessageBubbleState extends State<_MessageBubble> {
         ),
       ),
     );
+
+    if (imageWidgets != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          imageWidgets,
+          const SizedBox(height: 6),
+          markdown,
+        ],
+      );
+    }
+    return markdown;
   }
 
   /// 构建推理过程折叠面板
@@ -531,7 +847,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
       backgroundColor: isUser
           ? Theme.of(context).colorScheme.secondaryContainer
           : Theme.of(context).colorScheme.primaryContainer,
-      backgroundImage: avatarPath != null ? null : null, // TODO: 文件路径头像支持
+      backgroundImage: avatarPath != null ? FileImage(File(avatarPath)) : null,
       child: Text(
         initial,
         style: TextStyle(

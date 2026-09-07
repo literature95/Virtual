@@ -11,34 +11,78 @@ import '../../services/character_import_service.dart';
 import '../../services/character_export_service.dart';
 import '../../theme/tavo_brand.dart';
 
-/// 角色列表页
-class CharacterListPage extends StatelessWidget {
+/// 角色列表页：搜索 + 管理（长按菜单：编辑/复制/导出/删除）
+class CharacterListPage extends StatefulWidget {
   const CharacterListPage({super.key});
+
+  @override
+  State<CharacterListPage> createState() => _CharacterListPageState();
+}
+
+class _CharacterListPageState extends State<CharacterListPage> {
+  bool _searchVisible = false;
+  String _query = '';
+  final TextEditingController _searchCtrl = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('角色管理'),
+        title: _searchVisible
+            ? TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                style: const TextStyle(fontSize: 15),
+                decoration: const InputDecoration(
+                  hintText: '搜索角色名 / 描述 / 标签…',
+                  border: InputBorder.none,
+                  isDense: true,
+                ),
+                onChanged: (v) => setState(() => _query = v),
+              )
+            : const Text('角色管理'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.file_upload),
-            onPressed: () => _importCharacter(context),
-            tooltip: '导入角色',
+            icon: Icon(_searchVisible ? Icons.close : Icons.file_upload),
+            onPressed: _searchVisible
+                ? () {
+                    setState(() {
+                      _searchVisible = false;
+                      _searchCtrl.clear();
+                      _query = '';
+                    });
+                  }
+                : () => _importCharacter(context),
+            tooltip: _searchVisible ? '关闭搜索' : '导入角色',
           ),
           IconButton(
-            icon: const Icon(Icons.search),
+            icon: Icon(_searchVisible ? Icons.search_off : Icons.search),
             onPressed: () {
-              // TODO: 搜索角色
+              setState(() {
+                _searchVisible = !_searchVisible;
+                if (!_searchVisible) {
+                  _searchCtrl.clear();
+                  _query = '';
+                }
+              });
             },
+            tooltip: '搜索角色',
           ),
         ],
       ),
       body: Consumer<CharacterProvider>(
         builder: (context, characterProvider, _) {
-          final characters = characterProvider.characters;
-          if (characters.isEmpty) {
+          final all = characterProvider.characters;
+          if (all.isEmpty) {
             return const _EmptyState();
+          }
+          final q = _query.trim().toLowerCase();
+          final characters =
+              q.isEmpty ? all : characterProvider.searchCharacters(_query);
+          if (characters.isEmpty) {
+            return const Center(
+              child: Text('没有匹配的角色', style: TextStyle(color: Colors.grey)),
+            );
           }
           return ListView.builder(
             itemCount: characters.length,
@@ -220,7 +264,19 @@ class _CharacterTile extends StatelessWidget {
               title: const Text('复制'),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: 复制角色
+                context
+                    .read<CharacterProvider>()
+                    .duplicateCharacter(character.id)
+                    .then((copy) {
+                  if (context.mounted && copy != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        behavior: SnackBarBehavior.floating,
+                        content: Text('已复制为「${copy.name}」'),
+                      ),
+                    );
+                  }
+                });
               },
             ),
             ListTile(

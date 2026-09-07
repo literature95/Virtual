@@ -65,13 +65,13 @@ class SettingsPage extends StatelessWidget {
                 onTap: () => context.push('/theme'),
               ),
             ),
-            ListTile(
-              title: const Text('语言'),
-              subtitle: const Text('跟随系统'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                // TODO: 语言选择
-              },
+            Consumer<SettingsProvider>(
+              builder: (context, settings, _) => ListTile(
+                title: const Text('语言'),
+                subtitle: Text(_localeText(settings.locale)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _showLanguageDialog(context, settings),
+              ),
             ),
           ]),
           _buildSection(context, '聊天', [
@@ -149,10 +149,9 @@ class SettingsPage extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.swap_horiz),
               title: const Text('数据迁移'),
+              subtitle: const Text('跨设备迁移角色与聊天记录'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                // TODO: 迁移
-              },
+              onTap: () => context.push('/settings/backup'),
             ),
           ]),
           _buildSection(context, '扩展', [
@@ -291,6 +290,56 @@ class SettingsPage extends StatelessWidget {
     }
   }
 
+  String _localeText(Locale? locale) {
+    if (locale == null) return '跟随系统';
+    switch ('${locale.languageCode}_${locale.countryCode}') {
+      case 'zh_CN':
+        return '简体中文';
+      case 'en_US':
+        return 'English';
+      case 'ja_JP':
+        return '日本語';
+      default:
+        return locale.toString();
+    }
+  }
+
+  void _showLanguageDialog(BuildContext context, SettingsProvider settings) {
+    showDialog(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('语言'),
+        children: [
+          RadioGroup<Locale?>(
+            groupValue: settings.locale,
+            onChanged: (value) {
+              settings.setLocale(value);
+              Navigator.pop(context);
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const RadioListTile<Locale?>(
+                  title: Text('跟随系统'),
+                  value: null,
+                ),
+                for (final entry in const [
+                  ('zh', 'CN', '简体中文'),
+                  ('en', 'US', 'English'),
+                  ('ja', 'JP', '日本語'),
+                ])
+                  RadioListTile<Locale?>(
+                    title: Text(entry.$3),
+                    value: Locale(entry.$1, entry.$2),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showThemeModeDialog(BuildContext context, SettingsProvider settings) {
     showDialog(
       context: context,
@@ -381,8 +430,7 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  void _showBackendUrlDialog(
-      BuildContext context, SettingsProvider settings) {
+  void _showBackendUrlDialog(BuildContext context, SettingsProvider settings) {
     final controller = TextEditingController(text: settings.backendBaseUrl);
     showDialog(
       context: context,

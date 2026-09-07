@@ -135,6 +135,20 @@ App 首次启动后，进入 **设置 → 后端地址**，默认 `http://localh
 | 在线角色服务 | [online_character_service.dart](Virtual_app/lib/services/online_character_service.dart)：Dio GET `{backendBaseUrl}/api/characters`（backendBaseUrl 来自设置页，失败显示错误 + 重新加载） |
 | 品牌头像 | 对话气泡形渐变 "V"（AppBar 侧栏 / 抽屉 / 我的页统一复用） |
 
+## Virtual_app 功能进展（2026-09-07）
+
+| 功能 | 说明 |
+|---|---|
+| 会话列表 | 搜索过滤 + 置顶排序 + 长按菜单（重命名 / 置顶 / 删除） |
+| 角色列表 | 搜索过滤 + 复制角色（duplicateCharacter） |
+| 聊天页更多选项 | AppBar ⋯ 菜单：导出 Markdown（剪贴板 + 可存 .md 文件）/ 清空消息（二次确认）/ 模型信息（接入点·平台·模型） |
+| 图片输入（多模态） | 输入栏 ➕ 多选图片（≤4 张，待发预览条可删除）→ 气泡内渲染 → PromptService 转 OpenAI 视觉格式（data URL），工具类 [image_data.dart](Virtual_app/lib/utils/image_data.dart) |
+| 消息头像 | 角色头像文件路径支持（FileImage） |
+| 设置 - 语言 | 跟随系统 / 简体中文 / English / 日本語，SharedPreferences 持久化（`setLocale`） |
+| 设置 - 数据迁移 | 入口复用备份页：导出 JSON 备份 → 新设备导入，实现跨设备迁移 |
+
+验证：`dart analyze` 0 issues；`flutter test` 全部通过。
+
 ## 目录命名约定
 
 所有子项目统一 `Virtual_` 前缀：
