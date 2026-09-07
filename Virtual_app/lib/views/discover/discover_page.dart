@@ -4,11 +4,13 @@ import 'package:go_router/go_router.dart';
 import '../../theme/tavo_brand.dart';
 
 /// 发现页 —— 扩展内容聚合入口：世界书 / 预设 / 正则 / 插件 / 主题
+/// 颜色跟随 colorScheme（浅色极简白 / 深色深空自动切换）
 class DiscoverPage extends StatelessWidget {
   const DiscoverPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return GridView.count(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       crossAxisCount: 2,
@@ -62,7 +64,7 @@ class DiscoverPage extends StatelessWidget {
           title: '调试',
           desc: '开发者工具',
           route: '/debug',
-          accent: TavoColors.cosmosTextFaint,
+          accent: scheme.onSurfaceVariant,
         ),
       ],
     );
@@ -76,14 +78,15 @@ class DiscoverPage extends StatelessWidget {
     required String route,
     required Color accent,
   }) {
+    final scheme = Theme.of(context).colorScheme;
     return GestureDetector(
       onTap: () => context.push(route),
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: TavoColors.cosmosElev,
+          color: scheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: TavoColors.cosmosLine),
+          border: Border.all(color: scheme.outlineVariant),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -102,18 +105,18 @@ class DiscoverPage extends StatelessWidget {
             const SizedBox(height: 14),
             Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 16.5,
                 fontWeight: FontWeight.w600,
-                color: TavoColors.cosmosText,
+                color: scheme.onSurface,
               ),
             ),
             const SizedBox(height: 3),
             Text(
               desc,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: TavoColors.cosmosTextFaint,
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ],

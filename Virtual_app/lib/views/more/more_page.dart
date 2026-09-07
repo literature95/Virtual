@@ -7,6 +7,7 @@ class MorePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('更多'),
@@ -26,8 +27,8 @@ class MorePage extends StatelessWidget {
               onTap: () => context.go('/characters')),
           _MoreTile(
             label: '用户身份',
-            trailing: const Text('User',
-                style: TextStyle(color: Colors.grey, fontSize: 14)),
+            trailing: Text('User',
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 14)),
             onTap: () {},
           ),
 
@@ -36,8 +37,8 @@ class MorePage extends StatelessWidget {
           // ── 第二组：外观与语音 ──
           _MoreTile(
             label: '主题',
-            trailing: const Text('渊海',
-                style: TextStyle(color: Colors.grey, fontSize: 14)),
+            trailing: Text('渊海',
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 14)),
             onTap: () => context.go('/theme'),
           ),
           _MoreTile(
@@ -52,8 +53,8 @@ class MorePage extends StatelessWidget {
               label: '模型设置', icon: Icons.model_training_outlined, onTap: () {}),
           _MoreTile(
             label: '预设',
-            trailing: const Text('默认',
-                style: TextStyle(color: Colors.grey, fontSize: 14)),
+            trailing: Text('默认',
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 14)),
             onTap: () => context.go('/presets'),
           ),
           _MoreTile(
@@ -113,6 +114,7 @@ class _MoreTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -120,7 +122,7 @@ class _MoreTile extends StatelessWidget {
         child: Row(
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 22, color: Colors.grey[700]),
+              Icon(icon, size: 22, color: scheme.onSurfaceVariant),
               const SizedBox(width: 16),
             ],
             Expanded(
@@ -128,8 +130,7 @@ class _MoreTile extends StatelessWidget {
                 children: [
                   Text(
                     label,
-                    style: const TextStyle(
-                        fontSize: 15.5, color: Color(0xFF1A1A2E)),
+                    style: TextStyle(fontSize: 15.5, color: scheme.onSurface),
                   ),
                   if (badge != null) ...[
                     const SizedBox(width: 8),
@@ -157,7 +158,8 @@ class _MoreTile extends StatelessWidget {
             ),
             if (trailing != null) trailing!,
             if (trailing == null)
-              Icon(Icons.chevron_right, size: 20, color: Colors.grey[400]),
+              Icon(Icons.chevron_right,
+                  size: 20, color: scheme.onSurfaceVariant),
           ],
         ),
       ),

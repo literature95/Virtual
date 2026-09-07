@@ -41,8 +41,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _load() async {
-    final backend =
-        context.read<SettingsProvider>().backendBaseUrl;
+    final backend = context.read<SettingsProvider>().backendBaseUrl;
     try {
       final list = await _service.fetchCharacters(backend);
       if (!mounted) return;
@@ -67,8 +66,8 @@ class _HomePageState extends State<HomePage> {
   List<OnlineCharacter> get _filtered {
     final all = _characters ?? const <OnlineCharacter>[];
     return all.where((c) {
-      final catOk = _selectedCategory == '全部' ||
-          c.tags.contains(_selectedCategory);
+      final catOk =
+          _selectedCategory == '全部' || c.tags.contains(_selectedCategory);
       final q = _query.trim().toLowerCase();
       final qOk = q.isEmpty ||
           c.name.toLowerCase().contains(q) ||
@@ -79,8 +78,9 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return RefreshIndicator(
-      color: TavoColors.violet,
+      color: scheme.primary,
       onRefresh: () async => _load(),
       child: CustomScrollView(
         slivers: [
@@ -95,17 +95,15 @@ class _HomePageState extends State<HomePage> {
                       child: TextField(
                         controller: _searchCtrl,
                         autofocus: true,
-                        style: const TextStyle(
-                            color: TavoColors.cosmosText, fontSize: 14),
+                        style: TextStyle(color: scheme.onSurface, fontSize: 14),
                         decoration: InputDecoration(
                           hintText: '搜索角色名或描述…',
-                          hintStyle: const TextStyle(
-                              color: TavoColors.cosmosTextFaint),
-                          prefixIcon: const Icon(Icons.search,
-                              size: 20, color: TavoColors.cosmosTextFaint),
+                          hintStyle: TextStyle(color: scheme.onSurfaceVariant),
+                          prefixIcon: Icon(Icons.search,
+                              size: 20, color: scheme.onSurfaceVariant),
                           suffixIcon: IconButton(
-                            icon: const Icon(Icons.close,
-                                size: 18, color: TavoColors.cosmosTextDim),
+                            icon: Icon(Icons.close,
+                                size: 18, color: scheme.onSurfaceVariant),
                             onPressed: () {
                               _searchCtrl.clear();
                               HomePage.searchVisible.value = false;
@@ -113,7 +111,7 @@ class _HomePageState extends State<HomePage> {
                             },
                           ),
                           filled: true,
-                          fillColor: TavoColors.cosmosElev,
+                          fillColor: scheme.surfaceContainer,
                           contentPadding: EdgeInsets.zero,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(999),
@@ -134,7 +132,8 @@ class _HomePageState extends State<HomePage> {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                children: _categories.map(_categoryChip).toList(),
+                children:
+                    _categories.map((c) => _categoryChip(c, scheme)).toList(),
               ),
             ),
           ),
@@ -180,7 +179,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _categoryChip(String label) {
+  Widget _categoryChip(String label, ColorScheme scheme) {
     final selected = label == _selectedCategory;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
@@ -191,11 +190,9 @@ class _HomePageState extends State<HomePage> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             gradient: selected ? TavoColors.signGradient : null,
-            color: selected ? null : TavoColors.cosmosElev,
+            color: selected ? null : scheme.surfaceContainer,
             border: Border.all(
-              color: selected
-                  ? Colors.transparent
-                  : Colors.white.withValues(alpha: 0.12),
+              color: selected ? Colors.transparent : scheme.outline,
             ),
           ),
           child: Center(
@@ -203,9 +200,8 @@ class _HomePageState extends State<HomePage> {
               label,
               style: TextStyle(
                 fontSize: 12.5,
-                fontWeight:
-                    selected ? FontWeight.w600 : FontWeight.w400,
-                color: selected ? Colors.white : TavoColors.cosmosTextDim,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                color: selected ? Colors.white : scheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -215,6 +211,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _errorView(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -226,20 +223,18 @@ class _HomePageState extends State<HomePage> {
             Text(
               _error ?? '',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: TavoColors.cosmosTextDim, fontSize: 13.5),
+              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13.5),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               '请在「我的 → API接入」检查后端地址，或确认后端已启动',
               textAlign: TextAlign.center,
-              style: TextStyle(color: TavoColors.cosmosTextFaint, fontSize: 12),
+              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
             ),
             const SizedBox(height: 20),
             TavoBrand.gradientButton(
               onPressed: _load,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 26, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 12),
               child: const Text('重新加载', style: TextStyle(fontSize: 14)),
             ),
           ],
@@ -249,15 +244,16 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _emptyView() {
+    final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           TavoBrand.emptyIllustration(Icons.auto_awesome_outlined, size: 64),
           const SizedBox(height: 18),
-          const Text(
+          Text(
             '没有匹配的角色',
-            style: TextStyle(color: TavoColors.cosmosTextDim, fontSize: 14),
+            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 14),
           ),
         ],
       ),
@@ -268,14 +264,7 @@ class _HomePageState extends State<HomePage> {
   /// 目前最小版本：先跳到本地角色列表（后续接入"一键导入"）。
   void _openCharacter(BuildContext context, OnlineCharacter c) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: TavoColors.cosmosElev,
-        content: Text(
-          '「${c.name}」在线角色卡（导入功能开发中）',
-          style: const TextStyle(color: TavoColors.cosmosText),
-        ),
-      ),
+      SnackBar(content: Text('「${c.name}」在线角色卡（导入功能开发中）')),
     );
   }
 

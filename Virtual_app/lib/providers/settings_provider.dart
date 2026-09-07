@@ -15,10 +15,10 @@ class SettingsProvider extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.system;
   ThemeMode get themeMode => _themeMode;
 
-  int _primaryColorLight = 0xFF6750A4;
+  int _primaryColorLight = 0xFF6C4DF6;
   int get primaryColorLight => _primaryColorLight;
 
-  int _primaryColorDark = 0xFFD0BCFF;
+  int _primaryColorDark = 0xFFA78BFA;
   int get primaryColorDark => _primaryColorDark;
 
   // 语言

@@ -21,11 +21,36 @@ class HomeShell extends StatelessWidget {
   const HomeShell({super.key, required this.child});
 
   static const _tabs = [
-    (path: '/home', label: '首页', icon: Icons.home_outlined, activeIcon: Icons.home),
-    (path: '/discover', label: '发现', icon: Icons.explore_outlined, activeIcon: Icons.explore),
-    (path: '/chat', label: '对话', icon: Icons.chat_bubble_outline, activeIcon: Icons.chat_bubble),
-    (path: '/characters', label: '角色', icon: Icons.face_3_outlined, activeIcon: Icons.face_3),
-    (path: '/profile', label: '我的', icon: Icons.person_outline, activeIcon: Icons.person),
+    (
+      path: '/home',
+      label: '首页',
+      icon: Icons.home_outlined,
+      activeIcon: Icons.home
+    ),
+    (
+      path: '/discover',
+      label: '发现',
+      icon: Icons.explore_outlined,
+      activeIcon: Icons.explore
+    ),
+    (
+      path: '/chat',
+      label: '对话',
+      icon: Icons.chat_bubble_outline,
+      activeIcon: Icons.chat_bubble
+    ),
+    (
+      path: '/characters',
+      label: '角色',
+      icon: Icons.face_3_outlined,
+      activeIcon: Icons.face_3
+    ),
+    (
+      path: '/profile',
+      label: '我的',
+      icon: Icons.person_outline,
+      activeIcon: Icons.person
+    ),
   ];
 
   /// 当前选中的 Tab（子页面归到其所属 Tab：endpoints/settings→我的，lorebooks 等→发现）
@@ -46,8 +71,7 @@ class HomeShell extends StatelessWidget {
     return 4; // /profile、/endpoints、/more、/settings 等归入我的
   }
 
-  void _onTap(BuildContext context, int index) =>
-      context.go(_tabs[index].path);
+  void _onTap(BuildContext context, int index) => context.go(_tabs[index].path);
 
   /// 是否一级 Tab 页面（精确匹配根路径，详情/编辑页不算）
   bool _isRootTab(BuildContext context) {
@@ -88,15 +112,6 @@ class HomeShell extends StatelessWidget {
               selectedIndex: index,
               onDestinationSelected: (i) => _onTap(context, i),
               labelType: NavigationRailLabelType.all,
-              backgroundColor: TavoColors.cosmosBg,
-              selectedIconTheme:
-                  const IconThemeData(color: TavoColors.violet),
-              unselectedIconTheme:
-                  const IconThemeData(color: TavoColors.cosmosTextDim),
-              selectedLabelTextStyle:
-                  const TextStyle(color: TavoColors.cosmosText),
-              unselectedLabelTextStyle:
-                  const TextStyle(color: TavoColors.cosmosTextFaint),
               leading: Column(
                 children: [
                   const SizedBox(height: 16),
@@ -199,13 +214,31 @@ class HomeShell extends StatelessWidget {
     final loc = GoRouterState.of(context).uri.path;
 
     return AppBar(
+      // ── 左侧：菜单 ☰ + 紧随其后的品牌 logo（左对齐）──
       leading: isRoot
-          ? Builder(
-              builder: (ctx) => IconButton(
-                icon: const Icon(Icons.menu, size: 24),
-                onPressed: Scaffold.of(ctx).openDrawer,
-                tooltip: '菜单',
-              ),
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Builder(
+                  builder: (ctx) => IconButton(
+                    icon: const Icon(Icons.menu, size: 24),
+                    onPressed: Scaffold.of(ctx).openDrawer,
+                    tooltip: '菜单',
+                  ),
+                ),
+                ShaderMask(
+                  shaderCallback: (bounds) =>
+                      TavoColors.signGradient.createShader(bounds),
+                  child: const Text(
+                    'Virtual',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
             )
           : BackButton(onPressed: () {
               if (context.canPop()) {
@@ -214,22 +247,7 @@ class HomeShell extends StatelessWidget {
                 context.go('/home');
               }
             }),
-      titleSpacing: 0,
-      title: isRoot
-          ? ShaderMask(
-              shaderCallback: (bounds) =>
-                  TavoColors.signGradient.createShader(bounds),
-              child: const Text(
-                'Virtual',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-            )
-          : null,
-      centerTitle: true,
+      leadingWidth: isRoot ? 130 : null,
       actions: [
         // 首页 → 搜索图标
         if (loc.startsWith('/home'))
@@ -287,8 +305,9 @@ class CosmosDrawerBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
-      color: TavoColors.cosmosBg,
+      color: scheme.surface,
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
@@ -301,21 +320,21 @@ class CosmosDrawerBody extends StatelessWidget {
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
+                    children: [
                       Text(
                         'Virtual 用户',
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
-                          color: TavoColors.cosmosText,
+                          color: scheme.onSurface,
                         ),
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 4),
                       Text(
                         'ID · LOCAL-0001',
                         style: TextStyle(
                           fontSize: 11,
-                          color: TavoColors.cosmosTextFaint,
+                          color: scheme.onSurfaceVariant,
                           letterSpacing: 0.6,
                         ),
                       ),
@@ -323,8 +342,8 @@ class CosmosDrawerBody extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close,
-                      size: 20, color: TavoColors.cosmosTextDim),
+                  icon: Icon(Icons.close,
+                      size: 20, color: scheme.onSurfaceVariant),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -349,14 +368,14 @@ class CosmosDrawerBody extends StatelessWidget {
               (Icons.face_3_outlined, '角色', '/characters'),
             ]),
 
-            _sectionLabel('我的'),
+            _sectionLabel(context, '我的'),
             ..._navItems(context, [
               (Icons.person_outline, '我的', '/profile'),
               (Icons.api, 'API接入', '/endpoints'),
               (Icons.more_horiz, '更多', '/more'),
             ]),
 
-            _sectionLabel('扩展'),
+            _sectionLabel(context, '扩展'),
             ..._navItems(context, [
               (Icons.menu_book_outlined, '世界书', '/lorebooks'),
               (Icons.tune, '预设', '/presets'),
@@ -370,15 +389,16 @@ class CosmosDrawerBody extends StatelessWidget {
     );
   }
 
-  Widget _sectionLabel(String text) {
+  Widget _sectionLabel(BuildContext context, String text) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 14, 0, 6),
       child: Text(
         text.toUpperCase(),
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 10.5,
           letterSpacing: 1.6,
-          color: TavoColors.cosmosTextFaint,
+          color: scheme.onSurfaceVariant,
         ),
       ),
     );
@@ -386,6 +406,7 @@ class CosmosDrawerBody extends StatelessWidget {
 
   List<Widget> _navItems(
       BuildContext context, List<(IconData, String, String)> items) {
+    final scheme = Theme.of(context).colorScheme;
     return items.map((item) {
       final (icon, label, route) = item;
       final selected =
@@ -402,33 +423,29 @@ class CosmosDrawerBody extends StatelessWidget {
               context.go(route);
             },
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
               decoration: selected
                   ? BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
-                      color: TavoColors.violet.withValues(alpha: 0.14),
+                      color: scheme.primary.withValues(alpha: 0.12),
                       border: Border.all(
-                          color: TavoColors.violet.withValues(alpha: 0.4)),
+                          color: scheme.primary.withValues(alpha: 0.4)),
                     )
                   : null,
               child: Row(
                 children: [
                   Icon(icon,
                       size: 20,
-                      color: selected
-                          ? TavoColors.violet
-                          : TavoColors.cosmosTextDim),
+                      color:
+                          selected ? scheme.primary : scheme.onSurfaceVariant),
                   const SizedBox(width: 13),
                   Text(
                     label,
                     style: TextStyle(
                       fontSize: 14.5,
-                      fontWeight:
-                          selected ? FontWeight.w600 : FontWeight.w400,
-                      color: selected
-                          ? TavoColors.cosmosText
-                          : TavoColors.cosmosTextDim,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      color:
+                          selected ? scheme.onSurface : scheme.onSurfaceVariant,
                     ),
                   ),
                 ],

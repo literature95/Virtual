@@ -13,13 +13,17 @@ class CosmosBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scheme = Theme.of(context).colorScheme;
     return Stack(
       fit: StackFit.expand,
       children: [
-        const ColoredBox(color: TavoColors.cosmosBg),
-        const _Nebula(),
-        const CustomPaint(painter: _StarsPainter(seed: 7, density: 90)),
-        const CustomPaint(painter: _StarsPainter(seed: 23, density: 55)),
+        ColoredBox(color: isDark ? TavoColors.cosmosBg : scheme.surface),
+        if (isDark) ...[
+          const _Nebula(),
+          const CustomPaint(painter: _StarsPainter(seed: 7, density: 90)),
+          const CustomPaint(painter: _StarsPainter(seed: 23, density: 55)),
+        ],
         if (child != null) child!,
       ],
     );

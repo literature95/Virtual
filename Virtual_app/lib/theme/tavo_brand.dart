@@ -1,42 +1,38 @@
 import 'package:flutter/material.dart';
 
+import 'design_tokens.dart';
+
 /// Tavo 品牌视觉体系
 ///
 /// 官方品牌色：紫 (#7F77DD) → 橙 (#D85A30) 渐变。
 /// 提供渐变、Logo、渐变按钮 / 文字 / 空状态插图等可复用组件。
 class TavoColors {
-  static const Color brandPurple = Color(0xFF7F77DD);
+  // 品牌主色统一到 design_tokens（消除多套紫色并存）
+  static const Color brandPurple = AppColors.violet;
   static const Color brandOrange = Color(0xFFD85A30);
   static const Color brandPurpleLight = Color(0xFF9B94F0);
   static const Color brandOrangeLight = Color(0xFFE8854F);
   static const Color textHighlightPurple = Color(0xFFB7A6FF);
   static const Color textHighlightOrange = Color(0xFFFFB07A);
 
-  // ── 深空对话设计 token（与 Virtual_web 端统一，取自 Tavo 官网 logo 渐变）──
-  static const Color violet = Color(0xFF7E4DF1);
-  static const Color coral = Color(0xFFE3756E);
-  static const Color amber = Color(0xFFE58029);
+  // ── 深空对话设计 token（单一来源：design_tokens/AppColors）──
+  static const Color violet = AppColors.violet;
+  static const Color coral = AppColors.coral;
+  static const Color amber = AppColors.amber;
   static const Color cosmosBg = Color(0xFF0E0E0E);
   static const Color cosmosElev = Color(0xFF161519);
   static const Color cosmosText = Color(0xFFE8E8E8);
   static const Color cosmosTextDim = Color(0xFFA3A3A3);
   static const Color cosmosTextFaint = Color(0xFF626262);
   static const Color cosmosLine = Color(0x14FFFFFF);
-  static const Color cosmosGreen = Color(0xFF34D399);
+  static const Color cosmosGreen = AppColors.success;
 
   /// 品牌签名三色渐变（紫→珊瑚→橙）
-  static const LinearGradient signGradient = LinearGradient(
-    begin: Alignment.centerLeft,
-    end: Alignment.centerRight,
-    colors: [violet, coral, amber],
-  );
+  static const LinearGradient signGradient = AppColors.signGradient;
 
   /// 签名渐变（对角线，用于头像/Logo 底）
-  static const LinearGradient signGradientDiagonal = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [violet, coral, amber],
-  );
+  static const LinearGradient signGradientDiagonal =
+      AppColors.signGradientDiagonal;
 
   /// 玻璃拟态胶囊装饰
   static BoxDecoration glassCapsule({BorderRadius? borderRadius}) =>

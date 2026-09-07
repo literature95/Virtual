@@ -147,7 +147,22 @@ App 首次启动后，进入 **设置 → 后端地址**，默认 `http://localh
 | 设置 - 语言 | 跟随系统 / 简体中文 / English / 日本語，SharedPreferences 持久化（`setLocale`） |
 | 设置 - 数据迁移 | 入口复用备份页：导出 JSON 备份 → 新设备导入，实现跨设备迁移 |
 
-验证：`dart analyze` 0 issues；`flutter test` 全部通过。
+### UI 设计系统（2026-09-07 主题统一）
+
+| 项 | 说明 |
+|---|---|
+| 设计令牌 | 新增 [design_tokens.dart](Virtual_app/lib/theme/design_tokens.dart)：颜色/间距(8px 网格)/圆角/字号单一来源 |
+| 双主题 | 重构 [app_theme.dart](Virtual_app/lib/theme/app_theme.dart)：浅色极简白 + 深色深空 `#0E0E0E`，主色统一品牌紫 |
+| 主色 | 默认品牌紫（浅 `#6C4DF6` / 深 `#A78BFA`），与 Web 端签名渐变一致 |
+| 组件主题 | 统一 AppBar / Card / 输入框 / NavigationBar / 按钮 / Chip / 弹窗等组件样式 |
+| 消色系冲突 | [tavo_brand.dart](Virtual_app/lib/theme/tavo_brand.dart) 引用 design_tokens 单一来源，消除多套紫色并存 |
+| 首页基准页 | [home_page.dart](Virtual_app/lib/views/home/home_page.dart) / [home_shell.dart](Virtual_app/lib/views/home/home_shell.dart) / [cosmos_background.dart](Virtual_app/lib/views/common/cosmos_background.dart) 固定深空色改为 `colorScheme` 跟随主题，浅色主题下星空背景降级为浅底 |
+| 发现页 | [discover_page.dart](Virtual_app/lib/views/discover/discover_page.dart) 入口卡底色/边框/文字改为 `colorScheme`（surfaceContainerLow + outlineVariant + onSurface），accent 保留品牌点缀色 |
+| 我的页 | [profile_page.dart](Virtual_app/lib/views/profile/profile_page.dart) 区块卡片/文字/分割线跟随主题，ID 胶囊由深色玻璃拟态改为主题色（surfaceContainerHigh） |
+| 更多页 | [more_page.dart](Virtual_app/lib/views/more/more_page.dart) 列表项文字/图标由固定深色（浅色主题下不可见）改为 `colorScheme` |
+| 抽屉 / 角色照片卡 | [home_shell.dart](Virtual_app/lib/views/home/home_shell.dart) 抽屉分区标签、[character_photo_card.dart](Virtual_app/lib/views/common/character_photo_card.dart) 边框与兜底渐变跟随主题 |
+
+验证：`dart analyze` 0 issues；`flutter test` 全部通过；`flutter build web` 成功。
 
 ## 目录命名约定
 

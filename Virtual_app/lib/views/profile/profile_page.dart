@@ -13,6 +13,7 @@ class ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final characterCount =
         context.watch<CharacterProvider>().characters.length;
     final endpointCount =
@@ -23,6 +24,7 @@ class ProfilePage extends StatelessWidget {
       children: [
         // ── 第一区块：头像 / 昵称 / 账号 ID ──
         _section(
+          scheme: scheme,
           child: Row(
             children: [
               // 品牌渐变气泡头像（对话气泡形，与 Web 端 mark 统一）
@@ -60,24 +62,28 @@ class ProfilePage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Virtual 用户',
                       style: TextStyle(
                         fontSize: 19,
                         fontWeight: FontWeight.w700,
-                        color: TavoColors.cosmosText,
+                        color: scheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 9, vertical: 2.5),
-                      decoration: TavoColors.glassCapsule(),
-                      child: const Text(
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: scheme.outlineVariant),
+                      ),
+                      child: Text(
                         'ID · LOCAL-0001',
                         style: TextStyle(
                           fontSize: 11,
-                          color: TavoColors.cosmosTextDim,
+                          color: scheme.onSurfaceVariant,
                           letterSpacing: 0.6,
                         ),
                       ),
@@ -92,7 +98,9 @@ class ProfilePage extends StatelessWidget {
 
         // ── 第二区块：我的角色卡 ──
         _section(
+          scheme: scheme,
           child: _assetRow(
+            scheme: scheme,
             icon: Icons.face_3,
             iconColor: TavoColors.violet,
             title: '我的角色卡',
@@ -105,9 +113,11 @@ class ProfilePage extends StatelessWidget {
 
         // ── 第三区块：我的 API / 主题 等 ──
         _section(
+          scheme: scheme,
           child: Column(
             children: [
               _navRow(
+                scheme: scheme,
                 icon: Icons.api,
                 iconColor: TavoColors.coral,
                 title: '我的 API',
@@ -117,8 +127,9 @@ class ProfilePage extends StatelessWidget {
               Divider(
                   height: 1,
                   indent: 46,
-                  color: Colors.white.withValues(alpha: 0.06)),
+                  color: scheme.outlineVariant),
               _navRow(
+                scheme: scheme,
                 icon: Icons.palette_outlined,
                 iconColor: TavoColors.amber,
                 title: '主题外观',
@@ -128,8 +139,9 @@ class ProfilePage extends StatelessWidget {
               Divider(
                   height: 1,
                   indent: 46,
-                  color: Colors.white.withValues(alpha: 0.06)),
+                  color: scheme.outlineVariant),
               _navRow(
+                scheme: scheme,
                 icon: Icons.extension_outlined,
                 iconColor: TavoColors.cosmosGreen,
                 title: '插件',
@@ -143,9 +155,11 @@ class ProfilePage extends StatelessWidget {
 
         // ── 第四区块：更多 ──
         _section(
+          scheme: scheme,
           child: _navRow(
+            scheme: scheme,
             icon: Icons.more_horiz,
-            iconColor: TavoColors.cosmosTextDim,
+            iconColor: scheme.onSurfaceVariant,
             title: '更多',
             desc: '设置 · 备份 · 帮助',
             onTap: () => context.go('/more'),
@@ -155,19 +169,20 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-  Widget _section({required Widget child}) {
+  Widget _section({required ColorScheme scheme, required Widget child}) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: TavoColors.cosmosElev.withValues(alpha: 0.85),
+        color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: TavoColors.cosmosLine),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: child,
     );
   }
 
   Widget _assetRow({
+    required ColorScheme scheme,
     required IconData icon,
     required Color iconColor,
     required String title,
@@ -187,34 +202,35 @@ class ProfilePage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 15.5,
                         fontWeight: FontWeight.w600,
-                        color: TavoColors.cosmosText)),
+                        color: scheme.onSurface)),
                 const SizedBox(height: 2),
                 Text(subtitle,
-                    style: const TextStyle(
-                        fontSize: 12, color: TavoColors.cosmosTextFaint)),
+                    style: TextStyle(
+                        fontSize: 12, color: scheme.onSurfaceVariant)),
               ],
             ),
           ),
           Text(
             '$count',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,
-              color: TavoColors.cosmosTextDim,
+              color: scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(width: 4),
-          const Icon(Icons.chevron_right,
-              size: 20, color: TavoColors.cosmosTextFaint),
+          Icon(Icons.chevron_right,
+              size: 20, color: scheme.onSurfaceVariant),
         ],
       ),
     );
   }
 
   Widget _navRow({
+    required ColorScheme scheme,
     required IconData icon,
     required Color iconColor,
     required String title,
@@ -235,20 +251,19 @@ class ProfilePage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: TavoColors.cosmosText)),
+                          color: scheme.onSurface)),
                   const SizedBox(height: 1),
                   Text(desc,
-                      style: const TextStyle(
-                          fontSize: 11.5,
-                          color: TavoColors.cosmosTextFaint)),
+                      style: TextStyle(
+                          fontSize: 11.5, color: scheme.onSurfaceVariant)),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right,
-                size: 20, color: TavoColors.cosmosTextFaint),
+            Icon(Icons.chevron_right,
+                size: 20, color: scheme.onSurfaceVariant),
           ],
         ),
       ),

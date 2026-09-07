@@ -25,6 +25,7 @@ class CharacterPhotoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final width = height * 1.58;
     return GestureDetector(
       onTap: onTap,
@@ -34,7 +35,7 @@ class CharacterPhotoCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: TavoColors.cosmosLine),
+          border: Border.all(color: scheme.outlineVariant),
           // 图片加载失败时的品牌渐变兜底
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -42,7 +43,7 @@ class CharacterPhotoCard extends StatelessWidget {
             colors: [
               TavoColors.violet.withValues(alpha: 0.3),
               TavoColors.coral.withValues(alpha: 0.16),
-              TavoColors.cosmosElev,
+              scheme.surfaceContainerLow,
             ],
           ),
         ),
