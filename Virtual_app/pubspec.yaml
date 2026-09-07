@@ -1,0 +1,118 @@
+﻿name: virtual
+description: Virtual - AI Character Chat Client
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+  flutter: '>=3.19.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # 状态管理
+  provider: ^6.1.2
+
+  # 本地化（zh_CN/ja_JP 的 Material/Cupertino 文案）
+  flutter_localizations:
+    sdk: flutter
+
+  # 路由
+  go_router: ^14.2.0
+
+  # 网络
+  dio: ^5.4.3+1
+  http: ^1.2.1
+
+  # 本地存储 (使用 SharedPreferences + JSON; 移除了未使用的 objectbox/hive 以避免 native 构建依赖)
+  shared_preferences: ^2.2.3
+  path_provider: ^2.1.3
+
+  # UI 组件
+  toastification: ^3.0.0
+  flex_color_picker: ^3.5.0
+  flutter_svg: ^2.0.10+1
+  lottie: ^3.1.2
+  cached_network_image: ^3.3.1
+  image_picker: ^1.1.2
+  image_cropper: ^8.0.2
+  wechat_assets_picker: ^9.2.1
+  mobile_scanner: ^5.1.1
+
+  # 文本 / 富文本
+  flutter_markdown: ^0.7.2+1
+  markdown: ^7.2.2
+  highlight_text: ^1.8.0
+
+  # 音频服务
+  audio_service: ^0.18.13
+  just_audio: ^0.9.39
+  record: ^6.0.0
+  flutter_sound: ^9.7.0
+  permission_handler: ^11.3.1
+
+  # WebView / JS 运行时
+  webview_flutter: ^4.8.0
+  flutter_js: ^0.8.0
+  flutter_inappwebview: ^6.0.0
+
+  # TTS / ASR
+  speech_to_text: ^7.0.0
+  flutter_tts: ^4.0.2
+
+  # 工具
+  uuid: ^4.4.0
+  intl: ^0.20.3
+  logger: ^2.3.0
+  json_annotation: ^4.9.0
+  freezed_annotation: ^2.4.1
+  collection: ^1.18.0
+  rxdart: ^0.28.0
+  dio_smart_retry: ^6.0.0
+  retry: ^3.1.2
+
+  # 其他
+  share_plus: ^12.0.2
+  file_picker: ^8.1.2
+  url_launcher: ^6.3.0
+  package_info_plus: ^8.0.2
+  device_info_plus: ^10.1.2
+  connectivity_plus: ^6.0.3
+  open_file: ^3.5.3
+  sentry_flutter: ^9.0.0
+  screenshot: ^3.0.0
+  image: ^4.2.0
+  cross_file: ^0.3.4+2
+  sqflite: ^2.3.3
+  video_player: ^2.9.2
+  clarity_flutter: ^1.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.11
+  json_serializable: ^6.8.0
+  freezed: ^2.5.2
+
+flutter:
+  uses-material-design: true
+
+  # 资源
+  assets:
+    - assets/images/
+    - assets/lotties/
+    - assets/registry/
+    - assets/metadata_default.json
+    - assets/dist/
+    - assets/dist/css/
+    - assets/dist/js/
+    - assets/dist/css/fonts/
+
+  # 字体
+  fonts:
+    - family: MaterialIcons
+      fonts:
+        - asset: fonts/MaterialIcons-Regular.otf

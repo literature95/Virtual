@@ -1,0 +1,12 @@
+include: package:dart_frog_lint/recommended.yaml
+
+# 服务端项目：放宽对内部服务无意义的噪音 lint
+# （80 字符行宽、强制文档注释、编译期环境变量属 dart_frog 模板正当用法）
+linter:
+  rules:
+    public_member_api_docs: false
+    lines_longer_than_80_chars: false
+    do_not_use_environment: false
+    omit_local_variable_types: false
+    avoid_redundant_argument_values: false
+    always_use_package_imports: false

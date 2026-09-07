@@ -1,0 +1,29 @@
+# ── Dart / Flutter ──
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+*.g.dart.tmp
+
+# ── Node / Vite ──
+node_modules/
+dist/
+.vite/
+
+# ── IDE / 系统 ──
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store
+
+# ── 本地工具状态 ──
+.workbuddy/
+*.log
+
+# ── 敏感文件 ──
+.env
+.env.*
+*.keystore
