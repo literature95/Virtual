@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 
+import '../../data/app_database.dart';
 import '../../providers/character_provider.dart';
 import '../../models/character.dart';
 import '../../services/character_import_service.dart';
@@ -132,7 +133,7 @@ class _CharacterListPageState extends State<CharacterListPage> {
     try {
       final dio = Dio();
       final importService = CharacterImportService(dio);
-      Character? character;
+      CharacterImportBundle? bundle;
 
       switch (result) {
         case 'url':
@@ -162,7 +163,7 @@ class _CharacterListPageState extends State<CharacterListPage> {
             ),
           );
           if (url != null && url.isNotEmpty) {
-            character = await importService.importFromUrl(url);
+            bundle = await importService.importBundleFromUrl(url);
           }
           break;
         case 'json':
@@ -171,7 +172,7 @@ class _CharacterListPageState extends State<CharacterListPage> {
             source: ImageSource.gallery,
           );
           if (pickedFile != null) {
-            character = await importService.importFromFile(pickedFile.path);
+            bundle = await importService.importBundleFromFile(pickedFile.path);
           }
           break;
         case 'png':
@@ -180,12 +181,20 @@ class _CharacterListPageState extends State<CharacterListPage> {
             source: ImageSource.gallery,
           );
           if (pickedFile != null) {
-            character = await importService.importFromPng(pickedFile.path);
+            bundle = await importService.importBundleFromPng(pickedFile.path);
           }
           break;
       }
 
-      if (character != null && context.mounted) {
+      if (bundle != null && context.mounted) {
+        // 世界书先落库，拿到 id 后绑定到角色，避免丢失 character_book 设定
+        String? lorebookId;
+        if (bundle.hasLorebook) {
+          await AppDatabase.instance.saveLorebook(bundle.lorebook!);
+          lorebookId = bundle.lorebook!.id;
+        }
+
+        final character = bundle.character;
         await context.read<CharacterProvider>().createCharacter(
               name: character.name,
               nickname: character.nickname,
@@ -195,13 +204,26 @@ class _CharacterListPageState extends State<CharacterListPage> {
               firstMessage: character.firstMessage,
               avatarPath: character.avatarPath,
               creatorNotes: character.creatorNotes,
+              systemPrompt: character.systemPrompt,
+              postHistoryInstructions: character.postHistoryInstructions,
+              creator: character.creator,
+              characterVersion: character.characterVersion,
+              source: character.source,
+              groupOnlyGreetings: character.groupOnlyGreetings,
+              creatorNotesMultilingual: character.creatorNotesMultilingual,
               tags: character.tags,
               alternateGreetings: character.alternateGreetings,
               exampleMessages: character.exampleMessages,
+              lorebookId: lorebookId,
             );
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('成功导入角色「${character.name}」')),
+            SnackBar(
+              content: Text(
+                '成功导入「${character.name}」（${bundle.summary}）',
+              ),
+              duration: const Duration(seconds: 4),
+            ),
           );
         }
       }

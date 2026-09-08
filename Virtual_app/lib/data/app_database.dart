@@ -30,6 +30,15 @@ class AppDatabase extends ChangeNotifier {
     return _instance!;
   }
 
+  /// 已初始化实例的同步访问入口（角色卡导入等场景需要直接落世界书）
+  static AppDatabase get instance {
+    final i = _instance;
+    if (i == null) {
+      throw StateError('AppDatabase 尚未初始化，请先调用 AppDatabase.init()');
+    }
+    return i;
+  }
+
   // ---------- 存储键 ----------
   static const _kCharacters = 'db_characters';
   static const _kConversations = 'db_conversations';

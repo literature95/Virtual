@@ -52,8 +52,31 @@ class AppDatabase {
     await _conn?.close();
   }
 
-  /// 确保表存在
-  Future<void> _ensureTables() async {
+/// characters 表的增量列脚本（`ADD COLUMN IF NOT EXISTS`，可重复执行）
+///
+/// 对齐 `Virtual_app/lib/models/character.dart` 的角色卡字段集：
+/// 长结构化数据一律 JSONB，避免为每个字段单独建模。
+static // 说明：新列不设 DEFAULT —— 旧行即为 NULL，由 CharacterCardMapper 统一兜底为空数组/空
+// 对象，避免把默认值这类无关细节写进 SQL 字符串。
+const List<String> _characterColumnMigrations = [
+  'ALTER TABLE characters ADD COLUMN IF NOT EXISTS nickname TEXT',
+  'ALTER TABLE characters ADD COLUMN IF NOT EXISTS personality TEXT',
+  'ALTER TABLE characters ADD COLUMN IF NOT EXISTS scenario TEXT',
+  'ALTER TABLE characters ADD COLUMN IF NOT EXISTS example_messages JSONB',
+  'ALTER TABLE characters ADD COLUMN IF NOT EXISTS system_prompt TEXT',
+  'ALTER TABLE characters ADD COLUMN IF NOT EXISTS post_history_instructions TEXT',
+  'ALTER TABLE characters ADD COLUMN IF NOT EXISTS creator_notes TEXT',
+  'ALTER TABLE characters ADD COLUMN IF NOT EXISTS creator TEXT',
+  'ALTER TABLE characters ADD COLUMN IF NOT EXISTS character_version TEXT',
+  'ALTER TABLE characters ADD COLUMN IF NOT EXISTS source TEXT',
+  'ALTER TABLE characters ADD COLUMN IF NOT EXISTS alternate_greetings JSONB',
+  'ALTER TABLE characters ADD COLUMN IF NOT EXISTS group_only_greetings JSONB',
+  'ALTER TABLE characters ADD COLUMN IF NOT EXISTS extensions JSONB',
+  'ALTER TABLE characters ADD COLUMN IF NOT EXISTS creator_notes_multilingual JSONB',
+];
+
+/// 确保表存在
+Future<void> _ensureTables() async {
     final conn = _conn!;
     await conn.execute('''
       CREATE TABLE IF NOT EXISTS characters (
@@ -69,6 +92,13 @@ class AppDatabase {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     ''');
+    // --- 角色卡字段扩展（幂等，适配 2026-09-08 之前的旧库） ---
+    //
+    // 目标：让后端能完整承载 Character Card v2/v3 的结构化人设，
+    // 而不是只存一句 persona —— 参见 docs/project-analysis-2026-09-08.md R-1。
+    for (final migration in _characterColumnMigrations) {
+      await conn.execute(migration);
+    }
     await conn.execute('''
       CREATE TABLE IF NOT EXISTS app_info (
         id TEXT PRIMARY KEY,

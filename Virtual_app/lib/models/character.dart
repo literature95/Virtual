@@ -194,9 +194,11 @@ class Character {
         'updatedAt': updatedAt.toIso8601String(),
       };
 
-  factory Character.fromJson(Map<String, dynamic> json) => Character(
-        id: json['id'],
-        name: json['name'] ?? '',
+  factory Character.fromJson(Map<String, dynamic> json) {
+    final name = json['name'] ?? '';
+    return Character(
+      id: json['id'],
+      name: name,
         nickname: json['nickname'],
         description: json['description'],
         personality: json['personality'],
@@ -225,7 +227,7 @@ class Character {
                 ?.map((e) => CharacterExampleMessage.fromJson(e))
                 .toList() ??
             // 兼容 mesExample 字段（CCv3 格式）
-            parseMesExample(json['mesExample']),
+            parseMesExample(json['mesExample'], charName: name),
         groupOnlyGreetings:
             List<String>.from(json['groupOnlyGreetings'] ?? []),
         creator: json['creator'],
@@ -245,54 +247,169 @@ class Character {
             json['modificationDate'] ??
             json['updateAt'] ??
             DateTime.now().toIso8601String()),
-      );
+    );
+  }
 
-  /// 解析 mesExample 格式（CCv3 风格，<START> 分隔）
+  /// 解析 mesExample（示例对话）
   ///
-  /// 支持两种输入：字符串（`<START>` 分隔的 `{{char}}`/`{{user}}` 对话）与
-  /// List（`CharacterExampleMessage` JSON）。导入服务也复用此解析。
-  static List<CharacterExampleMessage> parseMesExample(dynamic raw) {
+  /// CCv2 / CCv3 规范只规定「`<START>` 分隔的多轮示例」，没有规定行内前缀写法。
+  /// 现实中至少存在三种写法，本解析器全部支持（旧实现仅支持第 1 种，会静默丢弃
+  /// 其余写法，是角色「语气漂移 / OOC」的主要来源）：
+  ///
+  /// 1. 宏前缀：`{{user}}: ...` / `{{char}}: ...`
+  /// 2. 固定名前缀：`User: ...` / `Assistant: ...`
+  /// 3. **任意角色名前缀**（chub.ai / SillyTavern 常见）：
+  ///    `Handsome Dragonborn: ...` / `Cricket: ...` / `Potential Client: ...`
+  ///
+  /// 归属判定规则（`[charName]` 为角色名，大小写/首尾空格不敏感）：
+  /// - 说话人 == charName，或属于 assistant 别名集合 → assistant 侧
+  /// - `{{user}}` / `user` / `human` 等用户别名，或**任何未知的第三方名字** → user 侧
+  /// - 无前缀的行 / 行首有缩进的行 → 续写，归并到上一位说话人（保留原始换行）
+  /// - 纯序号行（`1.` / `2)` / `1、`）直接跳过
+  ///
+  /// 一个 `<START>` 块 = 一条 [CharacterExampleMessage]；块内多轮按说话人分别
+  /// 拼接（模型本身只有 user/assistant 两栏，这是格式本身的限制，非本项目缺陷）。
+  static List<CharacterExampleMessage> parseMesExample(
+    dynamic raw, {
+    String? charName,
+  }) {
     if (raw == null) return [];
     if (raw is List) {
-      return raw
-          .map((e) => CharacterExampleMessage.fromJson(e))
-          .toList();
-    }
-    if (raw is String) {
-      // CCv2/v3 格式：<START> 分隔的示例对话
-      final parts = raw.split('<START>');
-      return parts.where((p) => p.trim().isNotEmpty).map((p) {
-        // 简单解析：尝试从 {{char}}: 和 {{user}}: 行分离
-        final lines = p.trim().split('\n');
-        String userMsg = '';
-        String charMsg = '';
-        bool inUser = false;
-        bool inChar = false;
-        for (final line in lines) {
-          final trimmed = line.trim();
-          if (trimmed.startsWith('{{user}}:') || trimmed.startsWith('User:')) {
-            inUser = true;
-            inChar = false;
-            userMsg += '${trimmed.substring(trimmed.indexOf(':') + 1).trim()}\n';
-          } else if (trimmed.startsWith('{{char}}:') ||
-              trimmed.startsWith('Assistant:')) {
-            inUser = false;
-            inChar = true;
-            charMsg += '${trimmed.substring(trimmed.indexOf(':') + 1).trim()}\n';
-          } else if (inUser) {
-            userMsg += '$trimmed\n';
-          } else if (inChar) {
-            charMsg += '$trimmed\n';
-          }
-        }
+      return raw.map((e) {
+        if (e is Map) return CharacterExampleMessage.fromJson(Map.from(e));
+        // 兼容纯字符串数组：整条视作角色台词
         return CharacterExampleMessage(
-          userMessage: userMsg.trim(),
-          assistantMessage: charMsg.trim(),
+          userMessage: '',
+          assistantMessage: e.toString(),
         );
       }).toList();
     }
-    return [];
+    if (raw is! String) return [];
+
+    final result = <CharacterExampleMessage>[];
+    for (final block in raw.split('<START>')) {
+      if (block.trim().isEmpty) continue;
+
+      final userTurns = <String>[];
+      final charTurns = <String>[];
+      var isAssistantTurn = false;
+      final buffer = StringBuffer();
+
+      void flush() {
+        final text = buffer.toString().trim();
+        buffer.clear();
+        if (text.isEmpty) return;
+        (isAssistantTurn ? charTurns : userTurns).add(text);
+      }
+
+      /// 结束当前示例并入列（附带为此 card 生成一条记录）
+      void emit() {
+        flush();
+        if (userTurns.isEmpty && charTurns.isEmpty) return;
+        result.add(CharacterExampleMessage(
+          userMessage: userTurns.join('\n\n').trim(),
+          assistantMessage: charTurns.join('\n\n').trim(),
+        ));
+        userTurns.clear();
+        charTurns.clear();
+      }
+
+      for (final rawLine in block.split('\n')) {
+        // 保留续写的原始缩进判定：有缩进即视为同一句换行
+        final trimmed = rawLine.trim();
+        final speaker = _matchExampleSpeaker(rawLine, charName);
+
+        if (trimmed.isEmpty) {
+          buffer.writeln();
+          continue;
+        }
+        if (_isNumberingLine(trimmed)) {
+          // 部分作者不使用 <START>，仅用 `1.` `2.` 分隔示例（如 chub.ai 导出）
+          emit();
+          continue;
+        }
+
+        if (speaker != null) {
+          flush();
+          isAssistantTurn = speaker.isAssistant;
+          final content = speaker.content;
+          if (content.isNotEmpty) {
+            buffer.writeln(content);
+          }
+        } else {
+          // 续写行：保留前导空白以外的原文
+          buffer.writeln(trimmed.isEmpty ? '' : trimmed);
+        }
+      }
+      emit();
+    }
+    return result;
   }
+
+  /// 判断一行是否只是示例序号（如 `1.` / `2)` / `1、` / `- `）
+  static bool _isNumberingLine(String trimmed) =>
+      RegExp(r'^\d+\s*[.、)）:：]*$').hasMatch(trimmed);
+
+  /// 尝试从一行中解析出「说话人 + 内容」。
+  ///
+  /// 返回 null 表示该行不是新的说话轮（即续写行）。
+  static _ExampleSpeaker? _matchExampleSpeaker(String line, String? charName) {
+    // 续写判定：行首缩进，或无 `Name:` 结构
+    if (line.trimLeft() != line) return null;
+    const maxSpeakerLen = 32;
+    final idx = line.indexOf(':');
+    if (idx <= 0 || idx > maxSpeakerLen) return null;
+
+    final speakerRaw = line.substring(0, idx).trim();
+    final content = line.substring(idx + 1).trimLeft();
+    if (speakerRaw.isEmpty) return null;
+    // 说话人不应含句号/星号等叙述符号，避免把 `*Cricket thinks: maybe` 误判
+    if (RegExp(r'[*{}<>\n]').hasMatch(speakerRaw)) {
+      // `{{char}}` / `{{user}}` 是合法例外
+      if (!RegExp(r'^\{\{?\s*(char|user|Char|User|persona)\s*\}?\}$')
+          .hasMatch(speakerRaw)) {
+        return null;
+      }
+    }
+
+    final key = speakerRaw.toLowerCase().replaceAll(RegExp(r'[{}\s]'), '');
+    const assistantAliases = {
+      'char',
+      'assistant',
+      'ai',
+      'bot',
+      'model',
+      'system',
+      'charname',
+      '角色',
+      'ai助手',
+    };
+    const userAliases = {'user', 'you', 'human', 'player', '用户', '我'};
+
+    bool? explicitRole;
+    if (assistantAliases.contains(key)) explicitRole = true;
+    if (userAliases.contains(key)) explicitRole = false;
+
+    final nameMatchesChar = charName != null &&
+        charName.trim().isNotEmpty &&
+        _normalize(speakerRaw) == _normalize(charName);
+
+    return _ExampleSpeaker(
+      isAssistant: explicitRole ?? nameMatchesChar,
+      content: content,
+    );
+  }
+
+  static String _normalize(String s) =>
+      s.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+}
+
+/// 示例对话中的一次「说话人切换」判定结果
+class _ExampleSpeaker {
+  final bool isAssistant;
+  final String content;
+
+  const _ExampleSpeaker({required this.isAssistant, required this.content});
 }
 
 /// 角色头像样式

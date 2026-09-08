@@ -178,16 +178,16 @@ class PromptService {
       parts.add(_applyMacros(charInstruction, macros));
     }
 
+    // 创作者备注：**不自动注入**。
+    //
+    // creator_notes 是作者写给「人」看的元信息（推荐 preset、抽样参数、
+    // prompt 排版建议等），第三方卡片常含 `{{...}}` 宏片段或 Markdown
+    // 代码块，直接拼进 system prompt 会污染甚至误导模型。
+    // 需要时使用 `{{charCreatorNotes}}` 宏显式引用即可。
     // 示例消息（已渲染）
     final mesExamples = macros['mesExamples'] ?? '';
     if (mesExamples.isNotEmpty) {
       parts.add(mesExamples);
-    }
-
-    // 创作者备注
-    final creatorNotes = character.creatorNotes?.trim() ?? '';
-    if (creatorNotes.isNotEmpty) {
-      parts.add(_applyMacros(creatorNotes, macros));
     }
 
     // 记忆内容
@@ -437,28 +437,14 @@ class PromptService {
 
   /// 提取角色后历史指令
   ///
-  /// 后历史指令是角色在对话历史之后仍需遵守的指令，
-  /// 优先使用 postHistoryInstructions，其次 creatorNotes，最后 description 末段。
-  static String _extractCharInstruction(Character character) {
-    // 优先使用 postHistoryInstructions
-    final postHistory = character.postHistoryInstructions?.trim() ?? '';
-    if (postHistory.isNotEmpty) return postHistory;
-
-    // 其次使用 creatorNotes
-    final notes = character.creatorNotes?.trim() ?? '';
-    if (notes.isNotEmpty) return notes;
-
-    // 最后尝试从 description 提取最后一段
-    final desc = character.description?.trim() ?? '';
-    if (desc.isEmpty) return '';
-
-    final paragraphs =
-        desc.split('\n').where((p) => p.trim().isNotEmpty).toList();
-    if (paragraphs.length > 1) {
-      return paragraphs.last.trim();
-    }
-    return '';
-  }
+  /// 仅取 [Character.postHistoryInstructions]。
+  ///
+  /// 历史坑点：本方法曾把 `creatorNotes` 作为兜底返回，而
+  /// [_buildSystemPrompt] 末尾又会单独追加一次 creatorNotes，导致同一段文本被
+  /// 注入两次 —— creator notes 里通常混有 `{{...}}` 宏与作者提示词结构，重复
+  /// 注入既浪费 token 又可能污染 prompt。此处已收敛为单一来源。
+  static String _extractCharInstruction(Character character) =>
+      character.postHistoryInstructions?.trim() ?? '';
 
   /// 构建群聊角色名称列表（逗号分隔）
   static String _buildGroupNames(

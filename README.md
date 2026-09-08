@@ -116,9 +116,9 @@ d:\Documents\Desktop\Virtual\
 | 功能域 | 说明 |
 |---|---|
 | 导航 | 5 Tab 主导航（首页/发现/对话/角色/我的），窄屏 NavigationBar / 宽屏 NavigationRail；GoRouter 30+ 路由 |
-| 首页 | 在线角色卡广场：后端 `/api/characters` 拉取 + 分类过滤 chips + 搜索；沉浸式角色卡（1.58:1 照片卡） |
+| 首页 | 在线角色卡广场：后端 `/api/characters` 拉取 + 分类过滤 chips + 搜索；沉浸式角色卡（1.58:1 照片卡）；点击行 → 拉详情 → 一键导入本地（含示例对话与世界书） |
 | 对话 | 会话列表（搜索/置顶/长按菜单：重命名/置顶/删除）；聊天页流式输出、导出 Markdown、清空消息、模型信息 |
-| 角色 | 本地角色管理（搜索 + 复制角色）；角色导入/导出 |
+| 角色 | 本地角色管理（搜索 + 复制角色）；**角色卡导入/导出（CCv2 / CCv3 / SillyTavern 全字段，含 `character_book` 世界书）** |
 | 模型接入 | OpenAI 兼容（20+ 平台）/ Anthropic / Gemini 三适配器，均 SSE 流式，已解析思维链字段 |
 | 多模态 | 图片输入（≤4 张，预览条可删除），转 OpenAI 视觉格式（data URL） |
 | 发现 | 扩展内容聚合：世界书/预设/正则/插件/主题/调试 |
@@ -140,17 +140,18 @@ d:\Documents\Desktop\Virtual\
 |---|---|
 | `GET /api/health` | 健康检查 |
 | `GET /api/metadata` | App 元数据（顶级数组，`api-secret` 仅在编译期注入时下发） |
-| `GET /api/characters` | 角色卡列表（精简字段） |
-| `GET /api/characters/:id` | 角色卡详情 |
+| `GET /api/characters` | 角色卡列表（精简字段：id/name/description/avatarUrl/tags/greeting/persona/creator/characterVersion） |
+| `GET /api/characters/:id` | 角色卡详情（**完整 CCv3 字段**：personality / scenario / firstMessage / exampleMessages / alternateGreetings / systemPrompt / postHistoryInstructions / extensions 等） |
 | `GET /api/app-info` | 应用介绍/下载信息 |
 | `GET /avatars/:file` | 角色立绘静态文件（jpg/png/webp 白名单，1 天缓存） |
 
-其他能力：全局 CORS 中间件；PostgreSQL 可选 + 失败降级内存种子（5 个角色）；立绘本地化（种子存相对路径，响应时按请求来源补全绝对 URL，App/Web 零改动）；api-secret 编译期外置（`String.fromEnvironment`）；11 个单元测试。
+其他能力：全局 CORS 中间件；PostgreSQL 可选 + 失败降级内存种子（5 个角色）；角色卡 schema 已对齐 App 的完整角色模型（`characters` 表 22 列，含幂等增量迁移）；立绘本地化（种子存相对路径，响应时按请求来源补全绝对 URL，App/Web 零改动）；api-secret 编译期外置（`String.fromEnvironment`）；12 个单元测试（含角色卡密度护栏）。
 
 **待实现：**
 
 - [ ] 写接口：`POST/PUT/DELETE /api/characters`（用户自管角色卡投稿/同步）
 - [ ] 基础鉴权：`X-Install-Token` 自签 token 校验
+- [ ] Lorebook 在线下发（当前 App 端已支持导入 `character_book`，后端未单独建表）
 - [ ] Docker Compose 部署模板（PostgreSQL + 后端 + 数据卷）
 - [ ] 部署文档 `docs/deploy.md`（一键启动、升级、备份）
 - [ ] `metadata` 端点查询参数（`?ch=&lc=&pf=`）实际生效
@@ -231,7 +232,14 @@ App 首次启动后，进入 **设置 → 后端地址**，默认 `http://localh
 | Web `npm run dev` 启动但 API 404 | 确认后端 8080 端口已启动 |
 | 真机 App 连不上后端 | 改设置页后端地址为 `http://<电脑局域网IP>:8080` |
 
-## 七、开发约束
+## 七、相关文档
+
+| 文档 | 内容 |
+|---|---|
+| `docs/character-card-schema.md` | 角色卡字段映射（CCv2/v3 → App）、`mes_example` 说话人解析规则、世界书映射、Prompt 组装顺序、密度护栏 |
+| `docs/project-analysis-2026-09-08.md` | 全项目架构分析与技术债清单 |
+
+## 八、开发约束
 
 - 后端 API **端口与 JSON 格式与 App 现有调用保持一致**，App 解析逻辑零改动
 - 先能运行再逐步完善

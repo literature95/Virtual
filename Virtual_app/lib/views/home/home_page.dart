@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../providers/character_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/online_character_service.dart';
 import '../../theme/tavo_brand.dart';
@@ -260,12 +261,54 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 打开角色：从后端在线卡导入本地并进入创建流程。
-  /// 目前最小版本：先跳到本地角色列表（后续接入"一键导入"）。
-  void _openCharacter(BuildContext context, OnlineCharacter c) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('「${c.name}」在线角色卡（导入功能开发中）')),
-    );
+  /// 打开角色：拉取后端完整角色卡 → 一键导入本地 → 进入对话。
+  ///
+  /// 走详情接口而非列表数据：列表接口省略了 exampleMessages / personality
+  /// 等核心人设，直接拿列表项建卡会得到一个「只有名字和头像」的空壳角色。
+  Future<void> _openCharacter(BuildContext context, OnlineCharacter c) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final backend = context.read<SettingsProvider>().backendBaseUrl;
+
+    try {
+      final full = await _service.fetchCharacter(backend, c.id);
+      if (!mounted) return;
+
+      final created = await context.read<CharacterProvider>().createCharacter(
+            name: full.name,
+            nickname: full.nickname,
+            description: full.description,
+            personality: full.personality,
+            scenario: full.scenario,
+            firstMessage: full.firstMessage,
+            avatarPath: full.avatarUrl,
+            creatorNotes: full.creatorNotes,
+            systemPrompt: full.systemPrompt,
+            postHistoryInstructions: full.postHistoryInstructions,
+            creator: full.creator,
+            characterVersion: full.characterVersion,
+            source: full.source,
+            tags: full.tags,
+            alternateGreetings: full.alternateGreetings,
+            exampleMessages: full.exampleMessages,
+            groupOnlyGreetings: full.groupOnlyGreetings,
+            creatorNotesMultilingual: full.creatorNotesMultilingual,
+          );
+
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            '已导入「${created.name}」：示例 ${created.exampleMessages.length} 组'
+            ' / 备用开场 ${created.alternateGreetings.length} 条',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('导入「${c.name}」失败：$e')),
+      );
+    }
   }
 
   @override

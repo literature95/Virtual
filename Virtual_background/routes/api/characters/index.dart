@@ -1,12 +1,14 @@
-import 'dart:convert';
-
 import 'package:dart_frog/dart_frog.dart';
 
 import 'package:virtual_background/avatar_url.dart';
+import 'package:virtual_background/character_card_mapper.dart';
 import 'package:virtual_background/database/db.dart';
 import 'package:virtual_background/database/seed.dart';
 
-/// GET /api/characters — 角色卡列表（精简字段，供 Web 卡片展示）
+/// GET /api/characters — 角色卡列表
+///
+/// 列表只下发卡片墙需要的精简字段（不含 example_messages / description 全文），
+/// 需要完整角色卡请请求 `/api/characters/[id]`。
 Future<Response> onRequest(RequestContext context) async {
   if (context.request.method != HttpMethod.get) {
     return Response(statusCode: 405, body: 'Method Not Allowed');
@@ -21,23 +23,22 @@ Future<Response> onRequest(RequestContext context) async {
     try {
       final conn = await db.connection;
       final rows = await conn!.execute(
-        'SELECT id, name, description, avatar_url, tags FROM characters ORDER BY created_at',
+        'SELECT id, name, description, avatar_url, tags, greeting, persona, '
+        'creator, character_version FROM characters ORDER BY created_at',
       );
       chars = rows.map((row) {
-        final rawTags = row[4];
-        var tags = <String>[];
-        if (rawTags is String && rawTags.isNotEmpty) {
-          final decoded = jsonDecode(rawTags);
-          if (decoded is List) tags = decoded.map((e) => e.toString()).toList();
-        } else if (rawTags is List) {
-          tags = rawTags.map((e) => e.toString()).toList();
-        }
+        final r = row.toColumnMap();
         return {
-          'id': row[0]! as String,
-          'name': row[1]! as String,
-          'description': row[2] as String?,
-          'avatar_url': row[3] as String?,
-          'tags': tags,
+          'id': r['id'],
+          'name': r['name'],
+          'description': r['description'],
+          'avatar_url': r['avatar_url'],
+          'tags': CharacterCardMapper.decodeJson<List<String>>(
+              r['tags'], const []),
+          'greeting': r['greeting'],
+          'persona': r['persona'],
+          'creator': r['creator'],
+          'character_version': r['character_version'],
         };
       }).toList();
     } catch (e) {
@@ -47,15 +48,13 @@ Future<Response> onRequest(RequestContext context) async {
     chars = SeedData.characters;
   }
 
-  final summary = chars.map((c) => {
-    'id': c['id'],
-    'name': c['name'],
-    'description': c['description'],
-    'avatarUrl': resolveAvatarUrl(
-      (c['avatar_url'] ?? c['avatarUrl'])?.toString(),
-      context.request.uri,
-    ),
-    'tags': c['tags'],
+  final uri = context.request.uri;
+  final summary = chars.map((c) {
+    final raw = (c['avatar_url'] ?? c['avatarUrl'])?.toString();
+    return CharacterCardMapper.toSummaryJson(
+      c,
+      avatarUrl: raw == null || raw.isEmpty ? null : resolveAvatarUrl(raw, uri),
+    );
   }).toList();
 
   return Response.json(body: summary);

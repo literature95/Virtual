@@ -52,44 +52,42 @@ class LorebookService {
     return results;
   }
 
+  /// 条目是否命中扫描文本
+  ///
+  /// 遵循 Character Card v3 `character_book` 语义：
+  /// - 常驻条目（[LorebookEntry.constant]）无条件命中
+  /// - 主关键词（`keys`）任一命中即视为候选
+  /// - `selective == true`：次要关键词（`secondary_keys`）必须**全部**命中（AND）
+  /// - `selective == false`：次要关键词作为补充触发器，任一命中即可（OR）
   bool _entryMatches(LorebookEntry entry, String text) {
-    final sourceText = entry.caseSensitive ? text : text.toLowerCase();
-    final key = entry.caseSensitive ? entry.key : entry.key.toLowerCase();
+    final source = entry.caseSensitive ? text : text.toLowerCase();
+    if (entry.constant) return true;
 
-    switch (entry.matchStrategy) {
-      case LorebookEntryMatchStrategy.exact:
-        if (sourceText.contains(key)) {
-          if (entry.secondaryKeys.isEmpty) return true;
-          return entry.secondaryKeys.every((sk) {
-            final skLower = entry.caseSensitive ? sk : sk.toLowerCase();
-            return sourceText.contains(skLower);
-          });
-        }
-        return false;
-
-      case LorebookEntryMatchStrategy.partial:
-        if (sourceText.contains(key)) {
-          if (entry.secondaryKeys.isEmpty) return true;
-          return entry.secondaryKeys.every((sk) {
-            final skLower = entry.caseSensitive ? sk : sk.toLowerCase();
-            return sourceText.contains(skLower);
-          });
-        }
-        return false;
-
-      case LorebookEntryMatchStrategy.regex:
-        try {
-          final regex = RegExp(key, caseSensitive: entry.caseSensitive);
-          if (!regex.hasMatch(sourceText)) return false;
-          if (entry.secondaryKeys.isEmpty) return true;
-          return entry.secondaryKeys.every((sk) {
-            final skRegex = RegExp(sk, caseSensitive: entry.caseSensitive);
-            return skRegex.hasMatch(sourceText);
-          });
-        } catch (_) {
-          return false;
-        }
+    bool hit(String raw) {
+      final k = entry.caseSensitive ? raw : raw.toLowerCase();
+      if (k.isEmpty) return false;
+      switch (entry.matchStrategy) {
+        case LorebookEntryMatchStrategy.exact:
+          return source.contains(k);
+        case LorebookEntryMatchStrategy.partial:
+          return source.contains(k);
+        case LorebookEntryMatchStrategy.regex:
+          try {
+            return RegExp(k, caseSensitive: entry.caseSensitive)
+                .hasMatch(source);
+          } catch (_) {
+            return false;
+          }
+      }
     }
+
+    final primaryHit = entry.matchKeys.any(hit);
+    if (!primaryHit) return false;
+    if (entry.secondaryKeys.isEmpty) return true;
+
+    return entry.selective
+        ? entry.secondaryKeys.every(hit)
+        : entry.secondaryKeys.any(hit);
   }
 
   String injectEntries({

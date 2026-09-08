@@ -10,3 +10,6 @@ linter:
     omit_local_variable_types: false
     avoid_redundant_argument_values: false
     always_use_package_imports: false
+    # 角色卡文案（description / example_messages 等）必须精确换行书写：
+    # 多一个前导空行就等于往 prompt 里注入一行空白，故禁用该规则。
+    leading_newlines_in_multiline_strings: false
