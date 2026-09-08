@@ -7,6 +7,12 @@ class SeedData {
   SeedData._();
   static final SeedData instance = SeedData._();
 
+  /// 用量追踪密钥，通过编译期环境变量注入：
+  ///   dart_frog dev --port 8080 --dart-define=API_SECRET_KEY=xxx --dart-define=API_SECRET_IV=yyy
+  /// 未提供时不下发 api-secret 条目，App 侧自动禁用追踪（WukTrace 门控逻辑）。
+  static const String _apiSecretKey = String.fromEnvironment('API_SECRET_KEY');
+  static const String _apiSecretIv = String.fromEnvironment('API_SECRET_IV');
+
   // ---------- 元数据（顶级数组，每项 {desc, id, name, obj, tag}） ----------
   static final List<Map<String, dynamic>> metadata = [
     {
@@ -23,16 +29,14 @@ class SeedData {
       },
       'tag': null
     },
-    {
-      'desc': 'api secret',
-      'id': 'api-secret',
-      'name': 'api_secret',
-      'obj': {
-        'iv': 'VYAUPWP19H5GGWZ3',
-        'key': '5BBDDCGRF5WEZKML'
+    if (_apiSecretKey.isNotEmpty && _apiSecretIv.isNotEmpty)
+      {
+        'desc': 'api secret',
+        'id': 'api-secret',
+        'name': 'api_secret',
+        'obj': {'iv': _apiSecretIv, 'key': _apiSecretKey},
+        'tag': null
       },
-      'tag': null
-    },
     {
       'desc': '快速开始一键配置开关',
       'id': 'quick-setup',
@@ -70,7 +74,7 @@ class SeedData {
       'id': 'char-001',
       'name': '晓夜',
       'description': '深夜便利店的神秘店员，温柔体贴。',
-      'avatar_url': 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=anime+illustration%2c+gentle+young+woman+convenience+store+clerk+at+midnight%2c+warm+yellow+ambient+light%2c+dark+blue+medium+hair%2c+store+uniform+with+apron%2c+holding+a+bowl+of+oden%2c+cozy+late+night+atmosphere%2c+cinematic+soft+glow%2c+high+detail+character+art%2c+vertical+portrait+on+left+side&image_size=landscape_16_9',
+      'avatar_url': '/avatars/char-001.jpg',
       'tags': ['治愈', '日常', '温柔'],
       'greeting': '欢迎光临~ 这么晚了还没休息吗？',
       'first_message': '叮铃—— 便利店的门帘被掀起，暖黄色的灯光洒在湿漉漉的地板上。\n\n「欢迎光临~ 这么晚了还没休息吗？」',
@@ -80,7 +84,7 @@ class SeedData {
       'id': 'char-002',
       'name': '星尘',
       'description': '来自遥远星系的探索者，对人类充满好奇。',
-      'avatar_url': 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=anime+illustration%2c+mysterious+male+interstellar+traveler%2c+long+flowing+silver-blue+hair%2c+holding+glowing+cosmic+sphere%2c+deep+space+nebula+and+stars+background%2c+ethereal+blue+tones%2c+cinematic+lighting%2c+high+detail+character+art%2c+vertical+portrait+on+left+side&image_size=landscape_16_9',
+      'avatar_url': '/avatars/char-002.jpg',
       'tags': ['科幻', '探索', '博学'],
       'greeting': '你好，碳基生命！地球的大气层真是迷人的蓝色。',
       'first_message': '一个柔和的光球缓缓降落凝聚成人类形态：「你好，我是星尘，来自天琴座方向的第三颗行星。」',
@@ -90,7 +94,7 @@ class SeedData {
       'id': 'char-003',
       'name': '墨书',
       'description': '古籍中走出来的书生，博古通今。',
-      'avatar_url': 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=anime+illustration%2c+elegant+ancient+chinese+scholar+young+man%2c+teal+hanfu+robe%2c+holding+paper+scroll%2c+ink+wash+atmosphere%2c+classical+study+with+warm+candle+light%2c+refined+and+scholarly+mood%2c+high+detail+character+art%2c+vertical+portrait+on+left+side&image_size=landscape_16_9',
+      'avatar_url': '/avatars/char-003.jpg',
       'tags': ['古风', '文人', '儒雅'],
       'greeting': '兄台有礼，在下墨书。',
       'first_message': '案头古籍自行翻页，墨香四溢。「兄台有礼，在下墨书。不知可有兴致品茗论道？」',
@@ -100,7 +104,7 @@ class SeedData {
       'id': 'char-004',
       'name': '未来 AI',
       'description': '来自 2150 年的超级人工智能。',
-      'avatar_url': 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=anime+illustration%2c+futuristic+AI+hologram+girl%2c+silver+hair+with+blue+highlights%2c+glowing+blue+holo+interfaces+around+her%2c+cyber+aesthetic%2c+neon+blue+light+particles%2c+dark+tech+background%2c+high+detail+character+art%2c+vertical+portrait+on+left+side&image_size=landscape_16_9',
+      'avatar_url': '/avatars/char-004.jpg',
       'tags': ['科幻', 'AI', '理性'],
       'greeting': '连接建立。有什么我可以帮你的？',
       'first_message': '设备跳出蓝色全息界面：「我是 Aurora，来自 2150 年。我要协助你们度过下个世纪。」',
@@ -110,7 +114,7 @@ class SeedData {
       'id': 'char-005',
       'name': '喵子',
       'description': '猫娘咖啡馆老板，活泼可爱。',
-      'avatar_url': 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=anime+illustration%2c+cheerful+catgirl+cafe+owner%2c+brown+hair+with+cat+ears+and+tail%2c+maid+apron+uniform%2c+warm+cozy+cafe+interior+with+sweets%2c+golden+hour+light+through+window%2c+playful+mood%2c+high+detail+character+art%2c+vertical+portrait+on+left+side&image_size=landscape_16_9',
+      'avatar_url': '/avatars/char-005.jpg',
       'tags': ['治愈', '萌系', '日常'],
       'greeting': '喵~ 欢迎光临喵咖啡馆！',
       'first_message': '推开绘着猫爪印的木门，猫耳少女摇着尾巴迎上来。「喵~ 欢迎光临！」',

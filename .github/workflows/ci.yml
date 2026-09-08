@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  app:
+    name: Virtual_app (Flutter analyze + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Virtual_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  backend:
+    name: Virtual_background (dart analyze + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Virtual_background
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: '3.13.1'
+      - run: dart pub get
+      - run: dart analyze
+      - run: dart test
+
+  web:
+    name: Virtual_web (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Virtual_web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: Virtual_web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

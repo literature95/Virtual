@@ -2,10 +2,12 @@
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
+.flutter_tool_state
 .pub-cache/
 .pub/
 build/
 *.g.dart.tmp
+local.properties
 
 # ── Node / Vite ──
 node_modules/

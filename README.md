@@ -43,6 +43,15 @@ dart_frog dev --port 8080
 # ✅ http://localhost:8080
 ```
 
+用量追踪密钥（可选，默认不下发）：通过编译期变量注入，未提供时 `/api/metadata` 不含 `api-secret` 条目，App 自动禁用追踪：
+
+```bash
+# dev 模式
+dart_frog dev --port 8080 --dart-define=API_SECRET_KEY=xxx --dart-define=API_SECRET_IV=yyy
+# 或直接运行构建产物（JIT 模式下 -D 生效）
+dart -DAPI_SECRET_KEY=xxx -DAPI_SECRET_IV=yyy build/bin/server.dart
+```
+
 ### 2. 启动 Web 官网
 
 ```bash
@@ -73,14 +82,15 @@ App 首次启动后，进入 **设置 → 后端地址**，默认 `http://localh
 | `GET /api/characters` | 角色卡列表 | 精简字段数组 |
 | `GET /api/characters/:id` | 角色卡详情 | 完整角色卡 |
 | `GET /api/app-info` | 应用介绍/下载 | `{name,version,description,features,downloadUrl}` |
+| `GET /avatars/:file` | 角色立绘静态文件 | 图片二进制（jpg/png/webp，1 天缓存） |
 
 ## 技术栈
 
 | 端 | 版本 |
 |---|---|
 | Flutter | 3.47.1 / Dart 3.13.1 |
-| Dart Frog | 1.2.14（shelf） |
-| React | 18 + Vite 8 |
+| Dart Frog | 1.2.6（shelf 1.4.2） |
+| React | 19 + Vite 8 |
 | PostgreSQL | 3.x（可选，未安装自动降级） |
 | Provider | 状态管理 |
 | GoRouter | Flutter 路由 |
@@ -104,7 +114,7 @@ App 首次启动后，进入 **设置 → 后端地址**，默认 `http://localh
 | 字体 | display 用楷体（Kaiti）/ 正文系统无衬线 / 标签 mono |
 | Hero | 左文右机不对称布局 + 漂浮玻璃胶囊（多模型/角色卡/本地优先/流式）+ CSS 手机 mockup（模拟沉浸式聊天：场景标签 + 玻璃气泡） |
 | 动效 | 页面加载 staggered reveal、星空 twinkle、胶囊漂浮、气泡弹出、hover 渐变描边 |
-| 角色卡 | 沉浸式图片卡 474×300（1.58:1）：左侧 AI 生成的角色立绘，向右虚化渐隐，文字（楷体名/描述/标签）叠加图上，右上 VIEW 胶囊；照片 URL 由后端种子数据下发 |
+| 角色卡 | 沉浸式图片卡 474×300（1.58:1）：左侧 AI 生成的角色立绘，向右虚化渐隐，文字（楷体名/描述/标签）叠加图上，右上 VIEW 胶囊；立绘为后端本地静态文件（`public/avatars/`），响应时按请求来源自动补全为绝对 URL，App/Web 零改动 |
 | 详情弹窗 | 深色玻璃 sheet + `// INTRO` 风格 mono 小节标题 + 渐变引用块 |
 
 ## Virtual_app 导航结构（2026-09-05 重构）
@@ -174,6 +184,7 @@ App 首次启动后，进入 **设置 → 后端地址**，默认 `http://localh
 | 问题 | 解决 |
 |---|---|
 | 后端启动报错 `StdinException` | Windows 终端不影响 HTTP 服务，看 "Running on http://localhost:8080" 即可 |
+| 非交互 shell 下 `dart_frog dev` 报 mason `BricksJson.rootDir` 空指针 | 沙箱/CI 环境缺 `APPDATA` 变量，设置 `MASON_CACHE=<任意目录>` 即可；仍异常时改用 `dart_frog build` + `dart build/bin/server.dart` |
 | 后端连接 PostgreSQL 失败 | 正常降级到内存数据，控制台会显示 "degraded to memory" |
 | App 元数据加载失败 | 自动回退 `assets/metadata_default.json`，无网也能跑 |
 | Web `npm run dev` 启动但 API 404 | 确认后端 8080 端口已启动 |

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:dart_frog/dart_frog.dart';
 
+import 'package:virtual_background/avatar_url.dart';
 import 'package:virtual_background/database/db.dart';
 import 'package:virtual_background/database/seed.dart';
 
@@ -58,5 +59,12 @@ Future<Response> onRequest(RequestContext context, String id) async {
     return Response(statusCode: 404, body: 'Character not found');
   }
 
-  return Response.json(body: result);
+  // 复制后再改写立绘 URL（避免污染共享种子数据），相对路径按请求来源补全为绝对 URL
+  final body = Map<String, dynamic>.from(result);
+  final avatar = (body['avatarUrl'] ?? body['avatar_url'])?.toString();
+  if (avatar != null && avatar.isNotEmpty) {
+    body['avatarUrl'] = resolveAvatarUrl(avatar, context.request.uri);
+  }
+
+  return Response.json(body: body);
 }

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:dart_frog/dart_frog.dart';
 
+import 'package:virtual_background/avatar_url.dart';
 import 'package:virtual_background/database/db.dart';
 import 'package:virtual_background/database/seed.dart';
 
@@ -50,7 +51,10 @@ Future<Response> onRequest(RequestContext context) async {
     'id': c['id'],
     'name': c['name'],
     'description': c['description'],
-    'avatarUrl': c['avatar_url'] ?? c['avatarUrl'],
+    'avatarUrl': resolveAvatarUrl(
+      (c['avatar_url'] ?? c['avatarUrl'])?.toString(),
+      context.request.uri,
+    ),
     'tags': c['tags'],
   }).toList();
 
