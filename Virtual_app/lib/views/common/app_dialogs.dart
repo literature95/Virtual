@@ -301,7 +301,7 @@ class _UpdateDialog extends StatelessWidget {
                         '- 优化非高级渲染下的长聊天性能\n'
                         '- 新增 聊天设置 - 性能 - 流式渲染质量\n'
                         '- 调整 generation:prepare 全管线限时为 55s\n'
-                        '- 修复 tavo.chat.update 偶尔失效的问题\n'
+                        '- 修复会话同步偶发失败的问题\n'
                         '- 修复 MCP Schema 缺失',
                         style: TextStyle(
                             fontSize: 13,

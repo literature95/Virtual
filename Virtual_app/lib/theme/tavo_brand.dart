@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'design_tokens.dart';
 
-/// Tavo 品牌视觉体系
+/// Virtual 品牌视觉体系
 ///
 /// 官方品牌色：紫 (#7F77DD) → 橙 (#D85A30) 渐变。
 /// 提供渐变、Logo、渐变按钮 / 文字 / 空状态插图等可复用组件。

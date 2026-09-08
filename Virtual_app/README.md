@@ -196,7 +196,7 @@ flutter test
 
 项目在 [pubspec.yaml](pubspec.yaml) 中定义了应用名为 `virtual`，并声明了 Flutter 3.19+ / Dart SDK 3.3+ 的最低要求。
 
-Android / Web 入口也已同步更新为 Virtual 相关名称，但底层包名、签名名和远程服务地址仍可能保留旧的 `tav` / `tavo` 标识，这些通常属于发布和包管理层面的兼容性配置。
+Android / Web 入口已更新为 Virtual 相关名称；包名、签名、远程地址等仍可能存在历史命名，这些通常属于发布/包管理层面的兼容性配置。
 
 ## 设计特点
 

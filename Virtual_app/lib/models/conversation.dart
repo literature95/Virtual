@@ -17,7 +17,7 @@ enum ConversationSidebarPreviewAspect {
 }
 
 /// 群聊回复模式
-/// 证据：MCP 文档 tavo.chat.update 字段 + pp.txt [pp+0x3980] dbResponseMode
+/// 证据：MCP 文档会话更新字段 + pp.txt [pp+0x3980] dbResponseMode
 enum GroupChatResponseMode {
   natural, // 自然轮流
   manual, // 手动选择

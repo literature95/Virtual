@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 /// 全局唯一的设计来源，统一颜色、间距、圆角、字号。
 /// 所有页面应引用此处常量，禁止硬编码 `Color(0x…)` / `Colors.xxx` / 魔法间距数字。
 ///
-/// 品牌色取自 Tavo 官网签名渐变，与 Virtual_web 端保持一致：
+/// Virtual 品牌签名色，与 Virtual_web 端保持一致：
 /// 紫 (#7E4DF1) → 珊瑚 (#E3756E) → 橙 (#E58029)。
 
 class AppColors {

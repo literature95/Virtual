@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { BrandMark } from '../App';
 
-/* 漂浮玻璃胶囊 —— 复刻 Tavo 主视觉的技能胶囊 */
+/* 漂浮玻璃胶囊 —— 顶部悬浮的玻璃质感技能标签 */
 const CAPSULES = [
   { icon: '◈', label: '多模型接入', cls: 'c1' },
   { icon: '☽', label: '深夜食堂', cls: 'c2' },

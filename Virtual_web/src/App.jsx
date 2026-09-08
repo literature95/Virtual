@@ -3,7 +3,7 @@ import Home from './pages/Home';
 import Characters from './pages/Characters';
 import './App.css';
 
-/** 品牌 mark：对话气泡 + 渐变 + V 字（呼应 Tavo mark 的形制） */
+/** 品牌 mark：对话气泡 + 渐变 + V 字 */
 export function BrandMark({ size = 30 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
