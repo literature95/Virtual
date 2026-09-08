@@ -1,19 +1,48 @@
 # Virtual
 
-Virtual 是一个基于 Flutter 的 AI 角色聊天客户端 + Dart Frog 本地后端 + React 官网，支持本地优先、角色扮演、跨模型接入。
+## 一、项目介绍
 
-## 项目结构
+Virtual 是一个**本地优先、跨模型、隐私向**的 AI 角色聊天全栈项目。用户可创建、导入并与 AI 角色进行沉浸式流式对话，同时自由接入任意大模型服务。
 
-```
-d:\Documents\Desktop\Virtual\
-├── Virtual_app/           # Flutter App（聊天本体，移动端）
-├── Virtual_background/    # Dart Frog 后端（本地 API，端口 8080）
-├── Virtual_web/           # React 官网（角色卡展示 + 应用介绍）
-└── docs/superpowers/specs/
-    └── 2026-09-05-virtual-fullstack-design.md  # 详细设计文档
-```
+核心特色：
 
-## 架构
+| 特色 | 说明 |
+|---|---|
+| **本地优先** | 数据默认保存在设备本地，不上云，隐私可控、离线可用 |
+| **跨模型接入** | 直连 20+ LLM 平台（OpenAI 兼容 / Anthropic / Gemini），支持 BYOK（自带密钥） |
+| **自托管后端** | 除模型调用外，所有外部服务走本地后端，后端地址可配置（本机 / 局域网 / 自建服务器） |
+| **角色卡系统** | 导入、创建、分享 AI 角色，内置 5 个种子角色与在线角色卡广场 |
+| **多模态对话** | 支持图片输入，转 OpenAI 视觉格式参与对话 |
+| **统一品牌视觉** | 深空色 + 三色签名渐变（紫→珊瑚→橙）+ 玻璃拟态，App / Web 双端一致 |
+
+项目定位为「自托管工具」：目标是成为隐私敏感用户与技术爱好者在移动端/桌面端可自持的 AI 角色聊天客户端，而非对标云端 SaaS 的巨型产品。
+
+## 二、技术栈
+
+| 端 | 技术 | 版本 | 职责 |
+|---|---|---|---|
+| **Virtual_app** | Flutter / Dart | Flutter 3.47.1 · Dart 3.13.1 | 聊天客户端，功能主体（占约 92% 代码量） |
+| **Virtual_background** | Dart Frog（shelf） | dart_frog 1.2.6 · shelf 1.4.2 | 本地 API 服务，端口 `:8080` |
+| **Virtual_web** | React + Vite | React 19 · Vite 8 | 官网 + 角色卡浏览，端口 `:5173` |
+
+关键依赖：
+
+| 类别 | 依赖 |
+|---|---|
+| 状态管理 | Provider（5 个 ChangeNotifier） |
+| 路由 | GoRouter（30+ 路由，ShellRoute 包裹 5 Tab） |
+| 网络 | Dio、http（App 直连 LLM 厂商）；Dart Frog/shelf（后端） |
+| 本地存储 | SharedPreferences（整表 JSON 持久化，已引 `sqflite` 待启用） |
+| 数据库（可选） | PostgreSQL（`postgres` 驱动，未安装自动降级到内存种子） |
+| UI 组件 | flutter_markdown、cached_network_image、image_picker、lottie 等 |
+| 设计系统 | `design_tokens.dart` 单一来源（颜色/间距/圆角/字号） |
+| 测试 | flutter_test（App）、test + mocktail（后端）、oxlint（Web） |
+
+架构原则：
+
+1. **除模型调用外**，App 所有外部服务走 `Virtual_background` 本地后端
+2. **模型调用**保持 App 直连厂商 API（OpenAI 兼容 / Anthropic / Gemini 三适配器，均 SSE 流式）
+3. **PostgreSQL 可选**：未安装时后端自动降级到内存种子数据
 
 ```
 ┌─────────────────┐         ┌────────────────────┐        ┌────────────┐
@@ -21,18 +50,136 @@ d:\Documents\Desktop\Virtual\
 │ React 官网       │  5173   │ Virtual_background │        │ (可选)     │
 └─────────────────┘         │   Dart Frog :8080  │        └────────────┘
 ┌─────────────────┐         │                    │
-│ Virtual_app      │────────▶│  /api/metadata     │        ┌────────────┐
-│ Flutter 移动端   │ 设置页配 │  /api/characters   │───────▶│ LLM 厂商   │
-│                  │后端地址   │  /api/app-info     │        │ (直连)     │
+│ Virtual_app      │────────▶│  /api/*            │        ┌────────────┐
+│ Flutter 移动端   │ 设置页配 │  /avatars/*        │───────▶│ LLM 厂商   │
+│                  │后端地址   │                    │        │ (直连)     │
 └─────────────────┘         └────────────────────┘        └────────────┘
 ```
 
-核心原则：
-- **除模型调用外**，App 所有外部服务都走 Virtual_background 本地后端
-- **模型调用**保持 App 直连厂商 API（OpenAI/Anthropic/Gemini 等）
-- **PostgreSQL 可选**：未安装时后端自动降级到内存种子数据
+## 三、文件结构
 
-## 快速启动
+```
+d:\Documents\Desktop\Virtual\
+├── Virtual_app/                 # Flutter 客户端（功能主体）
+│   ├── lib/
+│   │   ├── main.dart            # 入口，MultiProvider 装配
+│   │   ├── providers/           # 5 个 ChangeNotifier：settings/metadata/endpoint/character/chat
+│   │   ├── services/            # 业务服务层
+│   │   │   ├── adapters/        #   LLM 适配器：openai/anthropic/gemini/llm_adapter
+│   │   │   ├── api_service.dart #   模型调用分发（按 platform 路由到适配器）
+│   │   │   ├── asr/tts/image_generation/web_search_service.dart  # 已直连实现，未收敛后端
+│   │   │   ├── online_character_service.dart   # 在线角色卡（后端 /api/characters）
+│   │   │   ├── prompt_service.dart             # 多模态消息组装
+│   │   │   └── ...（preset/lorebook/regex/plugin/backup/import/export 等 20 个）
+│   │   ├── models/              # 12 个数据模型：character/chat_message/conversation/endpoint/
+│   │   │                        #   lorebook/persona/preset/regex_rule/plugin/chat_theme/
+│   │   │                        #   app_metadata/agent_run
+│   │   ├── views/               # 按域分目录（character/chat/home/discover/profile/settings/
+│   │   │                        #   endpoint/lorebook/preset/regex/plugin/theme/more/
+│   │   │                        #   onboarding/debug/common）
+│   │   ├── route/               # GoRouter，30+ 路由，ShellRoute 包裹 5 Tab
+│   │   ├── theme/               # design_tokens（唯一来源）+ app_theme（浅/深双主题）+ tavo_brand
+│   │   ├── data/                # app_database.dart（SharedPreferences 持久化）
+│   │   └── utils/               # image_data 等工具类
+│   └── test/                    # 2 个测试（settings_provider / widget）
+│
+├── Virtual_background/          # Dart Frog 后端（端口 8080）
+│   ├── routes/
+│   │   ├── _middleware.dart     # 全局 CORS 中间件
+│   │   ├── api/                 # health / metadata / characters(index,[id]) / app-info
+│   │   └── avatars/[file].dart  # 角色立绘静态文件（白名单 + 路径穿越防护）
+│   ├── lib/
+│   │   ├── config.dart          # 环境配置（DB 连接等）
+│   │   ├── avatar_url.dart      # 立绘 URL 解析器（相对路径 → 按请求来源补全）
+│   │   └── database/            # db.dart（连接 + 降级）+ seed.dart（5 个种子角色）
+│   ├── public/avatars/          # 5 张本地立绘（char-001~005.jpg）
+│   └── test/                    # 11 个测试（seed 契约 + avatar URL 解析器）
+│
+├── Virtual_web/                 # React 官网（端口 5173）
+│   └── src/
+│       ├── api/client.js        # API 封装
+│       ├── pages/               # Home.jsx（首页）+ Characters.jsx（角色卡浏览）
+│       ├── App.jsx / App.css    # 入口 + 深空设计系统
+│       └── assets/              # 静态资源
+│
+├── docs/                        # 项目分析与战略评估文档
+├── .github/workflows/ci.yml     # CI：App analyze+test / 后端 analyze+test / Web lint+build
+└── README.md
+```
+
+## 四、各端功能与计划
+
+### 4.1 Virtual_app（Flutter 客户端）
+
+**已实现：**
+
+| 功能域 | 说明 |
+|---|---|
+| 导航 | 5 Tab 主导航（首页/发现/对话/角色/我的），窄屏 NavigationBar / 宽屏 NavigationRail；GoRouter 30+ 路由 |
+| 首页 | 在线角色卡广场：后端 `/api/characters` 拉取 + 分类过滤 chips + 搜索；沉浸式角色卡（1.58:1 照片卡） |
+| 对话 | 会话列表（搜索/置顶/长按菜单：重命名/置顶/删除）；聊天页流式输出、导出 Markdown、清空消息、模型信息 |
+| 角色 | 本地角色管理（搜索 + 复制角色）；角色导入/导出 |
+| 模型接入 | OpenAI 兼容（20+ 平台）/ Anthropic / Gemini 三适配器，均 SSE 流式，已解析思维链字段 |
+| 多模态 | 图片输入（≤4 张，预览条可删除），转 OpenAI 视觉格式（data URL） |
+| 发现 | 扩展内容聚合：世界书/预设/正则/插件/主题/调试 |
+| 我的 | 头像/昵称/ID + 我的角色卡计数 + API 接入/主题外观/插件/更多 |
+| 设置 | 后端地址配置、语言切换（跟随系统/简中/English/日本語）、数据迁移（JSON 导出导入） |
+| 设计系统 | `design_tokens.dart` 单一来源 + 浅/深双主题 + 星空背景/玻璃拟态，与 Web 端统一 |
+
+**待实现：**
+
+- [ ] 消息存储由 SharedPreferences 整表 JSON 迁移到 SQLite（`sqflite` 已引入未启用，解决长会话性能悬崖）
+- [ ] 国际化补全 `.arb` 文件（当前仅框架级，业务文案硬编码中文）
+- [ ] 决定 TTS/ASR/图片生成/联网搜索是否收敛到后端（App 侧已直连实现，视统一计费需求而定）
+
+### 4.2 Virtual_background（Dart Frog 后端）
+
+**已实现：**
+
+| 端点 | 用途 |
+|---|---|
+| `GET /api/health` | 健康检查 |
+| `GET /api/metadata` | App 元数据（顶级数组，`api-secret` 仅在编译期注入时下发） |
+| `GET /api/characters` | 角色卡列表（精简字段） |
+| `GET /api/characters/:id` | 角色卡详情 |
+| `GET /api/app-info` | 应用介绍/下载信息 |
+| `GET /avatars/:file` | 角色立绘静态文件（jpg/png/webp 白名单，1 天缓存） |
+
+其他能力：全局 CORS 中间件；PostgreSQL 可选 + 失败降级内存种子（5 个角色）；立绘本地化（种子存相对路径，响应时按请求来源补全绝对 URL，App/Web 零改动）；api-secret 编译期外置（`String.fromEnvironment`）；11 个单元测试。
+
+**待实现：**
+
+- [ ] 写接口：`POST/PUT/DELETE /api/characters`（用户自管角色卡投稿/同步）
+- [ ] 基础鉴权：`X-Install-Token` 自签 token 校验
+- [ ] Docker Compose 部署模板（PostgreSQL + 后端 + 数据卷）
+- [ ] 部署文档 `docs/deploy.md`（一键启动、升级、备份）
+- [ ] `metadata` 端点查询参数（`?ch=&lc=&pf=`）实际生效
+
+### 4.3 Virtual_web（React 官网）
+
+**已实现：**
+
+- 官网首页：Hero 区（左文右机不对称布局 + 漂浮玻璃胶囊 + CSS 手机 mockup）+ 角色卡预览 + 应用介绍
+- 角色卡浏览页：后端 `/api/characters` 拉取 + 沉浸式图片卡 + 详情弹窗
+- 深空设计系统：近黑深空 `#0e0e0e` + 星空闪烁 + 三色签名渐变 + 楷体 display 字体
+- `/api` 代理到后端 `:8080`
+
+**待实现：**
+
+- [ ] 角色卡管理后台
+- [ ] 接口离线降级数据（后端不可用时角色区隐藏、下载按钮回退为 `#`）
+- [ ] 补充更多角色立绘（当前 5 个）
+- [ ] 清理未使用静态资源（`hero.png`、`react.svg`、`vite.svg`）
+
+### 4.4 后续计划（按优先级）
+
+| 优先级 | 阶段 | 内容 |
+|---|---|---|
+| 短期 | Tier 2 | 后端写接口 + 基础鉴权、Docker Compose、部署文档、metadata 查询参数生效 |
+| 中期 | 存储与质量 | SQLite 替换 SharedPreferences、国际化 `.arb` 补全、关键路径测试扩充 |
+| 长期 | 能力收敛 | TTS/ASR/图片生成/联网搜索代理到后端（若需统一用量统计）、Web 角色卡管理后台、CI/CD + Release 签名 |
+
+## 五、快速启动
 
 ### 1. 启动后端（先启动，App 和 Web 都依赖它）
 
@@ -73,113 +220,7 @@ App 首次启动后，进入 **设置 → 后端地址**，默认 `http://localh
 - 真机调试：`http://<电脑IP>:8080`（如 `http://192.168.1.145:8080`）
 - 自定义部署服务器地址
 
-## API 接口
-
-| 端点 | 用途 | 响应 |
-|---|---|---|
-| `GET /api/health` | 健康检查 | `{"status":"ok"}` |
-| `GET /api/metadata` | App 元数据 | 顶级 JSON 数组 `[{desc,id,name,obj,tag},...]` |
-| `GET /api/characters` | 角色卡列表 | 精简字段数组 |
-| `GET /api/characters/:id` | 角色卡详情 | 完整角色卡 |
-| `GET /api/app-info` | 应用介绍/下载 | `{name,version,description,features,downloadUrl}` |
-| `GET /avatars/:file` | 角色立绘静态文件 | 图片二进制（jpg/png/webp，1 天缓存） |
-
-## 技术栈
-
-| 端 | 版本 |
-|---|---|
-| Flutter | 3.47.1 / Dart 3.13.1 |
-| Dart Frog | 1.2.6（shelf 1.4.2） |
-| React | 19 + Vite 8 |
-| PostgreSQL | 3.x（可选，未安装自动降级） |
-| Provider | 状态管理 |
-| GoRouter | Flutter 路由 |
-| SharedPreferences | 本地存储 |
-| postgres | Dart PostgreSQL 驱动 |
-
-## 开发约束
-
-- 后端 API **端口与 JSON 格式与 App 现有调用保持一致**，App 解析逻辑零改动
-- 先能运行再逐步完善（用户规则）
-- 文档时时同步（用户规则）
-- 功能为主导，项目主体保持不变（用户规则）
-
-## Virtual_web 设计语言
-
-| 元素 | 实现 |
-|---|---|
-| 背景 | 近黑深空 `#0e0e0e` + 双层星点闪烁（CSS radial-gradient 星空）+ 品牌三色星云光斑 |
-| 品牌色 | 签名渐变：`#7E4DF1` 紫 → `#E3756E` 珊瑚红 → `#E58029` 橙 |
-| 标志 | 对话气泡 mark + 楷体渐变 "Virtual" 字 |
-| 字体 | display 用楷体（Kaiti）/ 正文系统无衬线 / 标签 mono |
-| Hero | 左文右机不对称布局 + 漂浮玻璃胶囊（多模型/角色卡/本地优先/流式）+ CSS 手机 mockup（模拟沉浸式聊天：场景标签 + 玻璃气泡） |
-| 动效 | 页面加载 staggered reveal、星空 twinkle、胶囊漂浮、气泡弹出、hover 渐变描边 |
-| 角色卡 | 沉浸式图片卡 474×300（1.58:1）：左侧 AI 生成的角色立绘，向右虚化渐隐，文字（楷体名/描述/标签）叠加图上，右上 VIEW 胶囊；立绘为后端本地静态文件（`public/avatars/`），响应时按请求来源自动补全为绝对 URL，App/Web 零改动 |
-| 详情弹窗 | 深色玻璃 sheet + `// INTRO` 风格 mono 小节标题 + 渐变引用块 |
-
-## Virtual_app 导航结构（2026-09-05 重构）
-
-5 Tab 主导航（窄屏底部 NavigationBar / 宽屏 NavigationRail）：
-
-| Tab | 路由 | 内容 | AppBar 右上角 |
-|---|---|---|---|
-| 首页 | `/home` | **在线角色卡广场**：后端 `/api/characters` 拉取 + 分类过滤 chips + 搜索 | 🔍 搜索 |
-| 发现 | `/discover` | 扩展内容聚合：世界书 / 预设 / 正则 / 插件 / 主题 / 调试 | 无 |
-| 对话 | `/chat` | 会话列表（原有） | 无 |
-| 角色 | `/characters` | 本地角色管理（原有） | ➕ 新建角色 |
-| 我的 | `/profile` | 头像/昵称/ID 区块 + 我的角色卡计数 + 我的 API / 主题外观 / 插件 + 更多 | 无 |
-
-- 左上角 ☰ 抽屉：复用「我的」导航（用户区块 + 一级 Tab + API接入/更多 + 扩展项），深空配色
-- "+" 图标仅在 `/characters`（新建角色）与 `/endpoints`（新增端点）显示，其余页面隐藏
-- 子页面（编辑/详情/设置等）AppBar 显示返回键；`/chat/:id` 聊天详情也返回键
-
-### App 深空设计语言（与 Web 端统一）
-
-| 元素 | 实现 |
-|---|---|
-| 主题 token | [tavo_brand.dart](Virtual_app/lib/theme/tavo_brand.dart) 新增 `violet/coral/amber/cosmosBg/cosmosElev/cosmosText*` + `signGradient`（紫→珊瑚→橙）+ `glassCapsule` |
-| 星空背景 | [cosmos_background.dart](Virtual_app/lib/views/common/cosmos_background.dart)：`CosmosBackground` 组件（双 seed 随机星点 CustomPainter + 三色星云 RadialGradient），包裹 HomeShell 内容区 |
-| 沉浸角色卡 | [character_photo_card.dart](Virtual_app/lib/views/common/character_photo_card.dart)：`CharacterPhotoCard`（1.58:1，照片左置 + ShaderMask 向右虚化 + 文字叠加），首页在线卡使用 |
-| 在线角色服务 | [online_character_service.dart](Virtual_app/lib/services/online_character_service.dart)：Dio GET `{backendBaseUrl}/api/characters`（backendBaseUrl 来自设置页，失败显示错误 + 重新加载） |
-| 品牌头像 | 对话气泡形渐变 "V"（AppBar 侧栏 / 抽屉 / 我的页统一复用） |
-
-## Virtual_app 功能进展（2026-09-07）
-
-| 功能 | 说明 |
-|---|---|
-| 会话列表 | 搜索过滤 + 置顶排序 + 长按菜单（重命名 / 置顶 / 删除） |
-| 角色列表 | 搜索过滤 + 复制角色（duplicateCharacter） |
-| 聊天页更多选项 | AppBar ⋯ 菜单：导出 Markdown（剪贴板 + 可存 .md 文件）/ 清空消息（二次确认）/ 模型信息（接入点·平台·模型） |
-| 图片输入（多模态） | 输入栏 ➕ 多选图片（≤4 张，待发预览条可删除）→ 气泡内渲染 → PromptService 转 OpenAI 视觉格式（data URL），工具类 [image_data.dart](Virtual_app/lib/utils/image_data.dart) |
-| 消息头像 | 角色头像文件路径支持（FileImage） |
-| 设置 - 语言 | 跟随系统 / 简体中文 / English / 日本語，SharedPreferences 持久化（`setLocale`） |
-| 设置 - 数据迁移 | 入口复用备份页：导出 JSON 备份 → 新设备导入，实现跨设备迁移 |
-
-### UI 设计系统（2026-09-07 主题统一）
-
-| 项 | 说明 |
-|---|---|
-| 设计令牌 | 新增 [design_tokens.dart](Virtual_app/lib/theme/design_tokens.dart)：颜色/间距(8px 网格)/圆角/字号单一来源 |
-| 双主题 | 重构 [app_theme.dart](Virtual_app/lib/theme/app_theme.dart)：浅色极简白 + 深色深空 `#0E0E0E`，主色统一品牌紫 |
-| 主色 | 默认品牌紫（浅 `#6C4DF6` / 深 `#A78BFA`），与 Web 端签名渐变一致 |
-| 组件主题 | 统一 AppBar / Card / 输入框 / NavigationBar / 按钮 / Chip / 弹窗等组件样式 |
-| 消色系冲突 | [tavo_brand.dart](Virtual_app/lib/theme/tavo_brand.dart) 引用 design_tokens 单一来源，消除多套紫色并存 |
-| 首页基准页 | [home_page.dart](Virtual_app/lib/views/home/home_page.dart) / [home_shell.dart](Virtual_app/lib/views/home/home_shell.dart) / [cosmos_background.dart](Virtual_app/lib/views/common/cosmos_background.dart) 固定深空色改为 `colorScheme` 跟随主题，浅色主题下星空背景降级为浅底 |
-| 发现页 | [discover_page.dart](Virtual_app/lib/views/discover/discover_page.dart) 入口卡底色/边框/文字改为 `colorScheme`（surfaceContainerLow + outlineVariant + onSurface），accent 保留品牌点缀色 |
-| 我的页 | [profile_page.dart](Virtual_app/lib/views/profile/profile_page.dart) 区块卡片/文字/分割线跟随主题，ID 胶囊由深色玻璃拟态改为主题色（surfaceContainerHigh） |
-| 更多页 | [more_page.dart](Virtual_app/lib/views/more/more_page.dart) 列表项文字/图标由固定深色（浅色主题下不可见）改为 `colorScheme` |
-| 抽屉 / 角色照片卡 | [home_shell.dart](Virtual_app/lib/views/home/home_shell.dart) 抽屉分区标签、[character_photo_card.dart](Virtual_app/lib/views/common/character_photo_card.dart) 边框与兜底渐变跟随主题 |
-
-验证：`dart analyze` 0 issues；`flutter test` 全部通过；`flutter build web` 成功。
-
-## 目录命名约定
-
-所有子项目统一 `Virtual_` 前缀：
-- `Virtual_app/` — Flutter App
-- `Virtual_background/` — Dart Frog 后端
-- `Virtual_web/` — React 官网
-
-## 故障排查
+## 六、故障排查
 
 | 问题 | 解决 |
 |---|---|
@@ -190,9 +231,10 @@ App 首次启动后，进入 **设置 → 后端地址**，默认 `http://localh
 | Web `npm run dev` 启动但 API 404 | 确认后端 8080 端口已启动 |
 | 真机 App 连不上后端 | 改设置页后端地址为 `http://<电脑局域网IP>:8080` |
 
-## 下一步
+## 七、开发约束
 
-- [ ] TTS/ASR/图片生成/联网搜索 代理到后端（下一阶段 B）
-- [ ] PostgreSQL 生产部署（Docker Compose）
-- [ ] Web 角色卡管理后台
-- [ ] CI/CD + Release 签名流程
+- 后端 API **端口与 JSON 格式与 App 现有调用保持一致**，App 解析逻辑零改动
+- 先能运行再逐步完善
+- **文档时时同步**（改代码要同步更新 README）
+- 功能为主导，项目主体保持不变
+- 目录命名统一 `Virtual_` 前缀
