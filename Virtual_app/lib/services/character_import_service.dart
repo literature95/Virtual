@@ -11,8 +11,18 @@ class CharacterImportService {
     _dio.options.receiveTimeout = const Duration(seconds: 30);
   }
 
-  /// Import from URL (Chub.ai, RisuAI, JannyAI, Pygmalion)
+  /// Import from URL (直链 JSON / RisuAI / JannyAI / Pygmalion)
+  ///
+  /// 注意：chub.ai 网页链接（`chub.ai/characters/...`）无法直接导入——其公开
+  /// 下载 API 已废弃（实测 `POST /api/characters/download` 返回 405/422），
+  /// 完整角色卡需登录获取。此处识别后给出可操作的引导，而非静默失败。
   Future<Character> importFromUrl(String url) async {
+    if (_isChubPage(url)) {
+      throw Exception(
+        'chub.ai 网页链接无法直接导入：请在该角色卡页面点击 Download '
+        '下载 PNG/JSON 文件，再使用「从文件导入」。',
+      );
+    }
     final response = await _dio.get(url);
     final data = response.data;
     
@@ -30,6 +40,12 @@ class CharacterImportService {
     }
     throw Exception('不支持的响应格式');
   }
+
+  /// 是否为 chub.ai 角色卡网页链接（而非角色卡 JSON 直链）。
+  bool _isChubPage(String url) => RegExp(
+        r'https?://(?:www\.)?chub\.ai/characters/',
+        caseSensitive: false,
+      ).hasMatch(url);
 
   /// Import from local PNG file (extracts embedded character card)
   Future<Character> importFromPng(String filePath) async {
@@ -89,42 +105,58 @@ class CharacterImportService {
 
   Character _parseCCv3(Map<String, dynamic> json) {
     final data = json['data'] as Map<String, dynamic>? ?? {};
+    return _parseFields(data);
+  }
+
+  Character _parseDirect(Map<String, dynamic> json) {
+    return _parseFields(json);
+  }
+
+  /// 从角色卡字段 map 构建 Character，覆盖 CCv3 / SillyTavern 完整字段。
+  ///
+  /// 字段名兼容 snake_case（CCv3）与 camelCase（SillyTavern 直接格式）。
+  /// 关键人设字段（示例对话、系统提示词、备用问候等）在此处完整映射，
+  /// 避免导入时静默丢失导致角色「漂移」（OOC）。
+  Character _parseFields(Map<String, dynamic> d) {
     return Character(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: data['name'] as String? ?? '',
-      description: data['description'] as String? ?? '',
-      personality: data['personality'] as String? ?? '',
-      scenario: data['scenario'] as String? ?? '',
-      firstMessage: data['first_mes'] as String? ?? '',
-      creatorNotes: data['creator_notes'] as String? ?? '',
-      creator: data['creator'] as String? ?? '',
-      characterVersion: data['character_version']?.toString() ?? '',
-      nickname: data['nickname'] as String? ?? '',
-      tags: (data['tags'] as List?)?.cast<String>() ?? [],
-      avatarPath: data['avatar'] as String? ?? '',
-      extensions: (data['extensions'] as Map<String, dynamic>?) ?? {},
+      name: (d['name'] ?? '') as String,
+      nickname: d['nickname'] as String?,
+      description: d['description'] as String?,
+      personality: d['personality'] as String?,
+      scenario: d['scenario'] as String?,
+      firstMessage:
+          (d['first_mes'] ?? d['firstMessage'] ?? '') as String?,
+      avatarPath: d['avatar'] as String?,
+      creatorNotes: d['creator_notes'] as String?,
+      systemPrompt: d['system_prompt'] as String?,
+      postHistoryInstructions: d['post_history_instructions'] as String?,
+      tags: _asStringList(d['tags']),
+      alternateGreetings: _asStringList(d['alternate_greetings']),
+      exampleMessages: Character.parseMesExample(d['mes_example']),
+      groupOnlyGreetings: _asStringList(d['group_only_greetings']),
+      creator: d['creator'] as String?,
+      characterVersion: d['character_version']?.toString(),
+      source: d['source'] as String?,
+      extensions: (d['extensions'] as Map<String, dynamic>?) ?? const {},
+      creatorNotesMultilingual: _asStringMap(d['creator_notes_multilingual']),
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
     );
   }
 
-  Character _parseDirect(Map<String, dynamic> json) {
-    return Character(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: json['name'] as String? ?? '',
-      description: json['description'] as String? ?? '',
-      personality: json['personality'] as String? ?? '',
-      scenario: json['scenario'] as String? ?? '',
-      firstMessage: json['first_mes'] as String? ?? '',
-      creatorNotes: json['creator_notes'] as String? ?? '',
-      creator: json['creator'] as String? ?? '',
-      characterVersion: json['character_version']?.toString() ?? '',
-      nickname: json['nickname'] as String? ?? '',
-      tags: (json['tags'] as List?)?.cast<String>() ?? [],
-      avatarPath: json['avatar'] as String? ?? '',
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    );
+  List<String> _asStringList(dynamic raw) {
+    if (raw is List) {
+      return raw.map((e) => e.toString()).toList();
+    }
+    return const [];
+  }
+
+  Map<String, String> _asStringMap(dynamic raw) {
+    if (raw is Map) {
+      return raw.map((k, v) => MapEntry(k.toString(), v.toString()));
+    }
+    return const {};
   }
 
   /// Import from local JSON file

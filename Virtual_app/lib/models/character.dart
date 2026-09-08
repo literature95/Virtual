@@ -225,7 +225,7 @@ class Character {
                 ?.map((e) => CharacterExampleMessage.fromJson(e))
                 .toList() ??
             // 兼容 mesExample 字段（CCv3 格式）
-            _parseMesExample(json['mesExample']),
+            parseMesExample(json['mesExample']),
         groupOnlyGreetings:
             List<String>.from(json['groupOnlyGreetings'] ?? []),
         creator: json['creator'],
@@ -248,7 +248,10 @@ class Character {
       );
 
   /// 解析 mesExample 格式（CCv3 风格，<START> 分隔）
-  static List<CharacterExampleMessage> _parseMesExample(dynamic raw) {
+  ///
+  /// 支持两种输入：字符串（`<START>` 分隔的 `{{char}}`/`{{user}}` 对话）与
+  /// List（`CharacterExampleMessage` JSON）。导入服务也复用此解析。
+  static List<CharacterExampleMessage> parseMesExample(dynamic raw) {
     if (raw == null) return [];
     if (raw is List) {
       return raw
