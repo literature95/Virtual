@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/banner_item.dart';
 import '../../models/character.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/character_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/banner_service.dart';
 import '../../services/online_character_service.dart';
 import '../../theme/tavo_brand.dart';
 import '../common/character_cover_card.dart';
+import 'banner_carousel.dart';
 
 /// 首页 —— 在线角色卡广场：
 /// 后端 /api/characters 拉取 + 分类过滤 + 搜索
@@ -25,9 +28,13 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final OnlineCharacterService _service = OnlineCharacterService();
+  final BannerService _bannerService = BannerService();
   final TextEditingController _searchCtrl = TextEditingController();
 
   List<OnlineCharacter>? _characters;
+
+  /// 轮播位；为空时首页不渲染这一块（见 build 里的 sliver 判断）
+  List<BannerItem> _banners = const [];
   String? _error;
   String _selectedCategory = '全部';
   String _query = '';
@@ -49,6 +56,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _load() async {
     final backend = context.read<SettingsProvider>().backendBaseUrl;
+    _loadBanners(backend);
     try {
       final list = await _service.fetchCharacters(backend);
       if (!mounted) return;
@@ -60,6 +68,15 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       setState(() => _error = '无法连接后端 $backend');
     }
+  }
+
+  /// 轮播独立拉取：失败只导致这一块不显示，绝不影响角色列表。
+  ///
+  /// 不 await —— 它不应该拖慢或阻塞主列表的首屏数据。
+  Future<void> _loadBanners(String backend) async {
+    final list = await _bannerService.fetchBanners(backend);
+    if (!mounted || list.isEmpty) return;
+    setState(() => _banners = list);
   }
 
   List<String> get _categories {
@@ -146,6 +163,19 @@ class _HomePageState extends State<HomePage> {
                   : const SizedBox.shrink(key: ValueKey('empty')),
             ),
           ),
+
+          // 轮播图（横版运营位）—— 在分类 chips 之上，拿到数据才占位
+          if (_banners.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: BannerCarousel(
+                  items: _banners,
+                  height: 150,
+                  onTap: _openBanner,
+                ),
+              ),
+            ),
 
           // 分类过滤 chips
           SliverToBoxAdapter(
@@ -291,6 +321,42 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
+  }
+
+  /// 点击轮播：找到关联角色后**复用封面卡同一条闭环**（导入 → 直达对话）
+  ///
+  /// 落差处理：banner 指向的角色不一定在列表数据里（后端列表端点可能未返回，
+  /// 或该运营位指向的角色尚未上线），这种情况下单独拉一次详情，
+  /// 拉不到才提示——不要静默无反应，也不要让整页崩。
+  Future<void> _openBanner(BannerItem banner) async {
+    final characterId = banner.characterId;
+    if (characterId == null || characterId.isEmpty) return;
+
+    OnlineCharacter? target;
+    for (final c in _characters ?? const <OnlineCharacter>[]) {
+      if (c.id == characterId) {
+        target = c;
+        break;
+      }
+    }
+
+    if (target == null) {
+      final backend = context.read<SettingsProvider>().backendBaseUrl;
+      try {
+        target = await _service.fetchCharacter(backend, characterId);
+      } catch (_) {
+        target = null;
+      }
+      if (!mounted) return;
+    }
+
+    if (target == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('「${banner.title}」暂时无法打开')),
+      );
+      return;
+    }
+    await _openCharacter(context, target);
   }
 
   /// 打开角色：确保本地有这张卡 → 进入（或续聊）对话。

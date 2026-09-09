@@ -189,6 +189,28 @@ lib/
 > 测试中 `SharedPreferences.setMockInitialValues` 清不掉它的数据，
 > 需显式删除，否则用例互相污染。
 
+### 7.1 首页板块顺序与轮播位
+
+首页是 `CustomScrollView` 的 sliver 序列，从上到下：
+
+| 顺序 | 板块 | 实现 | 备注 |
+| --- | --- | --- | --- |
+| 1 | 搜索框（点 AppBar 搜索图标展开） | `SliverToBoxAdapter` + `AnimatedSwitcher` | 由 `HomePage.searchVisible` 跨组件通知 |
+| 2 | 轮播图（横版，高 150） | `views/home/banner_carousel.dart` | 数据在备案时才占位，**拉不到就不渲染**，不留空白 |
+| 3 | 分类 chips（高 44，横向滚动，选中走渐变） | `_categoryChip` | 分类来自所有角色的 `tags` 并集 |
+| 4 | 竖版封面卡网格（比例 0.62，2~3 列） | `views/common/character_cover_card.dart` | 其余为空 / 加载中 / 错误态占满剩余空间 |
+
+轮播的两个约束：
+
+- **必须配横版图**。后端 `BannerSeed` 直接复用 16:9 立绘原图；
+  这批素材放进 0.62 竖卡会被 `cover` 裁掉大半，放进横幅才是原生比例。
+- **降级要彻底**。`BannerService.fetchBanners` 吞掉所有异常返回空列表，
+  `_loadBanners` 也不 await —— 后端没起或还没这个端点时，首页只是没有轮播，
+  角色列表照常加载。
+
+点击轮播走 `_openBanner`：先在当前列表里按 `characterId` 找，找不到再单独拉一次详情
+（运营位可能指向列表未返回的角色），最后复用封面卡同一条导入闭环。
+
 ## 运行方式
 
 安装依赖：
