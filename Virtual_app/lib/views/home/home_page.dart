@@ -36,7 +36,6 @@ class _HomePageState extends State<HomePage> {
   /// 轮播位；为空时首页不渲染这一块（见 build 里的 sliver 判断）
   List<BannerItem> _banners = const [];
   String? _error;
-  String _selectedCategory = '全部';
   String _query = '';
   bool _searchVisible = false;
 
@@ -79,24 +78,23 @@ class _HomePageState extends State<HomePage> {
     setState(() => _banners = list);
   }
 
+  /// 从角色标签提取出的全部分类（用于首页区块）
   List<String> get _categories {
-    final set = <String>{'全部'};
+    final set = <String>{};
     for (final c in _characters ?? const <OnlineCharacter>[]) {
       set.addAll(c.tags);
     }
     return set.toList();
   }
 
+  /// 仅按搜索词过滤；分类筛选交给 [CategoryCharactersPage]
   List<OnlineCharacter> get _filtered {
     final all = _characters ?? const <OnlineCharacter>[];
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return all;
     return all.where((c) {
-      final catOk =
-          _selectedCategory == '全部' || c.tags.contains(_selectedCategory);
-      final q = _query.trim().toLowerCase();
-      final qOk = q.isEmpty ||
-          c.name.toLowerCase().contains(q) ||
+      return c.name.toLowerCase().contains(q) ||
           c.description.toLowerCase().contains(q);
-      return catOk && qOk;
     }).toList();
   }
 
@@ -166,20 +164,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-          // 分类过滤 chips
-          SliverToBoxAdapter(
-            child: SizedBox(
-              height: 44,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                children:
-                    _categories.map((c) => _categoryChip(c, scheme)).toList(),
-              ),
-            ),
-          ),
-
-          // 角色卡列表
+          // 分类区块 or 搜索结果
           if (_error != null)
             SliverFillRemaining(
               hasScrollBody: false,
@@ -192,70 +177,140 @@ class _HomePageState extends State<HomePage> {
                 child: CircularProgressIndicator(color: TavoColors.violet),
               ),
             )
-          else if (_filtered.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: _emptyView(),
-            )
+          else if (_query.trim().isNotEmpty)
+            _searchResultGrid()
           else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-              sliver: SliverGrid(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  // 竖版封面卡：窄屏 2 列，宽屏（内容限宽 560）3 列。
-                  // 比例 0.62 固定，卡片不再像旧横版那样随屏宽拉伸失真。
-                  crossAxisCount: _gridColumns,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 0.62,
-                ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, i) {
-                    final c = _filtered[i];
-                    return CharacterCoverCard(
-                      name: c.name,
-                      description: c.description,
-                      tags: c.tags,
-                      avatarUrl: c.avatarUrl,
-                      busy: _busyId == c.id,
-                      onTap: () => _openCharacter(context, c),
-                    );
-                  },
-                  childCount: _filtered.length,
-                ),
-              ),
-            ),
+            ..._categorySections(scheme),
         ],
       ),
     );
   }
 
-  Widget _categoryChip(String label, ColorScheme scheme) {
-    final selected = label == _selectedCategory;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedCategory = label),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            gradient: selected ? TavoColors.signGradient : null,
-            color: selected ? null : scheme.surfaceContainer,
-            border: Border.all(
-              color: selected ? Colors.transparent : scheme.outline,
+  /// 首页分类区块：每个分类一个标题行 + 横向滚动 4 张卡 + 「更多」入口
+  List<Widget> _categorySections(ColorScheme scheme) {
+    final categories = _categories;
+    if (categories.isEmpty) {
+      return [SliverFillRemaining(hasScrollBody: false, child: _emptyView())];
+    }
+
+    final sections = <Widget>[];
+    for (var i = 0; i < categories.length; i++) {
+      final category = categories[i];
+      final items = (_characters ?? const <OnlineCharacter>[])
+          .where((c) => c.tags.contains(category))
+          .take(4)
+          .toList();
+      if (items.isEmpty) continue;
+
+      sections.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              i == 0 ? 16 : 24,
+              16,
+              12,
+            ),
+            child: Row(
+              children: [
+                Text(
+                  category,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => context.go(
+                    '/home/category/${Uri.encodeComponent(category)}',
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '更多',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 16,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                color: selected ? Colors.white : scheme.onSurfaceVariant,
-              ),
+        ),
+      );
+
+      sections.add(
+        SliverToBoxAdapter(
+          child: SizedBox(
+            height: 213,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: items.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final c = items[index];
+                return SizedBox(
+                  width: 132,
+                  child: CharacterCoverCard(
+                    name: c.name,
+                    description: c.description,
+                    tags: const [], // 区块标题已是分类，卡片不再重复显示标签
+                    avatarUrl: c.avatarUrl,
+                    busy: _busyId == c.id,
+                    onTap: () => _openCharacter(context, c),
+                  ),
+                );
+              },
             ),
           ),
+        ),
+      );
+    }
+    return sections;
+  }
+
+  /// 搜索命中结果：全网格展示
+  Widget _searchResultGrid() {
+    final items = _filtered;
+    if (items.isEmpty) {
+      return SliverFillRemaining(hasScrollBody: false, child: _emptyView());
+    }
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      sliver: SliverGrid(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: _gridColumns,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: 0.62,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, i) {
+            final c = items[i];
+            return CharacterCoverCard(
+              name: c.name,
+              description: c.description,
+              tags: c.tags,
+              avatarUrl: c.avatarUrl,
+              busy: _busyId == c.id,
+              onTap: () => _openCharacter(context, c),
+            );
+          },
+          childCount: items.length,
         ),
       ),
     );

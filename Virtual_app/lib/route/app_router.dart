@@ -5,6 +5,7 @@ import '../views/chat/chat_page.dart';
 import '../views/character/character_list_page.dart';
 import '../views/character/character_edit_page.dart';
 import '../views/discover/discover_page.dart';
+import '../views/home/category_characters_page.dart';
 import '../views/home/home_page.dart';
 import '../views/lorebook/lorebook_list_page.dart';
 import '../views/lorebook/lorebook_edit_page.dart';
@@ -37,6 +38,13 @@ class AppRouter {
           GoRoute(
             path: '/home',
             builder: (context, state) => const HomePage(),
+          ),
+          GoRoute(
+            path: '/home/category/:name',
+            builder: (context, state) {
+              final name = Uri.decodeComponent(state.pathParameters['name']!);
+              return CategoryCharactersPage(category: name);
+            },
           ),
           GoRoute(
             path: '/discover',
