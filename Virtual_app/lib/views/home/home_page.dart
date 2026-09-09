@@ -8,7 +8,7 @@ import '../../providers/character_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/online_character_service.dart';
 import '../../theme/tavo_brand.dart';
-import '../common/character_photo_card.dart';
+import '../common/character_cover_card.dart';
 
 /// 首页 —— 在线角色卡广场：
 /// 后端 /api/characters 拉取 + 分类过滤 + 搜索
@@ -82,6 +82,21 @@ class _HomePageState extends State<HomePage> {
       return catOk && qOk;
     }).toList();
   }
+
+  /// 竖版封面卡列数：宽屏（内容限宽 560）3 列，否则 2 列
+  int get _gridColumns =>
+      MediaQuery.of(context).size.width >= 720 ? 3 : 2;
+
+  /// 已导入在线角色的 sourceId 集合（卡片右上角「已导入」角标）
+  ///
+  /// watch 而非 read：导入完成后 CharacterProvider 会 notifyListeners，
+  /// 角标随之出现，无需手动刷新。
+  Set<String> get _importedSourceIds => context
+      .watch<CharacterProvider>()
+      .characters
+      .map((c) => c.sourceId)
+      .whereType<String>()
+      .toSet();
 
   @override
   Widget build(BuildContext context) {
@@ -166,20 +181,32 @@ class _HomePageState extends State<HomePage> {
           else
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-              sliver: SliverList.separated(
-                itemCount: _filtered.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 14),
-                itemBuilder: (_, i) {
-                  final c = _filtered[i];
-                  return CharacterPhotoCard(
-                    name: c.name,
-                    description: c.description,
-                    tags: c.tags,
-                    avatarUrl: c.avatarUrl,
-                    busy: _busyId == c.id,
-                    onTap: () => _openCharacter(context, c),
-                  );
-                },
+              sliver: SliverGrid(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  // 竖版封面卡：窄屏 2 列，宽屏（内容限宽 560）3 列。
+                  // 比例 0.62 固定，卡片不再像旧横版那样随屏宽拉伸失真。
+                  crossAxisCount: _gridColumns,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 0.62,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) {
+                    final c = _filtered[i];
+                    return CharacterCoverCard(
+                      name: c.name,
+                      description: c.description,
+                      tags: c.tags,
+                      avatarUrl: c.avatarUrl,
+                      creator: c.creator,
+                      characterVersion: c.characterVersion,
+                      imported: _importedSourceIds.contains(c.id),
+                      busy: _busyId == c.id,
+                      onTap: () => _openCharacter(context, c),
+                    );
+                  },
+                  childCount: _filtered.length,
+                ),
               ),
             ),
         ],
