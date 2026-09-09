@@ -104,17 +104,6 @@ class _HomePageState extends State<HomePage> {
   int get _gridColumns =>
       MediaQuery.of(context).size.width >= 720 ? 3 : 2;
 
-  /// 已导入在线角色的 sourceId 集合（卡片右上角「已导入」角标）
-  ///
-  /// watch 而非 read：导入完成后 CharacterProvider 会 notifyListeners，
-  /// 角标随之出现，无需手动刷新。
-  Set<String> get _importedSourceIds => context
-      .watch<CharacterProvider>()
-      .characters
-      .map((c) => c.sourceId)
-      .whereType<String>()
-      .toSet();
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -228,7 +217,6 @@ class _HomePageState extends State<HomePage> {
                       description: c.description,
                       tags: c.tags,
                       avatarUrl: c.avatarUrl,
-                      imported: _importedSourceIds.contains(c.id),
                       busy: _busyId == c.id,
                       onTap: () => _openCharacter(context, c),
                     );

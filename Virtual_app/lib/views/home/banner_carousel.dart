@@ -164,36 +164,6 @@ class _BannerSlide extends StatelessWidget {
               ),
             ),
 
-            if (item.canOpen)
-              Positioned(
-                top: 12,
-                right: 12,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(999),
-                    gradient: TavoColors.signGradient,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Text(
-                        '进入',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                      SizedBox(width: 2),
-                      Icon(Icons.arrow_forward_rounded,
-                          size: 12, color: Colors.white),
-                    ],
-                  ),
-                ),
-              ),
-
             Positioned(
               left: 16,
               right: 16,

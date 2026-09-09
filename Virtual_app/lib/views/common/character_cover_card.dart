@@ -55,7 +55,7 @@ String _flatten(String text) => text.replaceAll(RegExp(r'\s+'), ' ').trim();
 
 /// 竖版封面角色卡 —— 「小说封面」式信息流卡片：
 ///
-/// 照片铺满整卡（而非旧版左置右虚化），顶部左角分类胶囊、右上角导入角标，
+/// 照片铺满整卡（而非旧版左置右虚化），顶部左角分类胶囊，
 /// 下 1/3 压暗渐变上叠居中文字块（名字 / 简介 / 作者元信息）。
 /// 由首页 [SliverGrid] 以 0.62 宽高比成 2~3 列网格展示，
 /// 比例不随屏宽失真——这是相对旧横版卡（固定 190 高）的核心改进。
@@ -64,9 +64,6 @@ class CharacterCoverCard extends StatelessWidget {
   final String description;
   final List<String> tags;
   final String? avatarUrl;
-
-  /// 已导入本地 —— 显示右上角角标，重复点击也不会再建副本
-  final bool imported;
 
   final VoidCallback? onTap;
 
@@ -79,7 +76,6 @@ class CharacterCoverCard extends StatelessWidget {
     required this.description,
     this.tags = const [],
     this.avatarUrl,
-    this.imported = false,
     this.onTap,
     this.busy = false,
   });
@@ -131,19 +127,13 @@ class CharacterCoverCard extends StatelessWidget {
               ),
             ),
 
-            // ── 顶部行：分类胶囊 + 导入角标 ──
-            Positioned(
-              top: 8,
-              left: 8,
-              right: 8,
-              child: Row(
-                children: [
-                  if (tags.isNotEmpty) Flexible(child: _glassChip(tags.first)),
-                  const Spacer(),
-                  if (imported) _importedBadge(),
-                ],
+            // ── 左上角：分类标签 ──
+            if (tags.isNotEmpty)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: _glassChip(tags.first),
               ),
-            ),
 
             // ── 底部文字块（居中）──
             Positioned(
@@ -257,25 +247,6 @@ class CharacterCoverCard extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontSize: 11, color: Colors.white),
-      ),
-    );
-  }
-
-  /// 「已导入」角标（右上角，签名渐变）
-  Widget _importedBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        gradient: TavoColors.signGradient,
-      ),
-      child: const Text(
-        '已导入',
-        style: TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w600,
-          color: Colors.white,
-        ),
       ),
     );
   }
