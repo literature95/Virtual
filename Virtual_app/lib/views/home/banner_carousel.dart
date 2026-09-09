@@ -9,7 +9,7 @@ import '../../theme/tavo_brand.dart';
 /// 首页轮播图
 ///
 /// 横版运营位：自动轮播 + 手动滑动时暂停（松手后恢复），
-/// 视口 0.92 让右侧露出下一张边缘，提示可横滑。
+/// 铺满屏宽，左右不露出下一张。
 /// 数据为空时整体不占空间，不会在首页留下一块空白。
 class BannerCarousel extends StatefulWidget {
   final List<BannerItem> items;
@@ -40,7 +40,7 @@ class _BannerCarouselState extends State<BannerCarousel> {
   @override
   void initState() {
     super.initState();
-    _controller = PageController(viewportFraction: 0.92);
+    _controller = PageController(viewportFraction: 1.0);
     _startAutoPlay();
   }
 
