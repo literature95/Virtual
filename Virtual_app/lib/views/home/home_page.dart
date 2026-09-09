@@ -186,7 +186,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 首页分类区块：每个分类一个标题行 + 横向滚动 4 张卡 + 「更多」入口
+  /// 首页分类区块：每个分类一个标题行 + 竖向 2 列网格（一排两个、取 4 张）+ 「更多」入口
   List<Widget> _categorySections(ColorScheme scheme) {
     final categories = _categories;
     if (categories.isEmpty) {
@@ -253,28 +253,30 @@ class _HomePageState extends State<HomePage> {
       );
 
       sections.add(
-        SliverToBoxAdapter(
-          child: SizedBox(
-            height: 213,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemBuilder: (context, index) {
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              // 竖向 2 列网格：一排两个竖版封面卡，take(4) 即 2 行。
+              // 比例 0.62 与全局网格一致，卡片不随屏宽拉伸失真。
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 0.62,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
                 final c = items[index];
-                return SizedBox(
-                  width: 132,
-                  child: CharacterCoverCard(
-                    name: c.name,
-                    description: c.description,
-                    tags: const [], // 区块标题已是分类，卡片不再重复显示标签
-                    avatarUrl: c.avatarUrl,
-                    busy: _busyId == c.id,
-                    onTap: () => _openCharacter(context, c),
-                  ),
+                return CharacterCoverCard(
+                  name: c.name,
+                  description: c.description,
+                  tags: const [], // 区块标题已是分类，卡片不再重复显示标签
+                  avatarUrl: c.avatarUrl,
+                  busy: _busyId == c.id,
+                  onTap: () => _openCharacter(context, c),
                 );
               },
+              childCount: items.length,
             ),
           ),
         ),
