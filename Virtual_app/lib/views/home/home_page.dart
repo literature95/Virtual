@@ -157,7 +157,7 @@ class _HomePageState extends State<HomePage> {
           if (_banners.isNotEmpty)
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                padding: const EdgeInsets.only(top: 12),
                 child: BannerCarousel(
                   items: _banners,
                   height: 150,
