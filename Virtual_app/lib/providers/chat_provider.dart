@@ -90,6 +90,18 @@ class ChatProvider extends ChangeNotifier {
     return conv;
   }
 
+  /// 查找某角色最近更新的对话（用于「已导入角色 → 续聊」而非新建空会话）
+  ///
+  /// 一键导入若每次都 createConversation，用户重复点同一张卡就会攒出一串
+  /// 空对话。命中已有对话时应当直接回到那一条。
+  Conversation? latestConversationOf(String characterId) {
+    final list =
+        _conversations.where((c) => c.characterId == characterId).toList();
+    if (list.isEmpty) return null;
+    list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return list.first;
+  }
+
   /// 删除对话
   Future<void> deleteConversation(String id) async {
     await _db.deleteConversation(id);

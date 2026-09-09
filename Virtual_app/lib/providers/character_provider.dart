@@ -109,6 +109,20 @@ class CharacterProvider extends ChangeNotifier {
   /// 按 ID 查找角色（同 getCharacter，语义别名）
   Character? findById(String id) => getCharacter(id);
 
+  /// 按导入来源 ID 查找角色（一键导入查重用）
+  ///
+  /// [Character.sourceId] 存的是后端角色卡 ID。导入前先查一次，命中就直接复用
+  /// 本地角色，避免同一个在线角色被反复点击后堆出多个副本。
+  Character? findBySourceId(String sourceId) {
+    if (sourceId.isEmpty) return null;
+    // _characters 由 loadCharacters() 异步填充；未就绪时退回直接读库
+    final pool = _characters.isNotEmpty ? _characters : _db.getCharacters();
+    for (final c in pool) {
+      if (c.sourceId == sourceId) return c;
+    }
+    return null;
+  }
+
   void setCurrentCharacter(Character? character) {
     _currentCharacter = character;
     notifyListeners();

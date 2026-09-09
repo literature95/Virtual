@@ -172,6 +172,23 @@ lib/
 
 这些模块构成“角色扮演应用”的核心配置层。
 
+### 7. 首页与在线角色卡导入
+
+首页（`lib/views/home/home_page.dart`）是后端角色卡广场，点击卡片即「一键导入 + 进入对话」。
+这条链路上有三个**不能破**的约定：
+
+| 约定 | 实现位置 | 破了会怎样 |
+| --- | --- | --- |
+| 走详情接口建卡 | `_ensureLocalCharacter` | 列表接口省略 `exampleMessages` / `personality`，会导入出「只有名字和头像」的空壳角色 |
+| 按 `sourceId` 查重 | `Character.sourceId` ← `extensions['sourceId']` | 本地 id 是 `createCharacter` 现生成的 uuid，后端 ID 若不留存就无从查重，同一张卡点 N 次堆 N 个副本 |
+| 已导入则续聊 | `ChatProvider.latestConversationOf` | 每次都新建会话，重复点击会攒出一串空对话 |
+
+导入完成后直接 `context.go('/chat/:id')`，不停留在首页。
+
+> `AppDatabase` 是单例且持有首次 `init()` 时的 prefs 实例，
+> 测试中 `SharedPreferences.setMockInitialValues` 清不掉它的数据，
+> 需显式删除，否则用例互相污染。
+
 ## 运行方式
 
 安装依赖：

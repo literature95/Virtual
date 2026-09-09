@@ -97,6 +97,16 @@ class OnlineCharacter {
   bool get isFullCard =>
       exampleMessages.isNotEmpty || personality != null || scenario != null;
 
+  /// 导入到本地时写入 [Character.extensions] 的内容
+  ///
+  /// 除卡片自带扩展外，额外写入 `sourceId`（= 后端角色 ID）。本地 id 是
+  /// `createCharacter` 内部现生成的 uuid，后端 ID 若不留存就无从查重，
+  /// 同一个在线角色会被反复导入成多个副本。
+  Map<String, dynamic> get importExtensions => <String, dynamic>{
+        ...extensions,
+        if (id.isNotEmpty) 'sourceId': id,
+      };
+
   /// 转为本地 Character（用于一键导入）
   Character toCharacter() => Character(
         id: id,
@@ -118,7 +128,7 @@ class OnlineCharacter {
         creator: creator,
         characterVersion: characterVersion,
         source: source ?? 'Virtual backend',
-        extensions: extensions,
+        extensions: importExtensions,
         creatorNotesMultilingual: creatorNotesMultilingual,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),

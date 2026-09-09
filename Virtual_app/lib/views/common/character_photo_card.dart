@@ -13,6 +13,10 @@ class CharacterPhotoCard extends StatelessWidget {
   final VoidCallback? onTap;
   final double height;
 
+  /// 正在为该卡片执行异步操作（拉取详情 / 导入）——显示转圈并屏蔽点击，
+  /// 避免用户连点触发多次导入。
+  final bool busy;
+
   const CharacterPhotoCard({
     super.key,
     required this.name,
@@ -21,6 +25,7 @@ class CharacterPhotoCard extends StatelessWidget {
     this.avatarUrl,
     this.onTap,
     this.height = 190,
+    this.busy = false,
   });
 
   @override
@@ -101,6 +106,35 @@ class CharacterPhotoCard extends StatelessWidget {
                 ),
               ),
             ),
+
+            // ── 忙碌遮罩（导入中）──
+            if (busy)
+              ColoredBox(
+                color: const Color(0x990E0E0E),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.2,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '正在导入…',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white.withValues(alpha: 0.85),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
             // ── 文字叠加（右侧底部）──
             Positioned(

@@ -93,6 +93,12 @@ class Character {
     required this.updatedAt,
   });
 
+  /// 导入来源 ID（后端角色卡 ID / 卡包内 ID），存于 `extensions['sourceId']`。
+  ///
+  /// 本地角色 id 由 uuid 生成，与来源 ID 天然不同域，因此来源 ID 必须单独留存，
+  /// 否则一键导入无法查重——同一个在线角色点 5 次会堆出 5 个同名副本。
+  String? get sourceId => extensions['sourceId'] as String?;
+
   Character copyWith({
     String? id,
     String? name,
