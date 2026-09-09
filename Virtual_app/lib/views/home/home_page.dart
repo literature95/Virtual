@@ -78,13 +78,18 @@ class _HomePageState extends State<HomePage> {
     setState(() => _banners = list);
   }
 
-  /// 从角色标签提取出的全部分类（用于首页区块）
-  List<String> get _categories {
-    final set = <String>{};
+  /// 主分类聚合：每个角色**只归入其 tags 的第一项（主分类）**，
+  /// 因此同一张卡在首页只出现一次 —— 避免按全部 tag 拆分导致一张卡
+  /// 在「治愈 / 日常 / 温柔 / 深夜 / OC」等五六个区块里反复出现。
+  ///
+  /// 顺序按角色首次出现的主分类排列，稳定可预期。
+  Map<String, List<OnlineCharacter>> get _categoryMap {
+    final map = <String, List<OnlineCharacter>>{};
     for (final c in _characters ?? const <OnlineCharacter>[]) {
-      set.addAll(c.tags);
+      final primary = c.tags.isNotEmpty ? c.tags.first : '其他';
+      map.putIfAbsent(primary, () => []).add(c);
     }
-    return set.toList();
+    return map;
   }
 
   /// 仅按搜索词过滤；分类筛选交给 [CategoryCharactersPage]
@@ -186,20 +191,18 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 首页分类区块：每个分类一个标题行 + 竖向 2 列网格（一排两个、取 4 张）+ 「更多」入口
+  /// 首页分类区块：每个主分类一个标题行 + 竖向 2 列网格（一排两个、取 4 张）+ 「更多」入口
   List<Widget> _categorySections(ColorScheme scheme) {
-    final categories = _categories;
-    if (categories.isEmpty) {
+    final map = _categoryMap;
+    if (map.isEmpty) {
       return [SliverFillRemaining(hasScrollBody: false, child: _emptyView())];
     }
 
     final sections = <Widget>[];
-    for (var i = 0; i < categories.length; i++) {
-      final category = categories[i];
-      final items = (_characters ?? const <OnlineCharacter>[])
-          .where((c) => c.tags.contains(category))
-          .take(4)
-          .toList();
+    var i = 0;
+    for (final entry in map.entries) {
+      final category = entry.key;
+      final items = entry.value.take(4).toList();
       if (items.isEmpty) continue;
 
       sections.add(
@@ -281,6 +284,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       );
+      i++;
     }
     return sections;
   }
