@@ -198,8 +198,6 @@ class _HomePageState extends State<HomePage> {
                       description: c.description,
                       tags: c.tags,
                       avatarUrl: c.avatarUrl,
-                      creator: c.creator,
-                      characterVersion: c.characterVersion,
                       imported: _importedSourceIds.contains(c.id),
                       busy: _busyId == c.id,
                       onTap: () => _openCharacter(context, c),

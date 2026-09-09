@@ -3,6 +3,56 @@ import 'package:flutter/material.dart';
 
 import '../../theme/tavo_brand.dart';
 
+/// 封面卡简介预处理
+///
+/// 角色卡的 description 普遍是「字段名：值」的结构化文本，例如种子角色开头是
+/// 「姓名 / 年龄 / 身份 / 外貌 / 性格关键词 / 背景」连续 6 行。整段显示会让封面
+/// 变成简历表格，只剔首行也不够——第二行还是「年龄：24」。
+///
+/// 规则：`字段名：` 的值**不足 20 字**视为元信息直接丢弃（`姓名：晓夜` /
+/// `年龄：24`）；达到 20 字的才是真正的叙述段落，取其中最长的一段作为简介。
+/// 没有字段结构的自然书写则退化为「折叠换行的连贯文本」。
+///
+/// 字段名限定 ≤4 个字符（覆盖 `姓名` / `本名` / `代号` / `型号` / `背景` 等）。
+/// 放宽到 6 字会把「这件事很重要：…」这类正常长句误判成字段行。
+final RegExp _fieldLine = RegExp(r'^[^：:\n]{1,4}[：:]\s*(.+)$');
+
+/// 简介最短阈值：低于此长度的值视为元信息而非简介
+const int _minParagraphLength = 20;
+
+String coverSummaryOf(String description) {
+  final text = description.trim();
+  if (text.isEmpty) return '';
+
+  final paragraphs = <String>[];
+  final prose = <String>[];
+
+  for (final rawLine in text.split('\n')) {
+    final line = rawLine.trim();
+    if (line.isEmpty) continue;
+
+    final match = _fieldLine.firstMatch(line);
+    if (match == null) {
+      prose.add(line);
+      continue;
+    }
+    final value = match.group(1)!.trim();
+    if (value.length >= _minParagraphLength) {
+      paragraphs.add(value);
+    }
+  }
+
+  if (paragraphs.isNotEmpty) {
+    final longest = paragraphs.reduce((a, b) => b.length > a.length ? b : a);
+    return _flatten(longest);
+  }
+  if (prose.isNotEmpty) return _flatten(prose.join(' '));
+  // 只剩零散元信息（如「姓名：晓夜」）时宁可不显示，也不把简历标签摆上封面
+  return '';
+}
+
+String _flatten(String text) => text.replaceAll(RegExp(r'\s+'), ' ').trim();
+
 /// 竖版封面角色卡 —— 「小说封面」式信息流卡片：
 ///
 /// 照片铺满整卡（而非旧版左置右虚化），顶部左角分类胶囊、右上角导入角标，
@@ -14,12 +64,6 @@ class CharacterCoverCard extends StatelessWidget {
   final String description;
   final List<String> tags;
   final String? avatarUrl;
-
-  /// 作者（列表接口下发，来自 CCv3 `creator`）
-  final String? creator;
-
-  /// 角色卡版本（来自 CCv3 `character_version`）
-  final String? characterVersion;
 
   /// 已导入本地 —— 显示右上角角标，重复点击也不会再建副本
   final bool imported;
@@ -35,8 +79,6 @@ class CharacterCoverCard extends StatelessWidget {
     required this.description,
     this.tags = const [],
     this.avatarUrl,
-    this.creator,
-    this.characterVersion,
     this.imported = false,
     this.onTap,
     this.busy = false,
@@ -44,14 +86,10 @@ class CharacterCoverCard extends StatelessWidget {
 
   bool get _hasImage => avatarUrl != null && avatarUrl!.isNotEmpty;
 
-  bool get _hasCreator => creator != null && creator!.trim().isNotEmpty;
-
-  bool get _hasVersion =>
-      characterVersion != null && characterVersion!.trim().isNotEmpty;
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final summary = coverSummaryOf(description);
     return GestureDetector(
       onTap: busy ? null : onTap,
       child: Container(
@@ -127,10 +165,10 @@ class CharacterCoverCard extends StatelessWidget {
                       letterSpacing: 0.5,
                     ),
                   ),
-                  if (description.isNotEmpty) ...[
+                  if (summary.isNotEmpty) ...[
                     const SizedBox(height: 5),
                     Text(
-                      description,
+                      summary,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
@@ -139,45 +177,6 @@ class CharacterCoverCard extends StatelessWidget {
                         height: 1.45,
                         color: TavoColors.cosmosTextDim,
                       ),
-                    ),
-                  ],
-                  if (_hasCreator || _hasVersion) ...[
-                    const SizedBox(height: 7),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (_hasCreator) ...[
-                          const Icon(Icons.person_outline,
-                              size: 12, color: TavoColors.cosmosTextFaint),
-                          const SizedBox(width: 3),
-                          Flexible(
-                            child: Text(
-                              creator!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 10.5,
-                                color: TavoColors.cosmosTextFaint,
-                              ),
-                            ),
-                          ),
-                        ],
-                        if (_hasCreator && _hasVersion)
-                          const SizedBox(width: 10),
-                        if (_hasVersion) ...[
-                          const Icon(Icons.sell_outlined,
-                              size: 12, color: TavoColors.cosmosTextFaint),
-                          const SizedBox(width: 3),
-                          Text(
-                            characterVersion!,
-                            maxLines: 1,
-                            style: const TextStyle(
-                              fontSize: 10.5,
-                              color: TavoColors.cosmosTextFaint,
-                            ),
-                          ),
-                        ],
-                      ],
                     ),
                   ],
                 ],

@@ -29,3 +29,6 @@ Thumbs.db
 .env
 .env.*
 *.keystore
+
+# ── AI 生成图片临时产物（未确认不入库）──
+generated-images/
