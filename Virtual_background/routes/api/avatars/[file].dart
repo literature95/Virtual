@@ -2,9 +2,12 @@ import 'dart:io';
 
 import 'package:dart_frog/dart_frog.dart';
 
-/// GET /avatars/[file] — 角色立绘静态文件
+/// GET /api/avatars/[file] — 角色立绘静态文件
 ///
-/// 文件存放于 public/avatars/，仅允许常见图片扩展名，拒绝路径穿越。
+/// 文件存放于 public/avatars/。挂到 /api/ 下是为了继承 _middleware.dart 的
+/// 全局 CORS 头——Dart Frog 的 public/ 静态目录会绕过中间件，Flutter Web 端
+/// 用 XHR 跨域取图字节会被浏览器拦截导致图片空白，因此不走静态目录。
+/// 仅允许常见图片扩展名，拒绝路径穿越。
 Future<Response> onRequest(RequestContext context, String file) async {
   if (context.request.method != HttpMethod.get) {
     return Response(statusCode: 405, body: 'Method Not Allowed');

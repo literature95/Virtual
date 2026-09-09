@@ -1,0 +1,6 @@
+# 单端口预览方案：Flutter Web 构建会被拷进 public/ 仅供本地 8080 预览
+# 这些前端产物不应进入版本库，仅保留角色立绘 avatars/
+*
+!.gitignore
+!avatars/
+!avatars/**

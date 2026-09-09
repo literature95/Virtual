@@ -5,10 +5,10 @@ void main() {
   group('resolveAvatarUrl', () {
     final req = Uri.parse('http://localhost:8080/api/characters');
 
-    test('相对路径按请求来源补全为绝对 URL', () {
+    test('相对路径按请求来源补全为绝对 URL（走 /api/avatars 继承 CORS）', () {
       expect(
         resolveAvatarUrl('/avatars/char-001.jpg', req),
-        'http://localhost:8080/avatars/char-001.jpg',
+        'http://localhost:8080/api/avatars/char-001.jpg',
       );
     });
 
@@ -16,7 +16,7 @@ void main() {
       final lanReq = Uri.parse('http://192.168.1.145:8080/api/characters');
       expect(
         resolveAvatarUrl('/avatars/char-001.jpg', lanReq),
-        'http://192.168.1.145:8080/avatars/char-001.jpg',
+        'http://192.168.1.145:8080/api/avatars/char-001.jpg',
       );
     });
 
@@ -24,7 +24,7 @@ void main() {
       final httpsReq = Uri.parse('https://virtual.dev/api/characters');
       expect(
         resolveAvatarUrl('/avatars/char-001.jpg', httpsReq),
-        'https://virtual.dev/avatars/char-001.jpg',
+        'https://virtual.dev/api/avatars/char-001.jpg',
       );
     });
 
