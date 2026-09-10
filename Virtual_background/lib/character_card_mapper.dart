@@ -114,6 +114,16 @@ class CharacterCardMapper {
     return null;
   }
 
+  /// 卡内 avatar 字段 → 可入库的头像值。
+  ///
+  /// 第三方卡片常用 `"none"`（及空串）表示「无立绘」，这类占位值必须落
+  /// NULL，否则会被当成相对路径透传给客户端去加载不存在的图片。
+  static String? normalizeAvatar(dynamic value) {
+    final s = value?.toString().trim() ?? '';
+    if (s.isEmpty || s.toLowerCase() == 'none') return null;
+    return s;
+  }
+
   /// 角色身份默认值：客户端未传 character_id 时由 name 生成 slug。
   static String slugify(String name) {
     final s = name.trim().toLowerCase().replaceAll(
@@ -126,6 +136,46 @@ class CharacterCardMapper {
   /// 文件名/路径安全：非 `[a-zA-Z0-9_-]` 一律替换为 `_`。
   static String sanitizeFilename(String part) =>
       part.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
+
+  /// characters 表 upsert 语句（POST /api/characters 与 tool/import_cards.dart 共用）。
+  ///
+  /// 命名参数与 [cardToRow] 返回的行键一一对应，行 map 可直接作 parameters。
+  /// 同 (id, character_version) 覆盖；avatar_url 用 COALESCE 保留旧值兜底。
+  static const String characterUpsertSql = '''
+INSERT INTO characters (
+                id, character_version, name, nickname, description, personality,
+                scenario, first_message, system_prompt, post_history_instructions,
+                creator_notes, creator, source, avatar_url, tags,
+                alternate_greetings, group_only_greetings, example_messages,
+                creator_notes_multilingual, extensions, character_book, raw_card
+            )
+            VALUES (
+                @id, @character_version, @name, @nickname, @description, @personality,
+                @scenario, @first_message, @system_prompt, @post_history_instructions,
+                @creator_notes, @creator, @source, @avatar_url, @tags::jsonb,
+                @alternate_greetings::jsonb, @group_only_greetings::jsonb,
+                @example_messages::jsonb, @creator_notes_multilingual::jsonb,
+                @extensions::jsonb, @character_book::jsonb, @raw_card::jsonb
+            )
+            ON CONFLICT (id, character_version) DO UPDATE SET
+              name = EXCLUDED.name, nickname = EXCLUDED.nickname,
+              description = EXCLUDED.description,
+              personality = EXCLUDED.personality, scenario = EXCLUDED.scenario,
+              first_message = EXCLUDED.first_message,
+              system_prompt = EXCLUDED.system_prompt,
+              post_history_instructions = EXCLUDED.post_history_instructions,
+              creator_notes = EXCLUDED.creator_notes, creator = EXCLUDED.creator,
+              source = EXCLUDED.source,
+              avatar_url = COALESCE(EXCLUDED.avatar_url, characters.avatar_url),
+              tags = EXCLUDED.tags,
+              alternate_greetings = EXCLUDED.alternate_greetings,
+              group_only_greetings = EXCLUDED.group_only_greetings,
+              example_messages = EXCLUDED.example_messages,
+              creator_notes_multilingual = EXCLUDED.creator_notes_multilingual,
+              extensions = EXCLUDED.extensions,
+              character_book = EXCLUDED.character_book,
+              raw_card = EXCLUDED.raw_card,
+              updated_at = NOW()''';
 
   /// CCv2 `data` → DB 行（POST /api/characters 写入用）。
   ///

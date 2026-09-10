@@ -153,16 +153,14 @@ class _HomePageState extends State<HomePage> {
           ),
 
           // 轮播图（横版运营位）—— 在分类 chips 之上，拿到数据才占位
+          // 不加 top padding：轮播紧贴 AppBar，铺满屏宽的沉浸式首屏
           if (_banners.isNotEmpty)
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: BannerCarousel(
-                  items: _banners,
-                  // 宽高比 1.58:1，宽度铺满、高度自适应
-                  aspectRatio: 1.58,
-                  onTap: _openBanner,
-                ),
+              child: BannerCarousel(
+                items: _banners,
+                // 宽高比 1.58:1，宽度铺满、高度自适应
+                aspectRatio: 1.58,
+                onTap: _openBanner,
               ),
             ),
 

@@ -110,6 +110,34 @@ void main() {
     });
   });
 
+  group('CharacterCardMapper.normalizeAvatar（占位值归一化）', () {
+    // 回归：第三方卡片常用 "none" 表示无立绘，透传会被客户端当成路径
+    // 去加载不存在的图片（cards-js 数据集全量命中此坑）。
+    test('"none" 与空值归一化为 NULL，外链原样保留', () {
+      expect(CharacterCardMapper.normalizeAvatar('none'), isNull);
+      expect(CharacterCardMapper.normalizeAvatar('NONE'), isNull);
+      expect(CharacterCardMapper.normalizeAvatar(' none '), isNull);
+      expect(CharacterCardMapper.normalizeAvatar(''), isNull);
+      expect(CharacterCardMapper.normalizeAvatar(null), isNull);
+      expect(
+        CharacterCardMapper.normalizeAvatar('https://example.com/a.png'),
+        'https://example.com/a.png',
+      );
+      expect(
+        CharacterCardMapper.normalizeAvatar('/uploads/char-x-main.jpg'),
+        '/uploads/char-x-main.jpg',
+      );
+    });
+
+    test('cardToRow 对 avatar="none" 的卡不落占位路径', () {
+      final row = CharacterCardMapper.cardToRow(
+        Map<String, dynamic>.from(data)..['avatar'] = 'none',
+        characterId: 'no-avatar-card',
+      );
+      expect(row['avatar_url'], isNull);
+    });
+  });
+
   group('CharacterCardMapper.rowToExportData（round-trip）', () {
     test('raw_card 路径：导出与上传语义级全等（含 avatar）', () {
       final row = CharacterCardMapper.cardToRow(

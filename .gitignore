@@ -24,6 +24,7 @@ Thumbs.db
 # ── 本地工具状态 ──
 .workbuddy/
 .mason-cache/
+.mason_cache/
 *.log
 
 # ── 敏感文件 ──

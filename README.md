@@ -91,7 +91,9 @@ d:\Documents\Desktop\Virtual\
 │   ├── lib/
 │   │   ├── config.dart          # 环境配置（DB 连接等）
 │   │   ├── avatar_url.dart      # 立绘 URL 解析器（相对路径 → 按请求来源补全）
+│   │   ├── character_card_mapper.dart # 角色卡映射/校验/共享 upsert SQL
 │   │   └── database/            # db.dart（连接 + 降级）+ seed.dart（5 个种子角色）
+│   ├── tool/import_cards.dart   # CCv2/v3 角色卡批量导入（目录 → PG 事务 upsert）
 │   ├── public/avatars/          # 5 张本地立绘（char-001~005.jpg）
 │   └── test/                    # 11 个测试（seed 契约 + avatar URL 解析器）
 │
@@ -142,13 +144,22 @@ d:\Documents\Desktop\Virtual\
 | `GET /api/metadata` | App 元数据（顶级数组，`api-secret` 仅在编译期注入时下发） |
 | `GET /api/characters` | 角色卡列表（精简字段：id/name/description/avatarUrl/tags/greeting/persona/creator/characterVersion） |
 | `GET /api/characters/:id` | 角色卡详情（**完整 CCv3 字段** + `characterBook` 世界书原样下发） |
-| `POST /api/characters` | **发布角色卡**（multipart：`card`=角色卡 JSON、`avatar`=立绘文件；按 `id + character_version` upsert，同版本覆盖、换版本新增一行；可选 `X-Api-Token` 鉴权） |
+| `POST /api/characters` | **发布角色卡**（multipart：`card`=角色卡 JSON、`avatar`=立绘文件；按 `id + character_version` upsert，同版本覆盖、换版本新增一行；卡内 `avatar: "none"` 占位值归一化为 NULL；可选 `X-Api-Token` 鉴权） |
 | `GET /api/characters/:id/export` | 导出角色卡（CCv2 完整包；上传过的角色由 `raw_card` 原样吐回，保证上传=导出） |
 | `GET /api/app-info` | 应用介绍/下载信息 |
 | `GET /api/avatars/:file` | 内置角色立绘（jpg/png/webp 白名单，1 天缓存） |
 | `GET /api/uploads/:file` | 用户上传立绘（发布接口写入 `public/uploads/`，同白名单与 CORS 处理） |
 
 其他能力：全局 CORS 中间件；PostgreSQL 可选 + 失败降级内存种子（5 个角色，空库首次启动自动灌入）；角色卡 schema 已对齐 App 的完整角色模型（`characters` 表 27 列，含幂等增量迁移，**复合主键 `(id, character_version)`** 支持多版本）；立绘本地化（存相对路径，响应时按请求来源补全绝对 URL，App/Web 零改动）；api-secret 与 PUBLISH_TOKEN 编译期外置（`String.fromEnvironment`）；24 个单元测试（含角色卡密度护栏、Cricket 卡 round-trip）。
+
+**批量导入第三方角色卡**：`tool/import_cards.dart` 可把装满 CCv2/v3 角色卡 JSON 的目录批量灌入 PostgreSQL（与 POST 同一条 mapper/upsert 链路，文件名 UUID 作 character_id，`avatar: "none"` 归 NULL，批量事务 + 坏行隔离，可重跑幂等）：
+
+```bash
+cd Virtual_background
+dart run tool/import_cards.dart <cardsDir> [--limit=N] [--batch-size=N] [--dry-run]
+```
+
+注意：`GET /api/characters` 列表接口尚无分页，单次导入建议控制在几千张以内（万级会拖垮 App/Web 列表加载）。
 
 发布协议设计见 [`docs/character-publish-design.md`](docs/character-publish-design.md)。
 

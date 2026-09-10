@@ -137,10 +137,15 @@ class CharacterCoverCard extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             // ── 照片铺满整卡 ──
+            // memCacheWidth：按卡片实际显示宽（~180px × 2 dpr ≈ 360）解码，
+            // 避免 1368×768 原图整张解码上传纹理 —— Web/低端设备的主要卡顿源。
+            // 淡入压到 120ms：默认 500ms 在慢加载时观感像「渲染不出来」。
             if (_hasImage)
               CachedNetworkImage(
                 imageUrl: avatarUrl!,
                 fit: BoxFit.cover,
+                memCacheWidth: 400,
+                fadeInDuration: const Duration(milliseconds: 120),
                 placeholder: (_, __) => const SizedBox.shrink(),
                 errorWidget: (_, __, ___) => const SizedBox.shrink(),
               )

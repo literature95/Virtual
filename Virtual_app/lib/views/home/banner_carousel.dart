@@ -135,6 +135,9 @@ class _BannerSlide extends StatelessWidget {
               CachedNetworkImage(
                 imageUrl: item.imageUrl!,
                 fit: BoxFit.cover,
+                // 按显示宽解码（≤560 逻辑宽 × 2 dpr），不整张解 1368×768 原图
+                memCacheWidth: 1120,
+                fadeInDuration: const Duration(milliseconds: 120),
                 placeholder: (_, __) => const SizedBox.shrink(),
                 errorWidget: (_, __, ___) => const SizedBox.shrink(),
               )

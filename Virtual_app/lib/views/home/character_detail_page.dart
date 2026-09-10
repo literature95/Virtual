@@ -238,6 +238,9 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
               CachedNetworkImage(
                 imageUrl: c.avatarUrl!,
                 fit: BoxFit.cover,
+                // 按显示宽解码（≤560 逻辑宽 × 2 dpr），原图更小时不受影响
+                memCacheWidth: 1120,
+                fadeInDuration: const Duration(milliseconds: 120),
                 placeholder: (_, __) => Container(
                   decoration: const BoxDecoration(
                     gradient: TavoColors.signGradientDiagonal,

@@ -204,9 +204,8 @@ Future<Response> _onPost(RequestContext context) async {
     avatarUrl = '/uploads/$filename';
   } else {
     // 未上传文件时回退到卡内 avatar 外链：原样透传（服务端不抓取，防 SSRF）。
-    // 卡内也没有则为 null，App 侧走占位图。
-    final inCard = data['avatar']?.toString() ?? '';
-    if (inCard.isNotEmpty) avatarUrl = inCard;
+    // 卡内没有或为 "none" 占位值则存 NULL，App 侧走占位图。
+    avatarUrl = CharacterCardMapper.normalizeAvatar(data['avatar']);
   }
 
   // 6) 投影 + upsert
@@ -232,66 +231,10 @@ Future<Response> _onPost(RequestContext context) async {
     );
     final existed = existing.isNotEmpty;
 
+    // characterUpsertSql 的命名参数与 cardToRow 行键一一对应，行 map 直接绑定
     await conn.execute(
-      Sql.named('''
-INSERT INTO characters (
-                id, character_version, name, nickname, description, personality,
-                scenario, first_message, system_prompt, post_history_instructions,
-                creator_notes, creator, source, avatar_url, tags,
-                alternate_greetings, group_only_greetings, example_messages,
-                creator_notes_multilingual, extensions, character_book, raw_card
-            )
-            VALUES (
-                @id, @character_version, @name, @nickname, @description, @personality,
-                @scenario, @first_message, @system_prompt, @post_history_instructions,
-                @creator_notes, @creator, @source, @avatar_url, @tags::jsonb,
-                @alternate_greetings::jsonb, @group_only_greetings::jsonb,
-                @example_messages::jsonb, @creator_notes_multilingual::jsonb,
-                @extensions::jsonb, @character_book::jsonb, @raw_card::jsonb
-            )
-            ON CONFLICT (id, character_version) DO UPDATE SET
-              name = EXCLUDED.name, nickname = EXCLUDED.nickname,
-              description = EXCLUDED.description,
-              personality = EXCLUDED.personality, scenario = EXCLUDED.scenario,
-              first_message = EXCLUDED.first_message,
-              system_prompt = EXCLUDED.system_prompt,
-              post_history_instructions = EXCLUDED.post_history_instructions,
-              creator_notes = EXCLUDED.creator_notes, creator = EXCLUDED.creator,
-              source = EXCLUDED.source,
-              avatar_url = COALESCE(EXCLUDED.avatar_url, characters.avatar_url),
-              tags = EXCLUDED.tags,
-              alternate_greetings = EXCLUDED.alternate_greetings,
-              group_only_greetings = EXCLUDED.group_only_greetings,
-              example_messages = EXCLUDED.example_messages,
-              creator_notes_multilingual = EXCLUDED.creator_notes_multilingual,
-              extensions = EXCLUDED.extensions,
-              character_book = EXCLUDED.character_book,
-              raw_card = EXCLUDED.raw_card,
-              updated_at = NOW()'''),
-      parameters: {
-        'id': id,
-        'character_version': version,
-        'name': row['name'],
-        'nickname': row['nickname'],
-        'description': row['description'],
-        'personality': row['personality'],
-        'scenario': row['scenario'],
-        'first_message': row['first_message'],
-        'system_prompt': row['system_prompt'],
-        'post_history_instructions': row['post_history_instructions'],
-        'creator_notes': row['creator_notes'],
-        'creator': row['creator'],
-        'source': row['source'],
-        'avatar_url': row['avatar_url'],
-        'tags': row['tags'],
-        'alternate_greetings': row['alternate_greetings'],
-        'group_only_greetings': row['group_only_greetings'],
-        'example_messages': row['example_messages'],
-        'creator_notes_multilingual': row['creator_notes_multilingual'],
-        'extensions': row['extensions'],
-        'character_book': row['character_book'],
-        'raw_card': row['raw_card'],
-      },
+      Sql.named(CharacterCardMapper.characterUpsertSql),
+      parameters: row,
     );
 
     return Response.json(

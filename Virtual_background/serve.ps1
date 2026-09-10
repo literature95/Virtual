@@ -1,8 +1,8 @@
 # Virtual 本地预览启动器（单端口 8080：后端 API + 立绘 + Flutter Web App）
 #
 # 前置：先在前端编译
-#   cd Virtual_app && flutter build web --no-tree-shake-icons
-#   （输出 Virtual_app/build/web）
+#   cd Virtual_app && flutter build web --wasm --no-tree-shake-icons
+#   （输出 Virtual_app/build/web；wasm+JS 双渲染器，不支持 WasmGC 的环境自动回落 CanvasKit）
 #
 # 用法（PowerShell）：
 #   pwsh serve.ps1
