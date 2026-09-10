@@ -10,10 +10,14 @@ String resolveAvatarUrl(String? url, Uri requestUri) {
   if (url == null || url.isEmpty) return '';
   if (!url.startsWith('/')) return url;
 
-  // 立绘统一走 /api/avatars 路由：Dart Frog 的 public/ 静态目录会绕过全局
+  // 立绘统一走 /api/ 路由：Dart Frog 的 public/ 静态目录会绕过全局
   // CORS 中间件，导致 Flutter Web 用 XHR 跨域取图字节被浏览器拦截（图空白）。
   // 改挂到 /api/ 下即可继承 _middleware.dart 的 CORS 头，原生端同样可用。
-  if (url.startsWith('/avatars/')) url = '/api$url';
+  // /avatars/ = 内置种子立绘；/uploads/ = 用户上传立绘（发布协议 §2）。
+  var resolved = url;
+  if (resolved.startsWith('/avatars/') || resolved.startsWith('/uploads/')) {
+    resolved = '/api$resolved';
+  }
 
   final scheme = requestUri.scheme.isEmpty ? 'http' : requestUri.scheme;
   final host = requestUri.host.isEmpty ? 'localhost' : requestUri.host;
@@ -23,5 +27,5 @@ String resolveAvatarUrl(String? url, Uri requestUri) {
       (scheme == 'https' && port == 443);
   final effectivePort = port == 0 ? 8080 : port;
 
-  return '$scheme://$host${isDefaultPort ? '' : ':$effectivePort'}$url';
+  return '$scheme://$host${isDefaultPort ? '' : ':$effectivePort'}$resolved';
 }

@@ -4,3 +4,4 @@
 !.gitignore
 !avatars/
 !avatars/**
+# 用户上传立绘 uploads/（发布协议）属运行时数据：被上方 * 规则忽略正是预期，勿加白名单

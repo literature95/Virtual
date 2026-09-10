@@ -12,6 +12,13 @@ void main() {
       );
     });
 
+    test('用户上传立绘 /uploads/ 同样改写为 /api/uploads/（发布协议 §2）', () {
+      expect(
+        resolveAvatarUrl('/uploads/char-cricket-main.jpg', req),
+        'http://localhost:8080/api/uploads/char-cricket-main.jpg',
+      );
+    });
+
     test('局域网地址请求保持其 host（真机调试场景）', () {
       final lanReq = Uri.parse('http://192.168.1.145:8080/api/characters');
       expect(

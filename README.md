@@ -141,17 +141,21 @@ d:\Documents\Desktop\Virtual\
 | `GET /api/health` | 健康检查 |
 | `GET /api/metadata` | App 元数据（顶级数组，`api-secret` 仅在编译期注入时下发） |
 | `GET /api/characters` | 角色卡列表（精简字段：id/name/description/avatarUrl/tags/greeting/persona/creator/characterVersion） |
-| `GET /api/characters/:id` | 角色卡详情（**完整 CCv3 字段**：personality / scenario / firstMessage / exampleMessages / alternateGreetings / systemPrompt / postHistoryInstructions / extensions 等） |
+| `GET /api/characters/:id` | 角色卡详情（**完整 CCv3 字段** + `characterBook` 世界书原样下发） |
+| `POST /api/characters` | **发布角色卡**（multipart：`card`=角色卡 JSON、`avatar`=立绘文件；按 `id + character_version` upsert，同版本覆盖、换版本新增一行；可选 `X-Api-Token` 鉴权） |
+| `GET /api/characters/:id/export` | 导出角色卡（CCv2 完整包；上传过的角色由 `raw_card` 原样吐回，保证上传=导出） |
 | `GET /api/app-info` | 应用介绍/下载信息 |
-| `GET /avatars/:file` | 角色立绘静态文件（jpg/png/webp 白名单，1 天缓存） |
+| `GET /api/avatars/:file` | 内置角色立绘（jpg/png/webp 白名单，1 天缓存） |
+| `GET /api/uploads/:file` | 用户上传立绘（发布接口写入 `public/uploads/`，同白名单与 CORS 处理） |
 
-其他能力：全局 CORS 中间件；PostgreSQL 可选 + 失败降级内存种子（5 个角色）；角色卡 schema 已对齐 App 的完整角色模型（`characters` 表 22 列，含幂等增量迁移）；立绘本地化（种子存相对路径，响应时按请求来源补全绝对 URL，App/Web 零改动）；api-secret 编译期外置（`String.fromEnvironment`）；12 个单元测试（含角色卡密度护栏）。
+其他能力：全局 CORS 中间件；PostgreSQL 可选 + 失败降级内存种子（5 个角色，空库首次启动自动灌入）；角色卡 schema 已对齐 App 的完整角色模型（`characters` 表 27 列，含幂等增量迁移，**复合主键 `(id, character_version)`** 支持多版本）；立绘本地化（存相对路径，响应时按请求来源补全绝对 URL，App/Web 零改动）；api-secret 与 PUBLISH_TOKEN 编译期外置（`String.fromEnvironment`）；24 个单元测试（含角色卡密度护栏、Cricket 卡 round-trip）。
+
+发布协议设计见 [`docs/character-publish-design.md`](docs/character-publish-design.md)。
 
 **待实现：**
 
-- [ ] 写接口：`POST/PUT/DELETE /api/characters`（用户自管角色卡投稿/同步）
-- [ ] 基础鉴权：`X-Install-Token` 自签 token 校验
-- [ ] Lorebook 在线下发（当前 App 端已支持导入 `character_book`，后端未单独建表）
+- [ ] 写接口补全：`PUT/PATCH/DELETE /api/characters`（POST 已支持；改删与版本历史列表待加）
+- [ ] 基础鉴权：`X-Install-Token` 自签 token 校验（当前仅 POST 支持可选 `X-Api-Token`）
 - [ ] Docker Compose 部署模板（PostgreSQL + 后端 + 数据卷）
 - [ ] 部署文档 `docs/deploy.md`（一键启动、升级、备份）
 - [ ] `metadata` 端点查询参数（`?ch=&lc=&pf=`）实际生效

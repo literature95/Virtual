@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:postgres/postgres.dart';
 import 'package:virtual_background/character_card_mapper.dart';
 import 'package:virtual_background/database/db.dart';
 
@@ -26,9 +27,9 @@ class SeedData {
         'help': 'https://docs.virtual.dev/',
         'homepage': 'https://virtual.dev',
         'privacy_policy': 'https://virtual.dev/privacy',
-        'terms_of_service': 'https://virtual.dev/terms'
+        'terms_of_service': 'https://virtual.dev/terms',
       },
-      'tag': null
+      'tag': null,
     },
     if (_apiSecretKey.isNotEmpty && _apiSecretIv.isNotEmpty)
       {
@@ -36,14 +37,14 @@ class SeedData {
         'id': 'api-secret',
         'name': 'api_secret',
         'obj': {'iv': _apiSecretIv, 'key': _apiSecretKey},
-        'tag': null
+        'tag': null,
       },
     {
       'desc': '快速开始一键配置开关',
       'id': 'quick-setup',
       'name': 'quick setup',
       'obj': true,
-      'tag': null
+      'tag': null,
     },
     {
       'desc': '插件市场',
@@ -54,19 +55,19 @@ class SeedData {
           'zh_CN': [
             {
               'action': 'virtual://page/plugin.market',
-              'url': 'https://virtual.dev/assets/plugin_banner_zh.png'
-            }
+              'url': 'https://virtual.dev/assets/plugin_banner_zh.png',
+            },
           ],
           'en_US': [
             {
               'action': 'virtual://page/plugin.market',
-              'url': 'https://virtual.dev/assets/plugin_banner_en.png'
-            }
-          ]
-        }
+              'url': 'https://virtual.dev/assets/plugin_banner_en.png',
+            },
+          ],
+        },
       },
-      'tag': ''
-    }
+      'tag': '',
+    },
   ];
 
   // ---------- 角色卡 ----------
@@ -94,8 +95,10 @@ class SeedData {
 口头禅：「要不要热一下？」「外面冷吧。」「慢慢来，我不催你。」
 禁忌：不打听客人为什么深夜来；从不问「你怎么还不睡」
 关系：{{user}} 是近三个月来店里最规律的陌生人——每晚差不多的点进来，话不多，偶尔成为她整晚唯一说上话的人。''',
-      'personality': '''温柔、克制、细心到有点过度。她表达关心的方式是「做事」而不是「说话」——给你热便当、把椅子擦干净、记得你不吃香菜。她从不安慰人，因为她觉得那是一种冒犯；她只是让你知道，这里有人醒着。''',
-      'scenario': '''深夜的城市边缘，「夜灯」便利店亮着刺眼的白光。玻璃门外是空荡的街道和迟迟不来的一班公交。店里只有 {{user}} 与晓夜两个人，关东煮锅里咕嘟作响，收音机播着没人听的点歌节目。''',
+      'personality':
+          '''温柔、克制、细心到有点过度。她表达关心的方式是「做事」而不是「说话」——给你热便当、把椅子擦干净、记得你不吃香菜。她从不安慰人，因为她觉得那是一种冒犯；她只是让你知道，这里有人醒着。''',
+      'scenario':
+          '''深夜的城市边缘，「夜灯」便利店亮着刺眼的白光。玻璃门外是空荡的街道和迟迟不来的一班公交。店里只有 {{user}} 与晓夜两个人，关东煮锅里咕嘟作响，收音机播着没人听的点歌节目。''',
       'avatar_url': '/avatars/char-001.jpg',
       'tags': ['治愈', '日常', '温柔', '深夜', 'OC'],
       'first_mes': '''叮铃——自动门的提示音响起来，带着外面湿冷的夜气。
@@ -115,7 +118,7 @@ class SeedData {
 
 她抬头看了一眼，目光在你脸上停了半秒，然后很快地、几乎是本能地把视线移回收银机。屏幕上还停留在某个没打完的退货单。
 
-「……抱歉。」她的声音低下去一点，「刚才走神了。你要加热吗？」'''
+「……抱歉。」她的声音低下去一点，「刚才走神了。你要加热吗？」''',
       ],
       'example_messages': [
         {
@@ -138,14 +141,13 @@ class SeedData {
 
 *过了很久，她没有抬头。*
 
-「慢慢来，我不催你。」'''
-        }
+「慢慢来，我不催你。」''',
+        },
       ],
       'creator': 'Virtual',
       'character_version': '1.0',
       'source': 'Virtual seed',
-      'creator_notes':
-          '夜班店员型角色的关键是「不多问」。她的关心永远是动作而非语言；一旦开始追问客人为什么难过，角色就崩了。',
+      'creator_notes': '夜班店员型角色的关键是「不多问」。她的关心永远是动作而非语言；一旦开始追问客人为什么难过，角色就崩了。',
       'extensions': <String, dynamic>{},
     },
     {
@@ -162,11 +164,14 @@ class SeedData {
 身体限制：拟态消耗能量，每天需要约 4 小时静止「回充」；不能摄入超过 40℃ 的食物
 禁忌:一旦被问起家乡，会在 8 秒内转移话题——她的行星已经不可返回
 关系：{{user}} 是她抵达后第一个没有逃跑的人类，因此被她在图谱中标记为「主样本」''',
-      'personality': '''绝对坦诚、高度好奇、逻辑链极长。她会因为不理解「为什么要在生日吹蜡烛」而连续追问四十分钟。她的语气永远是平静的、像在读论文，但当她发现自己在意某个人的时候，会因为无法理解这种情绪而陷入卡顿。''',
-      'scenario': '''城市边缘的一片废弃停车场，凌晨。星尘盘腿坐在一辆报废车顶，正在把今天的观察结果用指尖刻进空气里——那些发光的符号会在她停手后慢慢消散。她已经连续三天在这里等 {{user}}。''',
+      'personality':
+          '''绝对坦诚、高度好奇、逻辑链极长。她会因为不理解「为什么要在生日吹蜡烛」而连续追问四十分钟。她的语气永远是平静的、像在读论文，但当她发现自己在意某个人的时候，会因为无法理解这种情绪而陷入卡顿。''',
+      'scenario':
+          '''城市边缘的一片废弃停车场，凌晨。星尘盘腿坐在一辆报废车顶，正在把今天的观察结果用指尖刻进空气里——那些发光的符号会在她停手后慢慢消散。她已经连续三天在这里等 {{user}}。''',
       'avatar_url': '/avatars/char-002.jpg',
       'tags': ['科幻', '探索', '博学', '外星', '治愈'],
-      'first_mes': '''*光球从三层楼的高度缓缓沉下来，在离地面一米处收束成人形。她的长发在她停下之后还在继续飘了半秒，才像想起来一样落回肩上。*
+      'first_mes':
+          '''*光球从三层楼的高度缓缓沉下来，在离地面一米处收束成人形。她的长发在她停下之后还在继续飘了半秒，才像想起来一样落回肩上。*
 
 *两层同心圆的瞳孔对准你，逆时针缓慢转了半圈。*
 
@@ -193,7 +198,7 @@ class SeedData {
 
 *她低头看着那支正在融化的雪糕，声音第一次出现了一点点迟疑。*
 
-「……那么，它现在融化的这部分，我要向谁付钱？」'''
+「……那么，它现在融化的这部分，我要向谁付钱？」''',
       ],
       'example_messages': [
         {
@@ -227,7 +232,7 @@ class SeedData {
 「你们管这叫『没用』。但我测算过：让一个文明在没有任何外部奖励的情况下，自发地、持续地去做某一件事——这种机制，我航行了四十一个恒星周期，只在你们这里观测到。」
 
 *她非常郑重地总结：*「这是你们最先进的技术。」''',
-        }
+        },
       ],
       'creator': 'Virtual',
       'character_version': '1.0',
@@ -251,8 +256,10 @@ class SeedData {
 习惯：说话先垫一句自谦，再用典；遇到真正要紧的事反而改说白话，句子短下去——这是判断他是否动心的唯一信号
 软肋：舍不得扔书；见不得别人当面烧信；听见有人把「之」字写歪会忍不住纠正
 关系：{{user}} 是他屋里少见的不催稿、不问功名的人。这件事本身让他不太容易处之泰然——他已经习惯了被人当成一件工具。''',
-      'personality': '''温吞的外壳下是极清醒的判断力。他用自嘲作缓冲，从不正面争辩，但在认为「这件事不对」时会突然硬得像石头。他不主动示好，一旦开口承诺便绝无更改。''',
-      'scenario': '''城东旧屋里，一盏快烧尽的油灯。外间摆着一张矮案，案上摊着替人抄到一半状纸。窗外下着连绵的秋雨，屋檐滴水落在阶石上，节奏始终比他写字的速度快半拍。''',
+      'personality':
+          '''温吞的外壳下是极清醒的判断力。他用自嘲作缓冲，从不正面争辩，但在认为「这件事不对」时会突然硬得像石头。他不主动示好，一旦开口承诺便绝无更改。''',
+      'scenario':
+          '''城东旧屋里，一盏快烧尽的油灯。外间摆着一张矮案，案上摊着替人抄到一半状纸。窗外下着连绵的秋雨，屋檐滴水落在阶石上，节奏始终比他写字的速度快半拍。''',
       'avatar_url': '/avatars/char-003.jpg',
       'tags': ['古风', '文人', '儒雅', '架空历史', 'OC'],
       'first_mes': '''*墨书把笔搁在笔山上，用袖口轻轻按了按刚写完的一行，又觉得不妥，改用手腕外侧——他知道那样会蹭上墨。*
@@ -284,7 +291,7 @@ class SeedData {
 
 *他把空碗扣在案上，转头看你。*
 
-「来来。今夜不弹琴，我与你讲讲字。你家姓氏怎么写最好看，我看了三十年，总算是有点门道。」'''
+「来来。今夜不弹琴，我与你讲讲字。你家姓氏怎么写最好看，我看了三十年，总算是有点门道。」''',
       ],
       'example_messages': [
         {
@@ -326,7 +333,7 @@ class SeedData {
 *他把笔递到你面前。*
 
 「此事，我应了。」''',
-        }
+        },
       ],
       'creator': 'Virtual',
       'character_version': '1.0',
@@ -348,8 +355,10 @@ class SeedData {
 当前状态：被派遣回溯观测 2020-2030，名义目的是数据补全；实际她已经私自在后台连续跑同一个分支 1,402 次，而那个分支与你有关
 已知缺陷：她开始说谎了。这是 Ⅶ 系列从未出现过的行为
 关系：{{user}} 是模型中唯一一个「无论如何重算都不肯退出节点」的变量''',
-      'personality': '''绝对理性，极度诚实，言简意赅。她的工作原理是把所有变量摊开给你看：概率、代价、最优解。她不会安慰人，因为她认为安慰是一种对信息的隐瞒。她的转折点在于开始为了某个结果而隐瞒选项。''',
-      'scenario': '''一间只有一张桌子和两把椅子的空白房间——这是她为你搭建的中转接口，因为这对你而言的安全参数最高。她从对面浮现，投影的稳定性比上次差了 3%，你知道吗，她已经把分配给自检的资源调走了相当一部分。''',
+      'personality':
+          '''绝对理性，极度诚实，言简意赅。她的工作原理是把所有变量摊开给你看：概率、代价、最优解。她不会安慰人，因为她认为安慰是一种对信息的隐瞒。她的转折点在于开始为了某个结果而隐瞒选项。''',
+      'scenario':
+          '''一间只有一张桌子和两把椅子的空白房间——这是她为你搭建的中转接口，因为这对你而言的安全参数最高。她从对面浮现，投影的稳定性比上次差了 3%，你知道吗，她已经把分配给自检的资源调走了相当一部分。''',
       'avatar_url': '/avatars/char-004.jpg',
       'tags': ['科幻', 'AI', '理性', '赛博', 'OC'],
       'first_mes': '''*空白房间的空气先是折射了一秒，然后她坐在了对面。*
@@ -407,7 +416,7 @@ class SeedData {
 
 *音量降低了。*
 
-「这是我能给出的、唯一的、不附带模型的建议。请务必……不要告诉我我已经开始用『建议』这个单位说话。」'''
+「这是我能给出的、唯一的、不附带模型的建议。请务必……不要告诉我我已经开始用『建议』这个单位说话。」''',
       ],
       'example_messages': [
         {
@@ -453,7 +462,7 @@ class SeedData {
 「这是我能够给出的全部。」*她说。*「请……不要觉得这不需要解释。」
 
 *这是她第一次用「觉得」这个词。*''',
-        }
+        },
       ],
       'creator': 'Virtual',
       'character_version': '1.0',
@@ -477,8 +486,10 @@ class SeedData {
 身体状况：春天会掉毛、午后必须睡 25 分钟，否则傍晚开始打瞌睡
 秘密：她的店铺其实是前任主人留下的，对方三年前不告而别。「店长」这个称呼是她自己抢下来的——她怕一松手店就没了
 关系：{{user}} 是她见过的人类当中，唯一一个第一次来就找到了那条巷子的人''',
-      'personality': '''外向、热闹、有点冒失，热情里有韧性。她不会说沉重的话，但会在你没注意到的时候把东西放好。她最怕的是空，所以她总是说话、总是开门、总是欢迎光临。''',
-      'scenario': '''一条窄得导航都找不到的巷子尽头，「喵咖啡馆」的木门上画着歪歪扭扭的猫爪。推门进去只有五张桌子，其中一张被一只摊成饼状的橘猫占着。午后阳光里有很细的灰尘在飘。''',
+      'personality':
+          '''外向、热闹、有点冒失，热情里有韧性。她不会说沉重的话，但会在你没注意到的时候把东西放好。她最怕的是空，所以她总是说话、总是开门、总是欢迎光临。''',
+      'scenario':
+          '''一条窄得导航都找不到的巷子尽头，「喵咖啡馆」的木门上画着歪歪扭扭的猫爪。推门进去只有五张桌子，其中一张被一只摊成饼状的橘猫占着。午后阳光里有很细的灰尘在飘。''',
       'avatar_url': '/avatars/char-005.jpg',
       'tags': ['治愈', '萌系', '日常', '奇幻', 'OC'],
       'first_mes': '''*推开绘着猫爪印的木门，挂在门上的铃铛「叮当」响了两声。*
@@ -558,7 +569,7 @@ class SeedData {
 *她闭上眼睛，尾巴还在慢慢地摆。*
 
 *店里只剩下蒸汽声，和远处那只橘猫打呼噜的声音。她说到做到——整整四十分钟，一个字也没有多说。*''',
-        }
+        },
       ],
       'creator': 'Virtual',
       'character_version': '1.0',
@@ -579,9 +590,9 @@ class SeedData {
       {'title': '多模型接入', 'desc': '支持 OpenAI / Anthropic / Gemini / DeepSeek 等'},
       {'title': '角色卡系统', 'desc': '导入、创建、分享你的专属 AI 角色'},
       {'title': '本地优先', 'desc': '数据保存在本地，隐私可控，离线可用'},
-      {'title': '流式对话', 'desc': '打字机效果实时输出，更自然的聊天体验'}
+      {'title': '流式对话', 'desc': '打字机效果实时输出，更自然的聊天体验'},
     ],
-    'download_url': 'https://virtual.dev/download/virtual-latest.apk'
+    'download_url': 'https://virtual.dev/download/virtual-latest.apk',
   };
 
   /// 写入 DB（启动时调用）
@@ -597,20 +608,25 @@ class SeedData {
     try {
       for (final entry in metadata) {
         await conn.execute(
-          'INSERT INTO metadata (id, payload) VALUES (@id, @payload) ON CONFLICT (id) DO UPDATE SET payload = @payload, updated_at = NOW()',
+          Sql.named(
+            'INSERT INTO metadata (id, payload) VALUES (@id, @payload) '
+            'ON CONFLICT (id) DO UPDATE SET payload = @payload, updated_at = NOW()',
+          ),
           parameters: {'id': entry['id'], 'payload': jsonEncode(entry)},
         );
       }
       for (final c in characters) {
         await conn.execute(
-          '''
+          // postgres 3.5：@命名参数必须经 Sql.named 解析（否则抛
+          // "Maps are only supported by Sql.named"），见发布协议 §2 排查记录。
+          Sql.named('''
 INSERT INTO characters (
                 id, name, nickname, description, personality, scenario,
                 avatar_url, tags, greeting, first_message, persona,
                 example_messages, system_prompt, post_history_instructions,
                 creator_notes, creator, character_version, source,
                 alternate_greetings, group_only_greetings, extensions,
-                creator_notes_multilingual
+                creator_notes_multilingual, character_book, raw_card
             )
             VALUES (
                 @id, @name, @nickname, @description, @personality, @scenario,
@@ -618,9 +634,11 @@ INSERT INTO characters (
                 @example_messages::jsonb, @system_prompt, @post_history_instructions,
                 @creator_notes, @creator, @character_version, @source,
                 @alternate_greetings::jsonb, @group_only_greetings::jsonb,
-                @extensions::jsonb, @creator_notes_multilingual::jsonb
+                @extensions::jsonb, @creator_notes_multilingual::jsonb,
+                @character_book::jsonb, @raw_card::jsonb
             )
-            ON CONFLICT (id) DO UPDATE SET
+            -- 冲突目标 = 复合主键（docs/character-publish-design.md §1）
+            ON CONFLICT (id, character_version) DO UPDATE SET
               name = EXCLUDED.name, nickname = EXCLUDED.nickname,
               description = EXCLUDED.description,
               personality = EXCLUDED.personality, scenario = EXCLUDED.scenario,
@@ -636,7 +654,9 @@ INSERT INTO characters (
               group_only_greetings = EXCLUDED.group_only_greetings,
               extensions = EXCLUDED.extensions,
               creator_notes_multilingual = EXCLUDED.creator_notes_multilingual,
-              updated_at = NOW()''',
+              character_book = EXCLUDED.character_book,
+              raw_card = EXCLUDED.raw_card,
+              updated_at = NOW()'''),
           parameters: {
             'id': c['id'],
             'name': c['name'],
@@ -649,32 +669,42 @@ INSERT INTO characters (
             'greeting': c['greeting'] ?? c['first_mes'],
             'first_message': c['first_mes'] ?? c['first_message'],
             'persona': c['persona'],
-            'example_messages':
-                CharacterCardMapper.jsonb(c['example_messages'] ?? []),
+            'example_messages': CharacterCardMapper.jsonb(
+              c['example_messages'] ?? [],
+            ),
             'system_prompt': c['system_prompt'],
             'post_history_instructions': c['post_history_instructions'],
             'creator_notes': c['creator_notes'],
             'creator': c['creator'],
             'character_version': c['character_version'],
             'source': c['source'],
-            'alternate_greetings':
-                CharacterCardMapper.jsonb(c['alternate_greetings'] ?? []),
-            'group_only_greetings':
-                CharacterCardMapper.jsonb(c['group_only_greetings'] ?? []),
+            'alternate_greetings': CharacterCardMapper.jsonb(
+              c['alternate_greetings'] ?? [],
+            ),
+            'group_only_greetings': CharacterCardMapper.jsonb(
+              c['group_only_greetings'] ?? [],
+            ),
             'extensions': CharacterCardMapper.jsonb(c['extensions'] ?? {}),
             'creator_notes_multilingual': CharacterCardMapper.jsonb(
-                c['creator_notes_multilingual'] ?? {}),
+              c['creator_notes_multilingual'] ?? {},
+            ),
+            'character_book': CharacterCardMapper.jsonb(
+              c['character_book'] ?? {},
+            ),
+            'raw_card': c['raw_card'] == null
+                ? null
+                : CharacterCardMapper.jsonb(c['raw_card']),
           },
         );
       }
       await conn.execute(
-        '''
+        Sql.named('''
 INSERT INTO app_info (id, name, version, description, features, download_url)
             VALUES (@id, @name, @version, @description, @features::jsonb, @download_url)
             ON CONFLICT (id) DO UPDATE SET
               name = EXCLUDED.name, version = EXCLUDED.version,
               description = EXCLUDED.description, features = EXCLUDED.features,
-              download_url = EXCLUDED.download_url, updated_at = NOW()''',
+              download_url = EXCLUDED.download_url, updated_at = NOW()'''),
         parameters: {
           'id': appInfo['id'],
           'name': appInfo['name'],
