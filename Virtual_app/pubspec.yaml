@@ -1,4 +1,4 @@
-﻿name: virtual
+name: virtual
 description: Virtual - AI Character Chat Client
 publish_to: 'none'
 version: 1.0.0+1
@@ -111,8 +111,10 @@ flutter:
     - assets/dist/js/
     - assets/dist/css/fonts/
 
-  # 字体
+  # 图标字体：手动指定项目内置的完整 MaterialIcons（~1.6MB）。
+  # 注意 fonts/ 下必须是完整字体；此前曾误放 7.5KB 残缺文件，导致
+  # 搜索/底部导航等绝大多数图标渲染为空白。
   fonts:
     - family: MaterialIcons
       fonts:
-        - asset: fonts/MaterialIcons-Regular.otf
+        - asset: fonts/materialicons-regular.otf

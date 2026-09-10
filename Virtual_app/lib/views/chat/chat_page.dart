@@ -12,6 +12,7 @@ import '../../providers/chat_provider.dart';
 import '../../providers/character_provider.dart';
 import '../../providers/endpoint_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../common/character_cover_card.dart' show resolveAvatarImage;
 
 /// 聊天页面
 ///
@@ -847,7 +848,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
       backgroundColor: isUser
           ? Theme.of(context).colorScheme.secondaryContainer
           : Theme.of(context).colorScheme.primaryContainer,
-      backgroundImage: avatarPath != null ? FileImage(File(avatarPath)) : null,
+      // avatarPath 可能是在线卡 http(s) 外链 / data URL / 本地文件路径，
+      // Web 上 FileImage 处理 URL 会直接抛 _Namespace，统一走分发助手
+      backgroundImage: resolveAvatarImage(avatarPath),
       child: Text(
         initial,
         style: TextStyle(

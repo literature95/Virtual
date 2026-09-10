@@ -3,7 +3,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../theme/tavo_brand.dart';
 import '../common/cosmos_background.dart';
-import 'home_page.dart';
 
 /// 主框架 — 5 Tab 导航：
 ///
@@ -213,6 +212,33 @@ class HomeShell extends StatelessWidget {
     final isRoot = _isRootTab(context);
     final loc = GoRouterState.of(context).uri.path;
 
+    // 发现页有自己的 TabBar，不显示 home_shell 的 AppBar
+    if (loc == '/discover') {
+      return const PreferredSize(
+        preferredSize: Size.fromHeight(0),
+        child: SizedBox.shrink(),
+      );
+    }
+    // 搜索筛选页（/home/search、/home/category/:name）有自己的 AppBar
+    // （返回 + 搜索框 + 搜索按钮一体化），隐藏 home_shell 的 AppBar 避免双层
+    if (loc == '/home/search' || loc.startsWith('/home/category/')) {
+      return const PreferredSize(
+        preferredSize: Size.fromHeight(0),
+        child: SizedBox.shrink(),
+      );
+    }
+    // 对话页 / 角色页 / 我的页有自己的 AppBar，隐藏 home_shell 的 AppBar 避免双层
+    // 对话页：/chat、/chat/:id；角色页：/characters；我的页：/profile
+    if (loc == '/chat' ||
+        loc.startsWith('/chat/') ||
+        loc == '/characters' ||
+        loc == '/profile') {
+      return const PreferredSize(
+        preferredSize: Size.fromHeight(0),
+        child: SizedBox.shrink(),
+      );
+    }
+
     return AppBar(
       // ── 左侧：菜单 ☰ + 紧随其后的品牌 logo（左对齐）──
       leading: isRoot
@@ -249,12 +275,12 @@ class HomeShell extends StatelessWidget {
             }),
       leadingWidth: isRoot ? 130 : null,
       actions: [
-        // 首页 → 搜索图标
+        // 首页 → 搜索图标（跳转到搜索筛选页）
         if (loc.startsWith('/home'))
           IconButton(
             icon: const Icon(Icons.search, size: 23),
             tooltip: '搜索',
-            onPressed: () => HomePage.searchVisible.value = true,
+            onPressed: () => context.go('/home/search'),
           ),
         // 角色 / API接入 → "+" 新建
         if (_showPlus(context))

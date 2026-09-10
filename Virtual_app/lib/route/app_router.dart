@@ -6,6 +6,7 @@ import '../views/character/character_list_page.dart';
 import '../views/character/character_edit_page.dart';
 import '../views/discover/discover_page.dart';
 import '../views/home/category_characters_page.dart';
+import '../views/home/character_detail_page.dart';
 import '../views/home/home_page.dart';
 import '../views/lorebook/lorebook_list_page.dart';
 import '../views/lorebook/lorebook_edit_page.dart';
@@ -32,6 +33,14 @@ class AppRouter {
   static final GoRouter router = GoRouter(
     initialLocation: '/home',
     routes: [
+      // 角色卡详情页：独立全屏页面，不受 home_shell 包裹
+      GoRoute(
+        path: '/home/character/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return CharacterDetailPage(characterId: id);
+        },
+      ),
       ShellRoute(
         builder: (context, state, child) => HomeShell(child: child),
         routes: [
@@ -42,9 +51,21 @@ class AppRouter {
           GoRoute(
             path: '/home/category/:name',
             builder: (context, state) {
-              final name = Uri.decodeComponent(state.pathParameters['name']!);
+              final raw = state.pathParameters['name'] ?? '';
+              // 安全解码：路径参数可能包含非法百分号编码
+              String name;
+              try {
+                name = Uri.decodeComponent(raw);
+              } catch (_) {
+                name = raw;
+              }
               return CategoryCharactersPage(category: name);
             },
+          ),
+          // 搜索筛选页（无预选分类，从首页搜索按钮进入）
+          GoRoute(
+            path: '/home/search',
+            builder: (context, state) => const CategoryCharactersPage(),
           ),
           GoRoute(
             path: '/discover',

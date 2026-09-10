@@ -1,7 +1,45 @@
+import 'dart:convert';
+import 'dart:io' show File;
+
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../theme/tavo_brand.dart';
+import '../../utils/image_data.dart';
+
+/// 按头像路径形态返回对应的 [ImageProvider]，供 [CircleAvatar.backgroundImage]
+/// 等使用。
+///
+/// `avatarPath` 有三种来源，混用过会直接崩：
+/// - **在线卡导入**：`http(s)://…` 外链（如 charhub 立绘）→ 必须走
+///   [NetworkImage]；用 `FileImage(File(url))` 在 Web 上会抛
+///   `Unsupported operation: _Namespace`（dart:io 在 Web 不可用）。
+/// - **data URL**（`data:image/…;base64,…`）→ [MemoryImage]。
+/// - **本地选图**（原生端文件路径）→ [FileImage]；Web 端无文件系统能力，
+///   返回 null 由调用方回退到首字占位。
+///
+/// 空值 / 无法识别时返回 null。
+ImageProvider? resolveAvatarImage(String? path) {
+  if (path == null || path.isEmpty) return null;
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return NetworkImage(path);
+  }
+  if (path.startsWith('data:')) {
+    final parsed = parseDataUrl(path);
+    if (parsed != null) {
+      try {
+        return MemoryImage(base64Decode(parsed.$2));
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+  // 本地文件路径：Web 端 dart:io File 不可用，直接回退占位
+  if (kIsWeb) return null;
+  return FileImage(File(path));
+}
 
 /// 封面卡简介预处理
 ///

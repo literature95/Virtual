@@ -17,13 +17,15 @@ class BannerCarousel extends StatefulWidget {
   /// 点击某一张；未关联角色卡时调用方自行决定是否响应
   final void Function(BannerItem item)? onTap;
 
-  final double height;
+  /// 宽高比（宽 : 高）。宽度铺满父约束，高度 = 宽度 / aspectRatio。
+  /// 默认 1.58（约 16:10 的横幅构图）；例：屏宽 390 → 高约 247。
+  final double aspectRatio;
 
   const BannerCarousel({
     super.key,
     required this.items,
     this.onTap,
-    this.height = 150,
+    this.aspectRatio = 1.58,
   });
 
   @override
@@ -70,8 +72,8 @@ class _BannerCarouselState extends State<BannerCarousel> {
     final items = widget.items;
     if (items.isEmpty) return const SizedBox.shrink();
 
-    return SizedBox(
-      height: widget.height,
+    return AspectRatio(
+      aspectRatio: widget.aspectRatio,
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
           if (notification is ScrollStartNotification &&
@@ -93,7 +95,8 @@ class _BannerCarouselState extends State<BannerCarousel> {
               onPageChanged: (i) => setState(() => _index = i),
               itemBuilder: (context, i) => _BannerSlide(
                 item: items[i],
-                onTap: widget.onTap == null ? null : () => widget.onTap!(items[i]),
+                onTap:
+                    widget.onTap == null ? null : () => widget.onTap!(items[i]),
               ),
             ),
             Positioned(

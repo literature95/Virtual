@@ -11,6 +11,7 @@ import '../../models/character.dart';
 import '../../services/character_import_service.dart';
 import '../../services/character_export_service.dart';
 import '../../theme/tavo_brand.dart';
+import '../common/character_cover_card.dart' show resolveAvatarImage;
 
 /// 角色列表页：搜索 + 管理（长按菜单：编辑/复制/导出/删除）
 class CharacterListPage extends StatefulWidget {
@@ -244,14 +245,11 @@ class _CharacterTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final avatar = resolveAvatarImage(character.avatarPath);
     return ListTile(
       leading: CircleAvatar(
-        backgroundImage: character.avatarPath != null
-            ? NetworkImage(character.avatarPath!)
-            : null,
-        child: character.avatarPath == null
-            ? Text(character.name.characters.first)
-            : null,
+        backgroundImage: avatar,
+        child: avatar == null ? Text(character.name.characters.first) : null,
       ),
       title: Text(character.name),
       subtitle: Text(
