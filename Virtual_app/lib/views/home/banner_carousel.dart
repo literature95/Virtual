@@ -74,36 +74,40 @@ class _BannerCarouselState extends State<BannerCarousel> {
 
     return AspectRatio(
       aspectRatio: widget.aspectRatio,
-      child: NotificationListener<ScrollNotification>(
-        onNotification: (notification) {
-          if (notification is ScrollStartNotification &&
-              notification.dragDetails != null) {
-            // 用户正在拖：先别自动跳页，否则会和手势打架
-            _timer?.cancel();
-          } else if (notification is ScrollEndNotification) {
-            _startAutoPlay();
-          }
-          return false;
-        },
-        child: Stack(
-          alignment: Alignment.bottomCenter,
-          children: [
-            PageView.builder(
-              controller: _controller,
-              padEnds: false,
-              itemCount: items.length,
-              onPageChanged: (i) => setState(() => _index = i),
-              itemBuilder: (context, i) => _BannerSlide(
-                item: items[i],
-                onTap:
-                    widget.onTap == null ? null : () => widget.onTap!(items[i]),
+      // 轮播动画每帧都在变：圈进独立重绘边界，动画期间不重绘页面其余部分
+      child: RepaintBoundary(
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            if (notification is ScrollStartNotification &&
+                notification.dragDetails != null) {
+              // 用户正在拖：先别自动跳页，否则会和手势打架
+              _timer?.cancel();
+            } else if (notification is ScrollEndNotification) {
+              _startAutoPlay();
+            }
+            return false;
+          },
+          child: Stack(
+            alignment: Alignment.bottomCenter,
+            children: [
+              PageView.builder(
+                controller: _controller,
+                padEnds: false,
+                itemCount: items.length,
+                onPageChanged: (i) => setState(() => _index = i),
+                itemBuilder: (context, i) => _BannerSlide(
+                  item: items[i],
+                  onTap: widget.onTap == null
+                      ? null
+                      : () => widget.onTap!(items[i]),
+                ),
               ),
-            ),
-            Positioned(
-              bottom: 8,
-              child: _PageIndicator(count: items.length, index: _index),
-            ),
-          ],
+              Positioned(
+                bottom: 8,
+                child: _PageIndicator(count: items.length, index: _index),
+              ),
+            ],
+          ),
         ),
       ),
     );

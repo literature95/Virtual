@@ -33,6 +33,19 @@ if ($web) {
   Write-Host '[serve] 未找到 Virtual_app/build/web，跳过同步（请先 flutter build web）'
 }
 
+# 2.5) App 壳文件禁缓存补丁：dart_frog 内置静态服务只发 Last-Modified，
+#      浏览器在启发式新鲜窗口内不回源，重建同步后会供旧 main.dart.js。
+#      dart_frog build 每次重新生成 server.dart，因此每次构建后都要重打。
+$server = "$root\build\bin\server.dart"
+if ((Test-Path $server) -and -not (Select-String -Path $server -Pattern 'cache-control' -Quiet)) {
+  (Get-Content $server -Raw) `
+    -replace [regex]::Escape('  final handler = Cascade().add(createStaticFileHandler()).add(buildRootHandler()).handler;'),
+             @'
+  final handler = (RequestContext context) async { final rsp = await Cascade().add(createStaticFileHandler()).add(buildRootHandler()).handler(context); final p = context.request.uri.path; final isShell = p.isEmpty || p.endsWith(".js") || p.endsWith(".html") || p.endsWith(".json"); if (isShell) { final h = Map<String, Object>.from(rsp.headers); h["cache-control"] = "no-cache"; return rsp.copyWith(headers: h); } return rsp; };
+'@ | Set-Content $server -Encoding UTF8
+  Write-Host '[serve] 已打 App 壳禁缓存补丁'
+}
+
 # 3) 启动后端
 Set-Location $root
 Write-Host '[serve] 预览地址: http://localhost:8080/'

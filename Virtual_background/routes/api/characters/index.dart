@@ -108,7 +108,7 @@ Future<Response> _onPost(RequestContext context) async {
   if (!db.isAvailable) await db.init();
 
   // 1) 可选鉴权：配置 PUBLISH_TOKEN 后要求请求头匹配（本地默认开放）
-  const token = AppConfig.publishToken;
+  final token = AppConfig.publishToken;
   if (token.isNotEmpty && context.request.headers['x-api-token'] != token) {
     return Response(statusCode: 401, body: 'Unauthorized');
   }
@@ -188,7 +188,7 @@ Future<Response> _onPost(RequestContext context) async {
               ? data['character_version'].toString()
               : '1.0');
     final filename =
-        'char-${CharacterCardMapper.sanitizeFilename(idForFile)}-'
+        'char-${CharacterCardMapper.sanitizeIdForFile(idForFile)}-'
         '${CharacterCardMapper.sanitizeFilename(versionForFile)}$ext';
 
     try {

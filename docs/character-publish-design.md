@@ -349,3 +349,69 @@ SELECT DISTINCT ON (id) * FROM characters ORDER BY id, updated_at DESC;
 - PostgreSQL 18.1 在线，但 **`virtual` 库此前不存在**（只有 postgres / qmjy / novelist 等）。
   库不存在时驱动报 `FormatException: Missing extension byte`，比「库不存在」的语义难辨认 —— 已建库（UTF8）。
   这也是后端长期静默降级内存的真正原因（不是连不上，是库不存在）。
+
+### 3.5 中文（非 ASCII）角色 id 的两个缺陷（2026-09-11 发现并修复）
+
+用实卡 `[无期迷途]希露妲.png` 走完整链路时暴露。`slugify` **故意保留汉字**
+（`[^a-z0-9_\-\u4e00-\u9fff]`），所以中文名卡片的 `id` 就是中文，两个缺陷都由此触发。
+
+**缺陷 A：详情 / 导出端点用中文 id 恒 404**
+- 现象：`GET /api/characters/希露妲` 与 `.../export` 均 404；`cricket`、`char-001` 正常。
+- 根因：dart_frog 用 `request.url.path` 匹配路由并捕获 `[param]`（`dart_frog/src/router.dart`
+  的 `Invocation.match`），**全程不解码**；而 Dart `Uri.path` 只对 **ASCII 安全字符**的转义做
+  归一化解码 —— `%63har-001` → `char-001`（能命中），`%E5%B8%8C%E9%9C%B2%E5%A6%B2` →
+  **保留百分号编码**（非 ASCII 不归一化）。于是捕获到的是字面量 `%E5%B8%8C…`，与库中的
+  `希露妲` 不相等。
+- 已排除（均有实证）：驱动层（独立脚本用 CJK 参数查询 `rows=1`、`client_encoding=UTF8`）、
+  DB 存储字节（`e5b88ce99cb2e5a6b2` 正确）、代理干扰（`--noproxy` 同样 404）。
+- 修复：新增 `lib/path_param.dart` 的 `decodePathParam`，在 `[id].dart` 与 `[id]/export.dart`
+  查库前归一化。非法转义退回原串，畸形请求返 404 而非 500。
+
+**缺陷 B：中文 id 的立绘文件名坍缩 → 同版本互相覆盖**
+- 现象：`希露妲` 落盘为 `char-___-1_0.png`（`sanitizeFilename` 把非 `[a-zA-Z0-9_-]` 全换 `_`）。
+  **任意两个纯中文名、同版本的卡片都写同一路径**，后者覆盖前者立绘。
+- 修复：新增 `CharacterCardMapper.sanitizeIdForFile` —— 净化确实改写原串时追加该串的
+  **FNV-1a(32) 短哈希**（免依赖、跨进程确定，`String.hashCode` 不保证稳定）。纯 ASCII 合法 id
+  净化前后相同，**不加哈希**，既有文件名与 URL 不变。
+  现 `希露妲` → `char-____87596f54-1_0.png`、`星尘` → `char-___5375cd93-1_0.png`，互不覆盖。
+- 顺带：导出下载名改用 RFC 5987，浏览器优先显示 `希露妲.json`（ASCII 片段作保底）。
+
+**验证**：`dart analyze` 0 issues；`dart test` 全绿（新增 `test/character_id_encoding_test.dart`
+11 个用例，含「复现根因」与「修复后唯一」两组）；实机上传两张纯中文 id 卡片后，
+详情/导出均 200、两张立绘文件名互异、ASCII id 与种子回归全 200、畸形转义返 404。
+
+**残留（未改，属既有设计）**：`exportEnvelope` 固定输出 `spec=chara_card_v2` / `spec_version=2.0`，
+即 v3 卡上传后导出得到 v2 信封（`data` 层因走 `raw_card` 原样吐回而**无损**）。这是路由文档
+明示的取舍，round-trip 承诺范围限定在 `data` 层。
+
+### 3.6 批量导入工具支持 PNG 卡片（2026-09-11）
+
+背景：既有 `tool/import_cards.dart` 只认 `.json`、**不递归子目录**；而真实卡片集的形态是
+**PNG 卡片**（SillyTavern / CCv2 / CCv3 导出，卡内数据藏在 PNG 文本块里）。后端此前
+**没有 PNG 解析能力** —— `POST /api/characters` 是 App 端先解析 PNG 再把 JSON 传上来
+（`card` 字段），所以「把 PNG 卡库批量灌进数据库」原本无路可走。
+
+| 文件 | 作用 |
+|---|---|
+| `lib/png_card_text.dart`（新） | 从 `tEXt`/`zTXt`/`iTXt` 块提取内嵌卡片 JSON。与 App 端提取器**同一解析语义**，但只面向 VM（后端与工具均为 VM 运行），直接用 `dart:io` 的 zlib 解码器 —— **不引 `package:archive`**（App 端用它是为了 Web） |
+| `tool/import_cards.dart`（改） | 同时接受 `.json` 与 `.png`；可传单个文件或目录；新增 `--recursive` / `--no-avatar` / `--avatar-dir` / `--id-from=name\|file`；PNG 卡把**卡面图像本身**落盘为立绘 |
+
+- 立绘命名与 `POST /api/characters` 完全一致（`char-<sanitizeIdForFile(id)>-<version>.png`），
+  故 `resolveAvatarUrl` 的 `/uploads/` → `/api/uploads/` 改写与 CORS 中间件继承自然生效。
+- `--id-from=name`（默认）用卡内 `name` 的 `slugify`（保留中文）。同 `(id, version)` 会互相覆盖，
+  运行结束会报告重复计数，确有重名时改用 `--id-from=file`。
+- 立绘**先写盘后入库**，保证数据库不会指向不存在的文件；`--dry-run` 既不写库也不落盘。
+- 解析失败按原因归类报告（不是合法 PNG / PNG 无卡片文本块 / 结构不是角色卡 / 缺 name / JSON 解析失败），
+  避免「普通插画」与「格式选错」混为一句报错。
+
+**实机验证**（实卡 `[无期迷途]希露妲.png`，经用户确认以此卡试跑）：
+
+- `--dry-run` → `希露妲 v1.0 "希露妲" <PNG(chara)> avatar=/uploads/char-____87596f54-1_0.png`
+- 正式导入 → `成功 1, 失败 0, 立绘 1`；DB 出现 `(希露妲, 1.0)`、
+  `avatar_url=/uploads/char-____87596f54-1_0.png`，立绘 273,273 B（与源图逐字节一致）
+- `GET /api/characters` 200 且列表含该卡；`GET /api/characters/希露妲` 200（5500 B）；
+  `/api/uploads/char-____87596f54-1_0.png` 200（273,273 B）
+- 新增 `test/png_card_text_test.dart` 14 例（tEXt / zTXt / iTXt、base64 缺 `=` 填充、
+  非规范直写 JSON、多块取 spec 高者、同版本取文档序、截断不抛异常、UTF-8 优先于 latin1）；
+  后端测试 43 → **57 全绿**，`dart analyze` 0 issues
+

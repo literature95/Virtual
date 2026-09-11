@@ -21,8 +21,14 @@ class CosmosBackground extends StatelessWidget {
         ColoredBox(color: isDark ? TavoColors.cosmosBg : scheme.surface),
         if (isDark) ...[
           const _Nebula(),
-          const CustomPaint(painter: _StarsPainter(seed: 7, density: 90)),
-          const CustomPaint(painter: _StarsPainter(seed: 23, density: 55)),
+          // 星点是纯静态图层：用 RepaintBoundary 缓存成独立层，
+          // 滚动/轮播动画时不再整屏重绘（软件渲染下的主要掉帧源）
+          const RepaintBoundary(
+            child: CustomPaint(painter: _StarsPainter(seed: 7, density: 90)),
+          ),
+          const RepaintBoundary(
+            child: CustomPaint(painter: _StarsPainter(seed: 23, density: 55)),
+          ),
         ],
         if (child != null) child!,
       ],

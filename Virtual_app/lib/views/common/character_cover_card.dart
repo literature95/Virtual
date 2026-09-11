@@ -126,7 +126,9 @@ class CharacterCoverCard extends StatelessWidget {
     final summary = coverSummaryOf(description);
     return GestureDetector(
       onTap: busy ? null : onTap,
-      child: Container(
+      // 每张卡独立重绘边界：网格滚动/别的卡变化时不连带重绘本卡
+      child: RepaintBoundary(
+        child: Container(
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
@@ -246,6 +248,7 @@ class CharacterCoverCard extends StatelessWidget {
               ),
           ],
         ),
+      ),
       ),
     );
   }

@@ -166,5 +166,28 @@ class AppDatabase {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     ''');
+    // --- 账号体系（邮箱注册 + 验证码，见 lib/auth/）---
+    await conn.execute('''
+      CREATE TABLE IF NOT EXISTS users (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        nickname TEXT,
+        avatar_url TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    ''');
+    await conn.execute('''
+      CREATE TABLE IF NOT EXISTS email_codes (
+        email TEXT NOT NULL,
+        purpose TEXT NOT NULL DEFAULT 'register',
+        code TEXT NOT NULL,
+        attempts INT NOT NULL DEFAULT 0,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (email, purpose)
+      )
+    ''');
   }
 }

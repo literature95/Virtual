@@ -93,9 +93,9 @@ d:\Documents\Desktop\Virtual\
 │   │   ├── avatar_url.dart      # 立绘 URL 解析器（相对路径 → 按请求来源补全）
 │   │   ├── character_card_mapper.dart # 角色卡映射/校验/共享 upsert SQL
 │   │   └── database/            # db.dart（连接 + 降级）+ seed.dart（5 个种子角色）
-│   ├── tool/import_cards.dart   # CCv2/v3 角色卡批量导入（目录 → PG 事务 upsert）
+│   ├── tool/import_cards.dart   # 角色卡批量导入（PNG/JSON → PG upsert + 立绘落盘）
 │   ├── public/avatars/          # 5 张本地立绘（char-001~005.jpg）
-│   └── test/                    # 11 个测试（seed 契约 + avatar URL 解析器）
+│   └── test/                    # 57 个测试（种子契约 / avatar URL / 往返 / 中文 id / PNG 提取）
 │
 ├── Virtual_web/                 # React 官网（端口 5173）
 │   └── src/
@@ -120,13 +120,46 @@ d:\Documents\Desktop\Virtual\
 | 导航 | 5 Tab 主导航（首页/发现/对话/角色/我的），窄屏 NavigationBar / 宽屏 NavigationRail；GoRouter 30+ 路由 |
 | 首页 | 在线角色卡广场：后端 `/api/characters` 拉取 + 分类过滤 chips + 搜索；竖版封面卡（0.62 比例、照片铺满、2~3 列网格，已导入角色带角标）；点击卡片 → 拉详情 → 幂等导入 → 直达对话（已聊过则回原对话） |
 | 对话 | 会话列表（搜索/置顶/长按菜单：重命名/置顶/删除）；聊天页流式输出、导出 Markdown、清空消息、模型信息 |
-| 角色 | 本地角色管理（搜索 + 复制角色）；**角色卡导入/导出（CCv2 / CCv3 / SillyTavern 全字段，含 `character_book` 世界书）** |
+| 角色 | 本地角色管理（搜索 + 复制角色）；**角色卡导入/导出 —— 唯一格式为 PNG**（内嵌 CCv3 全字段与 `character_book` 世界书），Web/桌面/移动共用一条字节流路径，浏览器端亦可导出下载 |
+| 世界书 | **Lorebook 管理 —— 唯一格式为 JSON**：导入自动识别 SillyTavern World Info（`entries` 为对象）/ CCv3 `character_book`（`entries` 为数组）/ 本 App 导出格式；导出为 SillyTavern 形态，便于跨前端交换 |
 | 模型接入 | OpenAI 兼容（20+ 平台）/ Anthropic / Gemini 三适配器，均 SSE 流式，已解析思维链字段 |
 | 多模态 | 图片输入（≤4 张，预览条可删除），转 OpenAI 视觉格式（data URL） |
 | 发现 | 扩展内容聚合：世界书/预设/正则/插件/主题/调试 |
 | 我的 | 头像/昵称/ID + 我的角色卡计数 + API 接入/主题外观/插件/更多 |
 | 设置 | 后端地址配置、语言切换（跟随系统/简中/English/日本語）、数据迁移（JSON 导出导入） |
 | 设计系统 | `design_tokens.dart` 单一来源 + 浅/深双主题 + 星空背景/玻璃拟态，与 Web 端统一 |
+
+**格式约定（项目级，非可选）：角色卡用 PNG，世界书用 JSON。**
+
+**角色卡导入来源支持矩阵：**
+
+| 来源 | 形态 | Web | 桌面 | 移动 |
+|---|---|---|---|---|
+| PNG 卡片 | `tEXt` / `zTXt` / `iTXt` 中的 `chara` / `ccv3`（base64，规范形态；压缩块自动 zlib 解压） | ✅ | ✅ | ✅ |
+| URL 直链 | 裸 JSON 端点（保留的远程获取通道，不受本地文件格式约束） | ✅ | ✅ | ✅ |
+
+**角色卡导出**：统一 PNG —— 写入 `chara` 与 `ccv3` 两个 `tEXt` 块（值同为
+`base64(UTF-8 CCv3 JSON)`）。底图取角色立绘，无立绘时生成品牌色占位图；
+`data:` URL 头像会被剥离为 `"none"`，避免同一张图在卡内存两遍。
+
+**世界书导入/导出**：统一 JSON。导入自动识别三种形态（SillyTavern World Info /
+CCv3 `character_book` / 本 App 导出），导出为 SillyTavern World Info 形态。
+注意 SillyTavern 与 CCv3 的同名字段语义不同（`disable` 与 `enabled` 相反、
+`position` 是整数 0..4），照搬会**静默**出错 —— 映射表见文档第九节。
+
+已知不支持：JPEG / WEBP 内嵌卡片（存量卡片几乎全是 PNG）、chub.ai 网页链接
+（其公开下载 API 已废弃，需先在页面点 Download 拿到文件）。
+若一块卡片同时带 `chara` 与 `ccv3` 且内容不一致，取 `spec` 版本更高的一方，
+避免丢掉 V3 独有字段。
+容器布局、写入规范与世界书字段映射见 `docs/character-card-schema.md` 第八、九节。
+卡片疑似有问题时：
+
+```bash
+# 看某张 PNG 到底有哪些 chunk（块级取证）
+python Virtual_app/tool/inspect_card_png.py <文件.png>
+# 逐张诊断，或对整库做回归（输出成功率 / 关键字分布 / 失败清单）
+dart run Virtual_app/tool/card_png_probe.dart <文件或目录>
+```
 
 **待实现：**
 
@@ -150,14 +183,19 @@ d:\Documents\Desktop\Virtual\
 | `GET /api/avatars/:file` | 内置角色立绘（jpg/png/webp 白名单，1 天缓存） |
 | `GET /api/uploads/:file` | 用户上传立绘（发布接口写入 `public/uploads/`，同白名单与 CORS 处理） |
 
-其他能力：全局 CORS 中间件；PostgreSQL 可选 + 失败降级内存种子（5 个角色，空库首次启动自动灌入）；角色卡 schema 已对齐 App 的完整角色模型（`characters` 表 27 列，含幂等增量迁移，**复合主键 `(id, character_version)`** 支持多版本）；立绘本地化（存相对路径，响应时按请求来源补全绝对 URL，App/Web 零改动）；api-secret 与 PUBLISH_TOKEN 编译期外置（`String.fromEnvironment`）；24 个单元测试（含角色卡密度护栏、Cricket 卡 round-trip）。
+其他能力：全局 CORS 中间件；PostgreSQL 可选 + 失败降级内存种子（5 个角色，空库首次启动自动灌入）；角色卡 schema 已对齐 App 的完整角色模型（`characters` 表 27 列，含幂等增量迁移，**复合主键 `(id, character_version)`** 支持多版本）；**中文（非 ASCII）id 全链路可用** —— `slugify` 保留汉字，详情/导出路由对路径参数补解码（dart_frog 不解码，Dart `Uri.path` 也只归一化 ASCII 转义），立绘文件名对非 ASCII id 追加 FNV-1a 短哈希以免不同中文名同版本互相覆盖；立绘本地化（存相对路径，响应时按请求来源补全绝对 URL，App/Web 零改动）；api-secret 与 PUBLISH_TOKEN 编译期外置（`String.fromEnvironment`）；57 个单元测试（含角色卡密度护栏、Cricket 卡 round-trip、中文 id 编码回归、PNG 卡内文本块提取）。
 
-**批量导入第三方角色卡**：`tool/import_cards.dart` 可把装满 CCv2/v3 角色卡 JSON 的目录批量灌入 PostgreSQL（与 POST 同一条 mapper/upsert 链路，文件名 UUID 作 character_id，`avatar: "none"` 归 NULL，批量事务 + 坏行隔离，可重跑幂等）：
+**批量导入角色卡（PNG / JSON → 数据库）**：`tool/import_cards.dart` 把角色卡批量灌入 PostgreSQL，与 `POST /api/characters` 同一条 mapper/upsert 链路。**PNG 卡片**会解析其 `tEXt`/`zTXt`/`iTXt` 文本块取出内嵌卡片数据，并把**卡面图像本身落盘为立绘**（`public/uploads/`，命名与上传协议一致），App 的角色墙据此显示头像：
 
 ```bash
 cd Virtual_background
-dart run tool/import_cards.dart <cardsDir> [--limit=N] [--batch-size=N] [--dry-run]
+# 单张卡试跑：只解析，不落库不落盘
+dart run tool/import_cards.dart "/路径/xx.png" --dry-run
+# 卡库批量导入（PNG 卡库通常需要递归）
+dart run tool/import_cards.dart "/路径/卡库" --recursive
 ```
+
+选项：`--recursive` 递归子目录 · `--limit=N` 限量 · `--batch-size=N` 每事务条数（默认 100） · `--no-avatar` 不落盘立绘 · `--avatar-dir=PATH` · `--id-from=name|file`（默认 `name`，取卡内 name 的 slug 并保留中文） · `--dry-run`。批量事务 + 坏行隔离，同 `(id, character_version)` 覆盖，可重跑幂等；同名不同卡会互相覆盖，运行结束会报告重复计数（此时建议 `--id-from=file`）。
 
 注意：`GET /api/characters` 列表接口尚无分页，单次导入建议控制在几千张以内（万级会拖垮 App/Web 列表加载）。
 

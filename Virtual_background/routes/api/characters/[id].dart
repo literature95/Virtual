@@ -5,6 +5,7 @@ import 'package:virtual_background/avatar_url.dart';
 import 'package:virtual_background/character_card_mapper.dart';
 import 'package:virtual_background/database/db.dart';
 import 'package:virtual_background/database/seed.dart';
+import 'package:virtual_background/path_param.dart';
 
 /// GET /api/characters/[id] — 角色卡详情（完整字段）
 ///
@@ -19,6 +20,10 @@ Future<Response> onRequest(RequestContext context, String id) async {
   if (context.request.method != HttpMethod.get) {
     return Response(statusCode: 405, body: 'Method Not Allowed');
   }
+
+  // dart_frog 不解码路径参数：含汉字的 id 会以字面量 `%E5%B8%8C…` 到达，
+  // 与库中的 `希露妲` 不等 → 恒 404。此处归一化（原因见 path_param.dart）。
+  final characterId = decodePathParam(id);
 
   final db = AppDatabase.instance;
   if (!db.isAvailable) await db.init();
@@ -43,7 +48,7 @@ SELECT id, name, nickname, description, personality, scenario, avatar_url, tags,
   FROM characters WHERE id = @id
   ORDER BY updated_at DESC
   LIMIT 1'''),
-        parameters: {'id': id},
+        parameters: {'id': characterId},
       );
       if (rows.isNotEmpty) {
         final r = rows.first.toColumnMap();
@@ -100,7 +105,7 @@ SELECT id, name, nickname, description, personality, scenario, avatar_url, tags,
   }
 
   result ??= SeedData.characters.firstWhere(
-    (c) => c['id'] == id,
+    (c) => c['id'] == characterId,
     orElse: () => <String, dynamic>{},
   );
 

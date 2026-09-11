@@ -28,11 +28,22 @@ import '../views/home/home_shell.dart';
 import '../views/more/more_page.dart';
 import '../views/plugin/plugin_list_page.dart';
 import '../views/debug/debug_page.dart';
+import '../views/auth/login_page.dart';
+import '../views/auth/register_page.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
     initialLocation: '/home',
     routes: [
+      // 登录/注册：独立全屏页面，不受 home_shell 包裹
+      GoRoute(
+        path: '/login',
+        builder: (context, state) => const LoginPage(),
+      ),
+      GoRoute(
+        path: '/register',
+        builder: (context, state) => const RegisterPage(),
+      ),
       // 角色卡详情页：独立全屏页面，不受 home_shell 包裹
       GoRoute(
         path: '/home/character/:id',

@@ -34,3 +34,6 @@ Thumbs.db
 
 # ── AI 生成图片临时产物（未确认不入库）──
 generated-images/
+
+# ── 卡片解析派生缓存（10 万+ JSON，不入库）──
+cards-js/

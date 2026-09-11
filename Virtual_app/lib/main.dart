@@ -6,6 +6,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/app_database.dart';
+import 'providers/auth_provider.dart';
 import 'providers/character_provider.dart';
 import 'providers/chat_provider.dart';
 import 'providers/settings_provider.dart';
@@ -89,6 +90,7 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => SettingsProvider(prefs)),
+        ChangeNotifierProvider(create: (_) => AuthProvider(prefs)),
         ChangeNotifierProvider(
           create: (_) => MetadataProvider(MetadataService(prefs: prefs))..load(),
         ),

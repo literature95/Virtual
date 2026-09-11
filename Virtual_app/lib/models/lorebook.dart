@@ -152,6 +152,99 @@ class Lorebook {
         'entries': entries.map((e) => e.toCharacterBook()).toList(),
       };
 
+  /// 从 SillyTavern World Info（世界书）JSON 构建
+  ///
+  /// 与 CCv3 `character_book` 的差异（对磁盘上 231 个真实世界书实测得出）：
+  ///
+  /// | 维度 | `character_book` | SillyTavern World Info |
+  /// | --- | --- | --- |
+  /// | `entries` | **数组** `[{…}]` | **对象** `{"0":{…},"1":{…}}` |
+  /// | 启用开关 | `enabled` | `disable`（**语义相反**） |
+  /// | 关键词 | `keys` / `secondary_keys` | `key` / `keysecondary` |
+  /// | 位置 | 字符串 `before_char` | **整数** `0..4` |
+  /// | 名称 | 必有 `name` | 221 个样本中仅 7 个有 |
+  ///
+  /// 若拿 `entries` 当数组解析，这 221 个文件会**静默得到 0 条目**——
+  /// 世界书看起来"导入成功"却完全没有内容。
+  ///
+  /// [fallbackName] 用于顶层缺少 `name` 时补默认名（调用方传文件名）。
+  factory Lorebook.fromWorldInfo(
+    Map<String, dynamic> json, {
+    String? fallbackName,
+  }) {
+    final now = DateTime.now();
+    final raw = json['entries'];
+    final entries = <LorebookEntry>[];
+    if (raw is Map) {
+      // JSON 对象的键序被 Dart 的 Map 保留，因此条目顺序与文件一致
+      for (final value in raw.values) {
+        if (value is Map) {
+          entries.add(
+            LorebookEntry.fromWorldInfo(Map<String, dynamic>.from(value)),
+          );
+        }
+      }
+    }
+
+    // 顶层未知键保留进 extensions，避免导入→导出丢字段。
+    // `originalData` 是 entries 的冗余副本（59 个样本里体积可观），显式跳过。
+    final exts = Map<String, dynamic>.from(
+      json['extensions'] ?? <String, dynamic>{},
+    );
+    const known = {
+      'entries',
+      'originalData',
+      'name',
+      'description',
+      'scan_depth',
+      'token_budget',
+      'recursive_scanning',
+      'extensions',
+    };
+    for (final e in json.entries) {
+      if (!known.contains(e.key)) exts.putIfAbsent(e.key, () => e.value);
+    }
+
+    final name = json['name']?.toString();
+    return Lorebook(
+      id: _nowId(),
+      name: (name == null || name.isEmpty)
+          ? (fallbackName ?? 'World Book')
+          : name,
+      description: json['description']?.toString() ?? '',
+      entries: entries,
+      enabled: true,
+      order: 0,
+      createdAt: now,
+      updatedAt: now,
+      scanDepth: _asInt(json['scan_depth']) ?? 0,
+      tokenBudget: _asInt(json['token_budget']) ?? 0,
+      recursiveScanning: json['recursive_scanning'] == true,
+      extensions: exts,
+    );
+  }
+
+  /// 回写为 SillyTavern World Info（世界书）JSON —— 导出默认形态
+  ///
+  /// `entries` 用**对象**形态：这是 SillyTavern 真正读写的形式，
+  /// 数组形态只有 CCv3 的 `character_book` 才用。导出为对象形态才能被
+  /// SillyTavern / 其他前端直接吃下。
+  Map<String, dynamic> toWorldInfo() {
+    final outEntries = <String, dynamic>{};
+    for (var i = 0; i < entries.length; i++) {
+      outEntries['$i'] = entries[i].toWorldInfo(index: i);
+    }
+    return {
+      'name': name,
+      'description': description,
+      'scan_depth': scanDepth,
+      'token_budget': tokenBudget,
+      'recursive_scanning': recursiveScanning,
+      'extensions': extensions,
+      'entries': outEntries,
+    };
+  }
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
@@ -343,6 +436,126 @@ class LorebookEntry {
         'probability': probability,
       };
 
+  /// 从 SillyTavern World Info 的 `entries[<key>]` 条目构建
+  ///
+  /// 字段映射（SillyTavern → 本模型）：
+  ///
+  /// - `key` / `keysecondary` → [keys] / [secondaryKeys]
+  ///   （真实语料 5975 条中 `key` **全部**是数组，仍兼容字符串写法）
+  /// - `disable` → [enabled] 取反（**最容易写错的一处**：`disable: true`
+  ///   在 SillyTavern 里表示"这条不生效"，直接赋给 `enabled` 会把全部
+  ///   条目反转成启用状态）
+  /// - `position` 整数 → [position]：`0` char 前 · `1` char 后 · `2` AN 前 ·
+  ///   `3` AN 后 · `4` 按深度（本模型的注入管线不支持深度，落到"用户消息之前"，
+  ///   原始深度值保留在 `extensions.depth`）
+  /// - `selective` + `selectiveLogic` → [selective]：只有 `3`（AND_ALL，
+  ///   次要关键词需全部命中）与本模型的布尔语义等价；`0`（AND_ANY）等价于
+  ///   `selective == false`；`1`/`2` 是取反逻辑，本模型无法表达，降级处理
+  /// - `useProbability == false` → [probability] 归 100
+  /// - `useRegex == true` → [matchStrategy] 置 regex
+  /// - 其余 SillyTavern 专有字段（`group` / `scanDepth` / `matchWholeWords` /
+  ///   `sticky` / `cooldown` …）原样进 [extensions]，保证往返不丢
+  factory LorebookEntry.fromWorldInfo(Map<String, dynamic> e) {
+    // 少数转换工具会把两套字段同时写进一个条目；此时以 SillyTavern 字段为准，
+    // 因为它是真实语料中的实际形态。
+    final rawKeys = _readStringOrList(e['key']);
+    final keys = rawKeys.isNotEmpty ? rawKeys : _readStringOrList(e['keys']);
+    final rawSecondary = _readStringOrList(e['keysecondary']);
+    final secondary = rawSecondary.isNotEmpty
+        ? rawSecondary
+        : _readStringOrList(e['secondary_keys']);
+
+    final exts = Map<String, dynamic>.from(e['extensions'] ?? {});
+    // 保留 SillyTavern 专有字段，导出时原样写回
+    const passthrough = {
+      'uid',
+      'addMemo',
+      'displayIndex',
+      'excludeRecursion',
+      'useProbability',
+      'selectiveLogic',
+      'matchWholeWords',
+      'group',
+      'groupOverride',
+      'groupWeight',
+      'scanDepth',
+      'automationId',
+      'role',
+      'vectorized',
+      'sticky',
+      'cooldown',
+      'delay',
+      'delayUntilRecursion',
+      'disable',
+    };
+    for (final k in passthrough) {
+      if (e.containsKey(k)) exts.putIfAbsent(k, () => e[k]);
+    }
+
+    final selective = e['selective'] == true;
+    final logic = _asInt(e['selectiveLogic']);
+    final useProbability = e['useProbability'] != false;
+    final rawPosition = e['position'];
+    final position = rawPosition is String
+        ? _positionFromCharacterBook(rawPosition)
+        : _positionFromWorldInfo(_asInt(rawPosition));
+
+    return LorebookEntry(
+      id: _nowId(),
+      key: keys.isNotEmpty ? keys.first : '',
+      keys: keys,
+      // SillyTavern 的 `selective: false` 表示"次要关键词不参与匹配"，
+      // 等价于把次要关键词清空；否则它们会被当成额外的触发条件。
+      secondaryKeys: selective ? secondary : const [],
+      content: e['content']?.toString() ?? '',
+      matchStrategy: e['useRegex'] == true
+          ? LorebookEntryMatchStrategy.regex
+          : LorebookEntryMatchStrategy.partial,
+      position: position,
+      format: LorebookEntryFormat.plainText,
+      enabled: e.containsKey('disable')
+          ? e['disable'] != true
+          : (e['enabled'] ?? true),
+      order: _asInt(e['order']) ?? _asInt(e['insertion_order']) ?? 0,
+      caseSensitive: e['caseSensitive'] == true || e['case_sensitive'] == true,
+      tokenBudget: _asInt(e['token_budget']),
+      comment: e['comment']?.toString() ?? e['name']?.toString() ?? '',
+      priority: _asInt(e['priority']) ?? 10,
+      probability: useProbability ? (_asInt(e['probability']) ?? 100) : 100,
+      selective: selective && logic == 3,
+      constant: e['constant'] == true,
+      depth: _asInt(e['depth']) ?? 4,
+      extensions: exts,
+    );
+  }
+
+  /// 回写为 SillyTavern World Info 的单个条目
+  ///
+  /// 先铺开 [extensions] 中的 SillyTavern 专有字段（`group` / `scanDepth` /
+  /// `matchWholeWords` …），再用本模型的权威字段覆盖，从而在用户编辑后
+  /// 仍保留未建模的原始信息。
+  Map<String, dynamic> toWorldInfo({int index = 0}) => {
+        ...extensions,
+        'uid': index,
+        'key': matchKeys,
+        'keysecondary': secondaryKeys,
+        'comment': comment ?? '',
+        'content': content,
+        'constant': constant,
+        'selective': secondaryKeys.isNotEmpty,
+        'selectiveLogic': selective ? 3 : 0,
+        'order': order,
+        'position': position.toWorldInfo(),
+        // 与导入时的 `disable` 反语义严格对称
+        'disable': !enabled,
+        'probability': probability,
+        'useProbability': true,
+        'depth': depth,
+        'displayIndex': index,
+        'addMemo': extensions['addMemo'] == true,
+        'excludeRecursion': extensions['excludeRecursion'] == true,
+      };
+
   /// CCv3 position → App 注入位置映射
   ///
   /// CCv3 常见取值：`before_char` / `after_char` / `before_example` /
@@ -359,6 +572,33 @@ class LorebookEntry {
         return LorebookEntryPosition.beforeUser;
       case 'after_example':
         return LorebookEntryPosition.afterUser;
+      default:
+        return LorebookEntryPosition.afterSystem;
+    }
+  }
+
+  /// SillyTavern 整数 position → App 注入位置映射
+  ///
+  /// SillyTavern 的 `world_info_position` 常量：
+  /// `0`=before_char · `1`=after_char · `2`=before_AN · `3`=after_AN ·
+  /// `4`=at_depth（配合 `depth` 字段插到聊天靠后的位置）。
+  ///
+  /// 本模型的注入管线以 system 为核心并支持 before/after user，因此
+  /// AN（Author's Note）与 at_depth 都归到「用户消息之前/之后」——
+  /// 它们的作用位置都在对话尾部。真实语料分布：`1` 2461 · `0` 2158 ·
+  /// `3` 933 · `2` 311 · `4` 112，全部落在这条映射内。
+  static LorebookEntryPosition _positionFromWorldInfo(int? raw) {
+    switch (raw) {
+      case 0:
+        return LorebookEntryPosition.beforeSystem;
+      case 1:
+        return LorebookEntryPosition.afterSystem;
+      case 2:
+        return LorebookEntryPosition.beforeUser; // before_AN
+      case 3:
+        return LorebookEntryPosition.afterUser; // after_AN
+      case 4:
+        return LorebookEntryPosition.beforeUser; // at_depth（管线不支持深度）
       default:
         return LorebookEntryPosition.afterSystem;
     }
@@ -439,6 +679,30 @@ extension LorebookEntryPositionX on LorebookEntryPosition {
   }
 }
 
+/// App 注入位置 → SillyTavern 整数 position 反向映射
+///
+/// 与 [LorebookEntryPositionX.toCharacterBook] 分列两个扩展名，避免
+/// 同名方法在不同返回类型上冲突。
+extension LorebookEntryPositionWorldInfoX on LorebookEntryPosition {
+  int toWorldInfo() {
+    switch (this) {
+      case LorebookEntryPosition.beforeSystem:
+        return 0; // before_char
+      case LorebookEntryPosition.afterSystem:
+        return 1; // after_char
+      case LorebookEntryPosition.beforeUser:
+        return 2; // before_AN
+      case LorebookEntryPosition.afterUser:
+        return 3; // after_AN
+      case LorebookEntryPosition.beforeAssistant:
+      case LorebookEntryPosition.afterAssistant:
+      case LorebookEntryPosition.top:
+      case LorebookEntryPosition.bottom:
+        return 1; // after_char —— SillyTavern 无对应位置，归入 char 之后
+    }
+  }
+}
+
 int? _asInt(dynamic v) {
   if (v is int) return v;
   if (v is num) return v.toInt();
@@ -448,4 +712,19 @@ int? _asInt(dynamic v) {
 
 List<String> _asStringList(dynamic v) => v is List ? v.map((e) => e.toString()).toList() : const [];
 
-String _nowId() => DateTime.now().microsecondsSinceEpoch.toString();
+/// 读取「字符串或字符串数组」字段
+///
+/// SillyTavern 的 `key` / `keysecondary` 规范上是数组，但历史上允许单个
+/// 字符串；`_asStringList` 遇到字符串会返回空表，等于静默丢掉触发词。
+List<String> _readStringOrList(dynamic v) {
+  if (v is String) return v.isEmpty ? const [] : [v];
+  return _asStringList(v);
+}
+
+/// 进程内单调递增序号
+///
+/// `microsecondsSinceEpoch` 在快速循环里可能取到相同的值（一次解析可能连续
+/// 构造数千个条目），只靠时间戳会生成重复 id。附上序号确保唯一。
+int _idSeq = 0;
+
+String _nowId() => '${DateTime.now().microsecondsSinceEpoch}-${_idSeq++}';

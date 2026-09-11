@@ -6,6 +6,7 @@ import 'package:postgres/postgres.dart';
 import 'package:virtual_background/character_card_mapper.dart';
 import 'package:virtual_background/database/db.dart';
 import 'package:virtual_background/database/seed.dart';
+import 'package:virtual_background/path_param.dart';
 
 /// GET /api/characters/[id]/export — 导出角色卡（CCv2 完整 spec 包）
 ///
@@ -17,6 +18,9 @@ Future<Response> onRequest(RequestContext context, String id) async {
   if (context.request.method != HttpMethod.get) {
     return Response(statusCode: 405, body: 'Method Not Allowed');
   }
+
+  // dart_frog 不解码路径参数，含汉字的 id 会带 `%XX` 到达（见 path_param.dart）。
+  final characterId = decodePathParam(id);
 
   final db = AppDatabase.instance;
   if (!db.isAvailable) await db.init();
@@ -38,7 +42,7 @@ SELECT id, name, description, personality, scenario, avatar_url, tags,
   FROM characters WHERE id = @id
   ORDER BY updated_at DESC
   LIMIT 1'''),
-        parameters: {'id': id},
+        parameters: {'id': characterId},
       );
       if (rows.isNotEmpty) {
         row = rows.first.toColumnMap();
@@ -50,7 +54,7 @@ SELECT id, name, description, personality, scenario, avatar_url, tags,
 
   row ??= () {
     final c = SeedData.characters.firstWhere(
-      (c) => c['id'] == id,
+      (c) => c['id'] == characterId,
       orElse: () => <String, dynamic>{},
     );
     if (c.isEmpty) return null;
@@ -69,12 +73,16 @@ SELECT id, name, description, personality, scenario, avatar_url, tags,
   final data = CharacterCardMapper.rowToExportData(row);
   final envelope = CharacterCardMapper.exportEnvelope(data);
 
-  final safeId = CharacterCardMapper.sanitizeFilename(id);
+  // 中文 id 经 sanitizeIdForFile 得到**唯一**的 ASCII 片段作保底文件名，
+  // 再用 RFC 5987 的 filename* 让浏览器优先展示原始中文名（下载名不再坍缩成 `___`）。
+  final safeId = CharacterCardMapper.sanitizeIdForFile(characterId);
   return Response.bytes(
     body: utf8.encode(jsonEncode(envelope)),
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'content-disposition': 'attachment; filename="$safeId.json"',
+      'content-disposition':
+          'attachment; filename="$safeId.json"; '
+          "filename*=UTF-8''${Uri.encodeComponent('$characterId.json')}",
     },
   );
 }

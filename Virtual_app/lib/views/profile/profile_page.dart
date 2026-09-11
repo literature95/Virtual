@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../providers/character_provider.dart';
 import '../../providers/endpoint_provider.dart';
 import '../../theme/tavo_brand.dart';
@@ -18,15 +19,20 @@ class ProfilePage extends StatelessWidget {
         context.watch<CharacterProvider>().characters.length;
     final endpointCount =
         context.watch<EndpointProvider>().llmEndpoints.length;
+    final auth = context.watch<AuthProvider>();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        // ── 第一区块：头像 / 昵称 / 账号 ID ──
+        // ── 第一区块：头像 / 昵称 / 账号（未登录点按去登录，已登录长按退出）──
         _section(
           scheme: scheme,
-          child: Row(
-            children: [
+          child: GestureDetector(
+            onTap: () =>
+                auth.isLoggedIn ? null : context.push('/login'),
+            onLongPress: auth.isLoggedIn ? () => _confirmLogout(context) : null,
+            child: Row(
+              children: [
               // 品牌渐变气泡头像（对话气泡形，与 Web 端 mark 统一）
               Container(
                 width: 62,
@@ -48,9 +54,13 @@ class ProfilePage extends StatelessWidget {
                   ],
                 ),
                 alignment: Alignment.center,
-                child: const Text(
-                  'V',
-                  style: TextStyle(
+                child: Text(
+                  auth.isLoggedIn
+                      ? (auth.user!.nickname?.isNotEmpty == true
+                          ? auth.user!.nickname!.characters.first
+                          : auth.user!.email.characters.first)
+                      : 'V',
+                  style: const TextStyle(
                     fontSize: 27,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF141414),
@@ -62,36 +72,58 @@ class ProfilePage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Virtual 用户',
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w700,
-                        color: scheme.onSurface,
+                    GestureDetector(
+                      onTap: () =>
+                          auth.isLoggedIn ? null : context.push('/login'),
+                      child: Text(
+                        auth.isLoggedIn
+                            ? (auth.user!.nickname?.isNotEmpty == true
+                                ? auth.user!.nickname!
+                                : 'Virtual 用户')
+                            : '点击登录 / 注册',
+                        style: TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onSurface,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 9, vertical: 2.5),
-                      decoration: BoxDecoration(
-                        color: scheme.surfaceContainerHigh,
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: scheme.outlineVariant),
-                      ),
-                      child: Text(
-                        'ID · LOCAL-0001',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: scheme.onSurfaceVariant,
-                          letterSpacing: 0.6,
+                    GestureDetector(
+                      onTap: () =>
+                          auth.isLoggedIn ? null : context.push('/register'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 2.5),
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: scheme.outlineVariant),
+                        ),
+                        child: Text(
+                          auth.isLoggedIn
+                              ? auth.user!.email
+                              : 'ID · LOCAL-0001 · 本地模式',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: scheme.onSurfaceVariant,
+                            letterSpacing: 0.6,
+                          ),
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
+              if (auth.isLoggedIn)
+                IconButton(
+                  icon: Icon(Icons.logout,
+                      size: 20, color: scheme.onSurfaceVariant),
+                  tooltip: '退出登录',
+                  onPressed: () => _confirmLogout(context),
+                ),
             ],
+            ),
           ),
         ),
         const SizedBox(height: 14),
@@ -167,6 +199,30 @@ class ProfilePage extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  /// 退出登录确认（长按用户区块或点右上角退出图标）
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('退出登录'),
+        content: const Text('本地数据不受影响，仅清除登录状态。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('退出'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      await context.read<AuthProvider>().logout();
+    }
   }
 
   Widget _section({required ColorScheme scheme, required Widget child}) {

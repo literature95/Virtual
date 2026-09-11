@@ -73,6 +73,16 @@ dependencies:
   dio_smart_retry: ^6.0.0
   retry: ^3.1.2
 
+  # PNG 文本块解压（zTXt / 压缩 iTXt 的 zlib 流）。
+  # 纯 Dart 实现，Web 与原生走同一套 API，原生端自动切换到 dart:io 的
+  # ZLibCodec 以获得更好性能 —— 故 lib/ 下无需任何条件导入。
+  archive: ^4.2.0
+
+  # Web 端 Blob 下载（角色卡 PNG 导出）。file_picker 的 saveFile 在 Web 上
+  # 未实现，需绕开它直接操作 DOM；`web` 本就是 file_picker 的传递依赖，
+  # 显式声明只是为了让 `file_saver_web.dart` 能合法导入。
+  web: ^1.0.0
+
   # 其他
   share_plus: ^12.0.2
   file_picker: ^8.1.2

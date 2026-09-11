@@ -1,16 +1,20 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:go_router/go_router.dart';
-import 'package:dio/dio.dart';
-import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../data/app_database.dart';
 import '../../providers/character_provider.dart';
 import '../../models/character.dart';
+import '../../models/lorebook.dart';
 import '../../services/character_import_service.dart';
 import '../../services/character_export_service.dart';
 import '../../theme/tavo_brand.dart';
+import '../../utils/file_saver.dart';
 import '../common/character_cover_card.dart' show resolveAvatarImage;
 
 /// 角色列表页：搜索 + 管理（长按菜单：编辑/复制/导出/删除）
@@ -25,6 +29,9 @@ class _CharacterListPageState extends State<CharacterListPage> {
   bool _searchVisible = false;
   String _query = '';
   final TextEditingController _searchCtrl = TextEditingController();
+
+  /// 从 PNG 导入时暂存的立绘（data URL），随角色一并落库
+  String? _pendingAvatar;
 
   @override
   Widget build(BuildContext context) {
@@ -115,13 +122,9 @@ class _CharacterListPageState extends State<CharacterListPage> {
               onTap: () => Navigator.pop(context, 'url'),
             ),
             ListTile(
-              leading: const Icon(Icons.file_present),
-              title: const Text('从 JSON 文件导入'),
-              onTap: () => Navigator.pop(context, 'json'),
-            ),
-            ListTile(
               leading: const Icon(Icons.image),
-              title: const Text('从 PNG 图片导入'),
+              title: const Text('从 PNG 卡片导入'),
+              subtitle: const Text('角色卡唯一支持的格式（内嵌 CCv3 数据）'),
               onTap: () => Navigator.pop(context, 'png'),
             ),
           ],
@@ -130,6 +133,7 @@ class _CharacterListPageState extends State<CharacterListPage> {
     );
 
     if (result == null || !context.mounted) return;
+    _pendingAvatar = null;
 
     try {
       final dio = Dio();
@@ -167,22 +171,15 @@ class _CharacterListPageState extends State<CharacterListPage> {
             bundle = await importService.importBundleFromUrl(url);
           }
           break;
-        case 'json':
-          final picker = ImagePicker();
-          final pickedFile = await picker.pickImage(
-            source: ImageSource.gallery,
-          );
-          if (pickedFile != null) {
-            bundle = await importService.importBundleFromFile(pickedFile.path);
-          }
-          break;
         case 'png':
-          final picker = ImagePicker();
-          final pickedFile = await picker.pickImage(
-            source: ImageSource.gallery,
-          );
-          if (pickedFile != null) {
-            bundle = await importService.importBundleFromPng(pickedFile.path);
+          final bytes = await _pickCardBytes(const ['png']);
+          if (bytes != null) {
+            bundle = importService.importBundleFromBytes(
+              bytes,
+              sourceName: '角色卡 PNG',
+            );
+            // 卡片图本身就是立绘：转 data URL 落库，Web 与原生都能显示
+            _pendingAvatar = 'data:image/png;base64,${base64Encode(bytes)}';
           }
           break;
       }
@@ -203,7 +200,7 @@ class _CharacterListPageState extends State<CharacterListPage> {
               personality: character.personality,
               scenario: character.scenario,
               firstMessage: character.firstMessage,
-              avatarPath: character.avatarPath,
+              avatarPath: _pendingAvatar ?? character.avatarPath,
               creatorNotes: character.creatorNotes,
               systemPrompt: character.systemPrompt,
               postHistoryInstructions: character.postHistoryInstructions,
@@ -235,6 +232,27 @@ class _CharacterListPageState extends State<CharacterListPage> {
         );
       }
     }
+  }
+
+  /// 选取角色卡 PNG 并直接取出字节
+  ///
+  /// 为什么不复用「相册选图」：桌面端 `image_picker` 按后缀白名单过滤，
+  /// 且 Web 端它固定渲染 `accept="image/*"`，无法按需求限定单个扩展名。
+  /// 用 `file_picker` 才能明确限定为 `.png`。
+  ///
+  /// 为什么取字节而不是路径：Web 上没有文件系统，`dart:io File` 会抛
+  /// `Unsupported operation: _Namespace`。`withData: true` 让各端都回填
+  /// `bytes`，极端情况下再用跨平台的 `xFile` 兜底，全程不碰 `dart:io`。
+  Future<Uint8List?> _pickCardBytes(List<String> extensions) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: extensions,
+      withData: true,
+    );
+    final files = result?.files;
+    if (files == null || files.isEmpty) return null;
+    final file = files.first;
+    return file.bytes ?? await file.xFile.readAsBytes();
   }
 }
 
@@ -321,73 +339,59 @@ class _CharacterTile extends StatelessWidget {
     );
   }
 
+  /// 导出角色卡 —— **仅 PNG**
+  ///
+  /// 项目约定角色卡以 PNG 为唯一分发格式：产物是「底图 + 内嵌
+  /// base64(CCv3 JSON) 的 tEXt 块」，与导入路径构成往返闭环。
+  /// 世界书作为 `character_book` 一并写入卡内。
   Future<void> _exportCharacter(
       BuildContext context, Character character) async {
-    final result = await showModalBottomSheet<String>(
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.code),
-              title: const Text('导出为 CCv3 JSON'),
-              onTap: () => Navigator.pop(context, 'ccv3'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.text_snippet),
-              title: const Text('导出为 SillyTavern 格式'),
-              onTap: () => Navigator.pop(context, 'sillytavern'),
-            ),
-          ],
+      builder: (context) => AlertDialog(
+        title: Text('导出「${character.name}」'),
+        content: const Text(
+          '将导出为 PNG 角色卡：卡片图内嵌完整 CCv3 数据（含世界书），'
+          '可直接分享或导入其他前端。',
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('导出'),
+          ),
+        ],
       ),
     );
-
-    if (result == null || !context.mounted) return;
+    if (confirmed != true || !context.mounted) return;
 
     try {
       final exportService = CharacterExportService();
-
-      // For now, we'll save to a temporary location and show the content
-      // In a real app, you'd use file_picker or share_plus to save
-      final json = result == 'ccv3'
-          ? exportService.toCCv3(character)
-          : exportService.toSillyTavern(character);
-
-      final jsonString = const JsonEncoder.withIndent('  ').convert(json);
-
-      if (context.mounted) {
-        await showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text('导出「${character.name}」'),
-            content: SingleChildScrollView(
-              child: SelectableText(
-                jsonString,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('关闭'),
-              ),
-              TextButton(
-                onPressed: () {
-                  // Copy to clipboard
-                  // In a real app, you'd use clipboard package
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('已复制到剪贴板')),
-                  );
-                },
-                child: const Text('复制'),
-              ),
-            ],
+      final bytes = await exportService.exportPngBytes(
+        character,
+        lorebook: _findLorebook(context, character.lorebookId),
+      );
+      final fileName = exportService.pngFileName(character);
+      final path = await saveBytesToFile(
+        bytes,
+        fileName: fileName,
+        mimeType: 'image/png',
+        allowedExtensions: const ['png'],
+        dialogTitle: '导出角色卡',
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            path == null
+                ? '已取消导出'
+                : '已导出 PNG 角色卡（${bytes.length ~/ 1024} KB）→ $path',
           ),
-        );
-      }
+        ),
+      );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -395,6 +399,17 @@ class _CharacterTile extends StatelessWidget {
         );
       }
     }
+  }
+
+  /// 取角色绑定的世界书，随卡一并导出为 `character_book`
+  ///
+  /// [AppDatabase] 没有按 id 取单本的接口，只有全量列表，这里就地过滤。
+  Lorebook? _findLorebook(BuildContext context, String? lorebookId) {
+    if (lorebookId == null) return null;
+    for (final lb in context.read<AppDatabase>().getLorebooks()) {
+      if (lb.id == lorebookId) return lb;
+    }
+    return null;
   }
 
   void _confirmDelete(BuildContext context, Character character) {

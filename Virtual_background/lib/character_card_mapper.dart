@@ -137,6 +137,33 @@ class CharacterCardMapper {
   static String sanitizeFilename(String part) =>
       part.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
 
+  /// 角色 id → 文件名片段（用于立绘落盘名）。
+  ///
+  /// [slugify] **故意保留汉字**（id 可能就是 `希露妲`），而文件名片段要跨平台安全，
+  /// 只靠 [sanitizeFilename] 会把任意纯中文 id 都净化成同一个 `___` ——
+  /// 于是不同中文名、同版本的卡片会写到同一路径，**后者覆盖前者立绘**。
+  /// 因此在净化确实改写了原串时，追加原串的 FNV-1a 短哈希以保唯一。
+  ///
+  /// 纯 ASCII 且合法的 id（如 `char-001`）净化前后相同，**不加哈希**，
+  /// 保持既有文件名与 URL 不变。
+  static String sanitizeIdForFile(String id) {
+    final safe = sanitizeFilename(id);
+    return safe == id ? safe : '${safe}_${fnv1a8(id)}';
+  }
+
+  /// FNV-1a（32 位）对 UTF-8 字节取哈希，输出 8 位小写十六进制。
+  ///
+  /// 选它是因为**免第三方依赖且跨进程/跨版本确定**（`String.hashCode` 不保证稳定），
+  /// 用于文件名去重足够。冲突概率 2^-32，失败模式仅是立绘互相覆盖，可接受。
+  static String fnv1a8(String s) {
+    var hash = 0x811c9dc5;
+    for (final b in utf8.encode(s)) {
+      hash ^= b;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
   /// characters 表 upsert 语句（POST /api/characters 与 tool/import_cards.dart 共用）。
   ///
   /// 命名参数与 [cardToRow] 返回的行键一一对应，行 map 可直接作 parameters。
