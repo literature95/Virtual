@@ -48,6 +48,9 @@ Future<void> _startNewChat(BuildContext context) async {
 }
 
 /// 会话列表页：搜索 + 置顶排序 + 长按菜单（重命名/置顶/删除）
+///
+/// 作为独立路由 `/chat` 的页面保留；同时其列表主体已抽成
+/// [ConversationListView]，供「角色」Tab 的「历史」分段复用。
 class ChatListPage extends StatefulWidget {
   const ChatListPage({super.key});
 
@@ -111,42 +114,10 @@ class _ChatListPageState extends State<ChatListPage> {
           ),
         ],
       ),
-      body: Consumer<ChatProvider>(
-        builder: (context, chatProvider, _) {
-          final conversations = _sorted(chatProvider.conversations);
-          if (chatProvider.conversations.isEmpty) {
-            return const _EmptyState();
-          }
-          if (conversations.isEmpty) {
-            return const Center(
-              child: Text(
-                '没有匹配的对话',
-                style: TextStyle(color: Colors.grey),
-              ),
-            );
-          }
-          return ListView.builder(
-            itemCount: conversations.length,
-            itemBuilder: (context, index) {
-              final conv = conversations[index];
-              return ListTile(
-                leading: CircleAvatar(
-                  child: Text(conv.title.characters.first),
-                ),
-                title: Text(conv.title),
-                subtitle: Text(
-                  conv.lastMessageAt != null
-                      ? _formatTime(conv.lastMessageAt!)
-                      : '开始新对话',
-                ),
-                trailing:
-                    conv.isPinned ? const Icon(Icons.push_pin, size: 16) : null,
-                onTap: () => context.go('/chat/${conv.id}'),
-                onLongPress: () => _showConversationMenu(context, conv),
-              );
-            },
-          );
-        },
+      body: ConversationListView(
+        query: _query,
+        sorted: _sorted,
+        onShowMenu: _showConversationMenu,
       ),
       floatingActionButton: TavoBrand.fab(
         onPressed: () => _startNewChat(context),
@@ -267,16 +238,74 @@ class _ChatListPageState extends State<ChatListPage> {
       ),
     );
   }
+}
 
-  String _formatTime(DateTime time) {
-    final now = DateTime.now();
-    final diff = now.difference(time);
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
-    if (diff.inDays < 1) return '${diff.inHours}小时前';
-    if (diff.inDays < 7) return '${diff.inDays}天前';
-    return '${time.month}/${time.day}';
+/// 会话列表主体（可复用）：被 `/chat` 页与「角色」Tab 的「历史」分段共用。
+///
+/// [sorted] 由调用方注入（负责搜索过滤 + 置顶排序），
+/// [onShowMenu] 由调用方注入长按菜单处理。
+class ConversationListView extends StatelessWidget {
+  final String query;
+  final List<Conversation> Function(List<Conversation>) sorted;
+  final void Function(BuildContext, Conversation) onShowMenu;
+
+  const ConversationListView({
+    super.key,
+    required this.query,
+    required this.sorted,
+    required this.onShowMenu,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<ChatProvider>(
+      builder: (context, chatProvider, _) {
+        if (chatProvider.conversations.isEmpty) {
+          return const _EmptyState();
+        }
+        final conversations = sorted(chatProvider.conversations);
+        if (conversations.isEmpty) {
+          return const Center(
+            child: Text('没有匹配的对话', style: TextStyle(color: Colors.grey)),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          itemCount: conversations.length,
+          itemBuilder: (context, index) {
+            final conv = conversations[index];
+            return ListTile(
+              leading: CircleAvatar(child: Text(conv.title.characters.first)),
+              title: Text(conv.title),
+              subtitle: Text(
+                conv.lastMessagePreview?.isNotEmpty == true
+                    ? conv.lastMessagePreview!
+                    : (conv.lastMessageAt != null
+                        ? _formatTimeFrom(conv.lastMessageAt!)
+                        : '开始新对话'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing:
+                  conv.isPinned ? const Icon(Icons.push_pin, size: 16) : null,
+              onTap: () => context.go('/chat/${conv.id}'),
+              onLongPress: () => onShowMenu(context, conv),
+            );
+          },
+        );
+      },
+    );
   }
+}
+
+/// 相对时间格式化（供列表复用）
+String _formatTimeFrom(DateTime time) {
+  final diff = DateTime.now().difference(time);
+  if (diff.inMinutes < 1) return '刚刚';
+  if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
+  if (diff.inDays < 1) return '${diff.inHours}小时前';
+  if (diff.inDays < 7) return '${diff.inDays}天前';
+  return '${time.month}/${time.day}';
 }
 
 class _EmptyState extends StatelessWidget {

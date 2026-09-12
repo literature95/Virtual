@@ -178,6 +178,10 @@ class AppDatabase {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     ''');
+    // 个人简介：老库补列（幂等）
+    await conn.execute('''
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT
+    ''');
     await conn.execute('''
       CREATE TABLE IF NOT EXISTS email_codes (
         email TEXT NOT NULL,
@@ -187,6 +191,47 @@ class AppDatabase {
         expires_at TIMESTAMPTZ NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         PRIMARY KEY (email, purpose)
+      )
+    ''');
+    // --- 社区（发现页信息流，与账号体系联动）---
+    await conn.execute('''
+      CREATE TABLE IF NOT EXISTS community_posts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL,
+        type TEXT NOT NULL DEFAULT 'text',
+        title TEXT NOT NULL,
+        content TEXT NOT NULL DEFAULT '',
+        community TEXT NOT NULL DEFAULT '综合',
+        tags JSONB DEFAULT '[]',
+        character_id TEXT,
+        dialogue JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    ''');
+    await conn.execute('''
+      CREATE TABLE IF NOT EXISTS post_likes (
+        post_id UUID NOT NULL,
+        user_id UUID NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (post_id, user_id)
+      )
+    ''');
+    await conn.execute('''
+      CREATE TABLE IF NOT EXISTS follows (
+        follower_id UUID NOT NULL,
+        followee_id UUID NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (follower_id, followee_id)
+      )
+    ''');
+    // --- 社区评论（动态详情页，与账号体系 / 帖子联动）---
+    await conn.execute('''
+      CREATE TABLE IF NOT EXISTS post_comments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        post_id UUID NOT NULL,
+        user_id UUID NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
       )
     ''');
   }

@@ -14,12 +14,30 @@ class Creator {
   final String? avatarUrl;
   final String? bio;
 
+  /// 统计字段（用户主页 / 关注列表可能携带，缺省为 0 / false）
+  final int postCount;
+  final int followerCount;
+  final bool isFollowing;
+
   Creator({
     required this.id,
     required this.name,
     this.avatarUrl,
     this.bio,
+    this.postCount = 0,
+    this.followerCount = 0,
+    this.isFollowing = false,
   });
+
+  factory Creator.fromJson(Map<String, dynamic> j) => Creator(
+        id: j['id'].toString(),
+        name: j['name']?.toString() ?? '匿名用户',
+        avatarUrl: j['avatarUrl']?.toString(),
+        bio: j['bio']?.toString(),
+        postCount: (j['postCount'] as num?)?.toInt() ?? 0,
+        followerCount: (j['followerCount'] as num?)?.toInt() ?? 0,
+        isFollowing: j['isFollowing'] as bool? ?? false,
+      );
 }
 
 /// 帖子类型
@@ -32,6 +50,28 @@ enum PostType {
 
   /// 官方公告 / 活动
   announcement,
+
+  /// 普通文字动态（后端 community_posts.type = 'text'）
+  text,
+}
+
+/// 后端 type 字段 → App 枚举
+///
+/// 后端取值：'text' / 'character_card' / 'conversation'（无 'announcement' 来源，
+/// 该枚举值仅作兼容保留，目前不会由接口产出）。
+extension PostTypeX on PostType {
+  static PostType fromApi(String? s) {
+    switch (s) {
+      case 'character_card':
+        return PostType.characterCard;
+      case 'conversation':
+        return PostType.conversationShowcase;
+      case 'announcement':
+        return PostType.announcement;
+      default:
+        return PostType.text;
+    }
+  }
 }
 
 /// 社区动态帖子
@@ -69,6 +109,12 @@ class CommunityPost {
   final int comments;
   final int shares;
 
+  /// 当前登录用户是否已点赞（来自后端 likedByMe）
+  final bool likedByMe;
+
+  /// 当前登录用户是否已关注作者（来自后端 isFollowingAuthor，仅详情接口产出）
+  final bool isFollowingAuthor;
+
   /// 发布时间（相对描述，如 "2小时前"）
   final String timeAgo;
 
@@ -87,8 +133,90 @@ class CommunityPost {
     this.likes = 0,
     this.comments = 0,
     this.shares = 0,
+    this.likedByMe = false,
+    this.isFollowingAuthor = false,
     this.timeAgo = '',
   });
+
+  /// 后端 JSON → 模型。
+  ///
+  /// 接口字段见 Virtual_background/routes/api/posts/index.dart 的 _postJson：
+  /// author{id,name,avatarUrl}、tags/dialogue 为 JSON 数组、likes/likedByMe 由联表聚合。
+  factory CommunityPost.fromJson(Map<String, dynamic> j) {
+    final author = (j['author'] as Map?)?.cast<String, dynamic>() ?? {};
+    final tags = (j['tags'] as List?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        const <String>[];
+    final dialogue = (j['dialogue'] as List?)
+        ?.map((e) => DialogueLine.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+    return CommunityPost(
+      id: j['id'].toString(),
+      type: PostTypeX.fromApi(j['type']?.toString()),
+      author: Creator.fromJson(author),
+      title: j['title']?.toString() ?? '',
+      content: j['content']?.toString() ?? '',
+      characterId: j['characterId']?.toString(),
+      dialogue: dialogue,
+      tags: tags,
+      community: j['community']?.toString() ?? '综合',
+      likes: (j['likes'] as num?)?.toInt() ?? 0,
+      comments: (j['comments'] as num?)?.toInt() ?? 0,
+      shares: (j['shares'] as num?)?.toInt() ?? 0,
+      likedByMe: j['likedByMe'] as bool? ?? false,
+      isFollowingAuthor: j['isFollowingAuthor'] as bool? ?? false,
+      timeAgo: timeAgoFrom(DateTime.tryParse(j['createdAt']?.toString() ?? '')),
+    );
+  }
+
+  /// 返回点赞状态更新后的副本（乐观更新用）
+  CommunityPost copyWithLiked(bool liked, int likes) => CommunityPost(
+        id: id,
+        type: type,
+        author: author,
+        title: title,
+        content: content,
+        imageUrl: imageUrl,
+        characterId: characterId,
+        characterName: characterName,
+        dialogue: dialogue,
+        tags: tags,
+        community: community,
+        likes: likes,
+        comments: comments,
+        shares: shares,
+        likedByMe: liked,
+        isFollowingAuthor: isFollowingAuthor,
+        timeAgo: timeAgo,
+      );
+
+  /// 通用副本（更新 comments / isFollowingAuthor 等字段，乐观更新用）
+  CommunityPost copyWith({
+    bool? likedByMe,
+    int? likes,
+    int? comments,
+    bool? isFollowingAuthor,
+  }) =>
+      CommunityPost(
+        id: id,
+        type: type,
+        author: author,
+        title: title,
+        content: content,
+        imageUrl: imageUrl,
+        characterId: characterId,
+        characterName: characterName,
+        dialogue: dialogue,
+        tags: tags,
+        community: community,
+        likes: likes ?? this.likes,
+        comments: comments ?? this.comments,
+        shares: shares,
+        likedByMe: likedByMe ?? this.likedByMe,
+        isFollowingAuthor: isFollowingAuthor ?? this.isFollowingAuthor,
+        timeAgo: timeAgo,
+      );
 }
 
 /// 对话片段中的一行
@@ -103,6 +231,24 @@ class DialogueLine {
     required this.name,
     required this.text,
   });
+
+  factory DialogueLine.fromJson(Map<String, dynamic> j) => DialogueLine(
+        isCharacter: j['isCharacter'] as bool? ?? false,
+        name: j['name']?.toString() ?? '',
+        text: j['text']?.toString() ?? '',
+      );
+}
+
+/// 由发布时间计算相对描述（"刚刚 / x分钟前 / x小时前 / x天前"）
+String timeAgoFrom(DateTime? d) {
+  if (d == null) return '';
+  final diff = DateTime.now().difference(d);
+  if (diff.inSeconds < 60) return '刚刚';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
+  if (diff.inHours < 24) return '${diff.inHours}小时前';
+  if (diff.inDays < 30) return '${diff.inDays}天前';
+  if (diff.inDays < 365) return '${(diff.inDays / 30).floor()}个月前';
+  return '${(diff.inDays / 365).floor()}年前';
 }
 
 /// 社区分类标签
@@ -118,19 +264,14 @@ class CommunityTag {
   });
 }
 
-// ── 以下为 Mock 假数据，后续替换为后端 API ──
+// ── 以下为客户端静态配置（社区分类过滤项，非假帖子数据）──
+// 帖子内容本身全部来自后端 /api/posts（社区_posts 表），不再使用本地假数据。
 
-/// Mock 关注列表
-final mockFollowing = <Creator>[
-  Creator(id: 'u1', name: '夜行者', bio: '奇幻角色创作者'),
-  Creator(id: 'u2', name: '月下狐', bio: '治愈系故事作者'),
-  Creator(id: 'u3', name: '工口魔王', bio: '冒险/战斗专家'),
-  Creator(id: 'u4', name: '清茶淡饭', bio: '日常向角色'),
-  Creator(id: 'u5', name: '星海漫游', bio: '科幻/未来向'),
-];
-
-/// Mock 推荐社区分类
-final mockCommunities = <CommunityTag>[
+/// 推荐 Tab 的社区分类过滤项（横滑 chips）。
+/// 仅作为过滤维度（点击传入 ?community=），不承载任何假帖子。
+final communityCategories = <CommunityTag>[
+  CommunityTag(
+      name: '综合', icon: Icons.grid_view_rounded, color: TavoColors.violet),
   CommunityTag(
       name: '治愈', icon: Icons.favorite_rounded, color: TavoColors.coral),
   CommunityTag(
@@ -154,173 +295,98 @@ final mockCommunities = <CommunityTag>[
       color: TavoColors.textHighlightPurple),
 ];
 
-/// Mock 关注 tab 信息流
-final mockFollowingPosts = <CommunityPost>[
-  CommunityPost(
-    id: 'p1',
-    type: PostType.characterCard,
-    author: mockFollowing[0],
-    title: '暗影刺客·零',
-    content: '新角色上线！一位来自暗夜组织的顶级刺客，冷静而致命。拥有三套战斗预设和专属世界书。',
-    imageUrl: null,
-    characterId: 'cricket',
-    characterName: 'Cricket',
-    tags: ['冒险', '战斗', '奇幻'],
-    community: '冒险',
-    likes: 328,
-    comments: 47,
-    shares: 23,
-    timeAgo: '2小时前',
-  ),
-  CommunityPost(
-    id: 'p2',
-    type: PostType.conversationShowcase,
-    author: mockFollowing[1],
-    title: '和月下狐的治愈日常',
-    content: '今天她说了好温柔的话……',
-    characterName: '月下狐',
-    dialogue: const [
-      DialogueLine(isCharacter: false, name: '我', text: '今天好累啊，什么都不想做。'),
-      DialogueLine(
-          isCharacter: true, name: '月下狐', text: '那就什么都不做吧。我陪你坐着，等到你想动为止。'),
-      DialogueLine(isCharacter: false, name: '我', text: '……你会一直在这里吗？'),
-      DialogueLine(isCharacter: true, name: '月下狐', text: '嗯，一直都在。'),
-    ],
-    tags: ['治愈', '日常'],
-    community: '治愈',
-    likes: 1204,
-    comments: 89,
-    shares: 66,
-    timeAgo: '5小时前',
-  ),
-  CommunityPost(
-    id: 'p3',
-    type: PostType.characterCard,
-    author: mockFollowing[2],
-    title: '深渊魔女·莉莉丝',
-    content: '耗时两周打造的角色卡，包含完整世界观、5个场景预设和20条世界书词条。快来体验和魔女的契约吧！',
-    characterId: 'cricket',
-    characterName: 'Cricket',
-    tags: ['奇幻', '战斗'],
-    community: '奇幻',
-    likes: 562,
-    comments: 73,
-    shares: 41,
-    timeAgo: '8小时前',
-  ),
-  CommunityPost(
-    id: 'p4',
-    type: PostType.conversationShowcase,
-    author: mockFollowing[3],
-    title: '咖啡店老板的早晨',
-    content: '每天的对话都像在过日子，太真实了',
-    characterName: '清茶',
-    dialogue: const [
-      DialogueLine(isCharacter: true, name: '清茶', text: '早安，今天还是老样子？美式加一份浓缩。'),
-      DialogueLine(isCharacter: false, name: '我', text: '你记得真清楚。'),
-      DialogueLine(
-          isCharacter: true, name: '清茶', text: '常客的口味当然要记住。这是你的第五百杯了，今天免费。'),
-    ],
-    tags: ['日常', '治愈'],
-    community: '日常',
-    likes: 873,
-    comments: 52,
-    shares: 38,
-    timeAgo: '12小时前',
-  ),
-];
+/// 评论（动态详情页，与账号 / 帖子联动）
+class Comment {
+  final String id;
+  final String postId;
+  final Creator author;
+  final String content;
+  final DateTime? createdAt;
 
-/// Mock 推荐 tab 信息流
-final mockRecommendPosts = <CommunityPost>[
-  // 官方公告
-  CommunityPost(
-    id: 'r0',
-    type: PostType.announcement,
-    author: Creator(id: 'official', name: 'Virtual 官方', bio: '官方账号'),
-    title: 'v1.2.0 更新：多角色群聊上线！',
-    content: '本次更新带来多角色群聊功能，支持在一个对话中同时与多位角色互动。还优化了角色卡导入流程，修复了若干已知问题。',
-    imageUrl: null,
-    tags: ['更新公告', '新功能'],
-    community: '综合',
-    likes: 2048,
-    comments: 156,
-    shares: 234,
-    timeAgo: '1天前',
-  ),
-  // 热门角色卡
-  CommunityPost(
-    id: 'r1',
-    type: PostType.characterCard,
-    author: mockFollowing[4],
-    title: '星际旅人·Nova',
-    content: '一位来自 3077 年的星际旅行者，拥有丰富的宇宙探索故事。附带完整科幻世界书和 3 套对话预设。',
-    characterId: 'cricket',
-    characterName: 'Cricket',
-    tags: ['科幻', '冒险'],
-    community: '科幻',
-    likes: 1520,
-    comments: 98,
-    shares: 87,
-    timeAgo: '3小时前',
-  ),
-  CommunityPost(
-    id: 'r2',
-    type: PostType.conversationShowcase,
-    author: mockFollowing[0],
-    title: '暗影刺客的告白',
-    content: '没想到冷酷的刺客也有这样的一面……',
-    characterName: '暗影刺客·零',
-    dialogue: const [
-      DialogueLine(isCharacter: false, name: '我', text: '你为什么要做刺客？'),
-      DialogueLine(isCharacter: true, name: '暗影刺客·零', text: '……因为我只会这个。'),
-      DialogueLine(
-          isCharacter: true,
-          name: '暗影刺客·零',
-          text: '但如果可以重来，我想做花匠。种花的人，手上只有泥土的味道。'),
-    ],
-    tags: ['冒险', '战斗'],
-    community: '冒险',
-    likes: 2347,
-    comments: 184,
-    shares: 156,
-    timeAgo: '6小时前',
-  ),
-  CommunityPost(
-    id: 'r3',
-    type: PostType.characterCard,
-    author: mockFollowing[1],
-    title: '温柔学姐·苏念',
-    content: '一位会帮你补习、做便当、雨天递伞的完美学姐。治愈系角色卡，附带 3 个日常场景预设。',
-    characterId: 'cricket',
-    characterName: 'Cricket',
-    tags: ['恋爱', '日常', '治愈'],
-    community: '恋爱',
-    likes: 3104,
-    comments: 210,
-    shares: 198,
-    timeAgo: '10小时前',
-  ),
-  CommunityPost(
-    id: 'r4',
-    type: PostType.conversationShowcase,
-    author: mockFollowing[4],
-    title: '和 Nova 的星际日常',
-    content: '3000 年的人类日常',
-    characterName: 'Nova',
-    dialogue: const [
-      DialogueLine(
-          isCharacter: true, name: 'Nova', text: '你知道吗，在 3077 年，咖啡已经是古董饮料了。'),
-      DialogueLine(isCharacter: false, name: '我', text: '那你们喝什么？'),
-      DialogueLine(
-          isCharacter: true,
-          name: 'Nova',
-          text: '情绪。我们可以直接品尝情感的味道。和你聊天的时候……是甜的。'),
-    ],
-    tags: ['科幻'],
-    community: '科幻',
-    likes: 1876,
-    comments: 143,
-    shares: 92,
-    timeAgo: '14小时前',
-  ),
-];
+  Comment({
+    required this.id,
+    required this.postId,
+    required this.author,
+    required this.content,
+    this.createdAt,
+  });
+
+  factory Comment.fromJson(Map<String, dynamic> j) => Comment(
+        id: j['id'].toString(),
+        postId: j['postId']?.toString() ?? '',
+        author: Creator.fromJson(
+          (j['author'] as Map?)?.cast<String, dynamic>() ?? {},
+        ),
+        content: j['content']?.toString() ?? '',
+        createdAt: DateTime.tryParse(j['createdAt']?.toString() ?? ''),
+      );
+
+  String get timeAgo => timeAgoFrom(createdAt);
+}
+
+/// 用户主页（点击头像进入，数据来自 /api/users/[id]）
+class UserProfile {
+  final String id;
+  final String name;
+  final String? nickname;
+  final String? avatarUrl;
+  final String? bio;
+  final int postCount;
+  final int followerCount;
+  final int followingCount;
+  final bool isFollowing;
+  final List<CommunityPost> posts;
+
+  UserProfile({
+    required this.id,
+    required this.name,
+    this.nickname,
+    this.avatarUrl,
+    this.bio,
+    this.postCount = 0,
+    this.followerCount = 0,
+    this.followingCount = 0,
+    this.isFollowing = false,
+    this.posts = const [],
+  });
+
+  UserProfile copyWith({
+    String? name,
+    String? nickname,
+    String? avatarUrl,
+    String? bio,
+    int? postCount,
+    int? followerCount,
+    int? followingCount,
+    bool? isFollowing,
+    List<CommunityPost>? posts,
+  }) =>
+      UserProfile(
+        id: id,
+        name: name ?? this.name,
+        nickname: nickname ?? this.nickname,
+        avatarUrl: avatarUrl ?? this.avatarUrl,
+        bio: bio ?? this.bio,
+        postCount: postCount ?? this.postCount,
+        followerCount: followerCount ?? this.followerCount,
+        followingCount: followingCount ?? this.followingCount,
+        isFollowing: isFollowing ?? this.isFollowing,
+        posts: posts ?? this.posts,
+      );
+
+  factory UserProfile.fromJson(Map<String, dynamic> j) => UserProfile(
+        id: j['id'].toString(),
+        name: j['name']?.toString() ?? '匿名用户',
+        nickname: j['nickname']?.toString(),
+        avatarUrl: j['avatarUrl']?.toString(),
+        bio: j['bio']?.toString(),
+        postCount: (j['postCount'] as num?)?.toInt() ?? 0,
+        followerCount: (j['followerCount'] as num?)?.toInt() ?? 0,
+        followingCount: (j['followingCount'] as num?)?.toInt() ?? 0,
+        isFollowing: j['isFollowing'] as bool? ?? false,
+        posts: ((j['posts'] as List?) ?? [])
+            .map((e) =>
+                CommunityPost.fromJson((e as Map).cast<String, dynamic>()))
+            .toList(),
+      );
+}

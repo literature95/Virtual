@@ -4,13 +4,18 @@ import '../views/chat/chat_list_page.dart';
 import '../views/chat/chat_page.dart';
 import '../views/character/character_list_page.dart';
 import '../views/character/character_edit_page.dart';
+import '../views/character/character_tab_page.dart';
 import '../views/discover/discover_page.dart';
+import '../views/discover/user_profile_page.dart';
+import '../views/discover/post_detail_page.dart';
 import '../views/home/category_characters_page.dart';
 import '../views/home/character_detail_page.dart';
 import '../views/home/home_page.dart';
 import '../views/lorebook/lorebook_list_page.dart';
 import '../views/lorebook/lorebook_edit_page.dart';
 import '../views/profile/profile_page.dart';
+import '../views/profile/profile_edit_page.dart';
+import '../views/profile/change_password_page.dart';
 import '../views/settings/settings_page.dart';
 import '../views/settings/backup_page.dart';
 import '../views/settings/tts_settings_page.dart';
@@ -44,12 +49,20 @@ class AppRouter {
         path: '/register',
         builder: (context, state) => const RegisterPage(),
       ),
-      // 角色卡详情页：独立全屏页面，不受 home_shell 包裹
+      // 用户主页（点击头像进入，独立全屏页面）
       GoRoute(
-        path: '/home/character/:id',
+        path: '/user/:id',
         builder: (context, state) {
           final id = state.pathParameters['id']!;
-          return CharacterDetailPage(characterId: id);
+          return UserProfilePage(userId: id);
+        },
+      ),
+      // 动态详情（点击帖子 / 评论进入，独立全屏页面）
+      GoRoute(
+        path: '/post/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return PostDetailPage(postId: id);
         },
       ),
       ShellRoute(
@@ -58,6 +71,14 @@ class AppRouter {
           GoRoute(
             path: '/home',
             builder: (context, state) => const HomePage(),
+          ),
+          // 角色卡详情页：放在 ShellRoute 内 → 保留底部导航（用户要求详情页有底部菜单栏）
+          GoRoute(
+            path: '/home/character/:id',
+            builder: (context, state) {
+              final id = state.pathParameters['id']!;
+              return CharacterDetailPage(characterId: id);
+            },
           ),
           GoRoute(
             path: '/home/category/:name',
@@ -86,6 +107,15 @@ class AppRouter {
             path: '/profile',
             builder: (context, state) => const ProfilePage(),
           ),
+          // 个人信息编辑（点击「我的」页头像 / 昵称进入）
+          GoRoute(
+            path: '/profile/edit',
+            builder: (context, state) => const ProfileEditPage(),
+          ),
+          GoRoute(
+            path: '/profile/password',
+            builder: (context, state) => const ChangePasswordPage(),
+          ),
           GoRoute(
             path: '/chat',
             builder: (context, state) => const ChatListPage(),
@@ -99,6 +129,11 @@ class AppRouter {
           ),
           GoRoute(
             path: '/characters',
+            builder: (context, state) => const CharacterTabPage(),
+          ),
+          // 角色卡管理列表（书架之外的「全部角色」管理入口，由角色 Tab 内入口跳入）
+          GoRoute(
+            path: '/character/manage',
             builder: (context, state) => const CharacterListPage(),
           ),
           GoRoute(

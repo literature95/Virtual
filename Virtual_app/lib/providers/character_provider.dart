@@ -14,12 +14,17 @@ class CharacterProvider extends ChangeNotifier {
   Character? _currentCharacter;
   Character? get currentCharacter => _currentCharacter;
 
+  /// 书架中的角色 ID（最新加入在前）
+  List<String> _shelfIds = [];
+  List<String> get shelfIds => _shelfIds;
+
   CharacterProvider(this._db) {
     loadCharacters();
   }
 
   Future<void> loadCharacters() async {
     _characters = _db.getCharacters();
+    _shelfIds = _db.getCharacterShelf();
     notifyListeners();
   }
 
@@ -168,5 +173,41 @@ class CharacterProvider extends ChangeNotifier {
     await _db.saveCharacter(copy);
     await loadCharacters();
     return copy;
+  }
+
+  // ── 角色书架 ─────────────────────────────────────────────
+
+  /// 书架上已加入的角色（有序，最新加入在前；过滤掉已被删除的卡）
+  List<Character> get shelfCharacters => _shelfIds
+      .map((id) => getCharacter(id))
+      .whereType<Character>()
+      .toList();
+
+  bool isInShelf(String id) => _shelfIds.contains(id);
+
+  /// 加入书架（幂等）
+  Future<void> addToShelf(String id) async {
+    if (_shelfIds.contains(id)) return;
+    await _db.addToCharacterShelf(id);
+    _shelfIds = _db.getCharacterShelf();
+    notifyListeners();
+  }
+
+  /// 移出书架（幂等）
+  Future<void> removeFromShelf(String id) async {
+    if (!_shelfIds.contains(id)) return;
+    await _db.removeFromCharacterShelf(id);
+    _shelfIds = _db.getCharacterShelf();
+    notifyListeners();
+  }
+
+  /// 切换书架状态，返回切换后是否在架上
+  Future<bool> toggleShelf(String id) async {
+    if (_shelfIds.contains(id)) {
+      await removeFromShelf(id);
+      return false;
+    }
+    await addToShelf(id);
+    return true;
   }
 }

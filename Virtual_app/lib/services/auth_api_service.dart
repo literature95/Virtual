@@ -9,12 +9,14 @@ class AuthUser {
   final String email;
   final String? nickname;
   final String? avatarUrl;
+  final String? bio;
 
   const AuthUser({
     required this.id,
     required this.email,
     this.nickname,
     this.avatarUrl,
+    this.bio,
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> j) => AuthUser(
@@ -22,6 +24,7 @@ class AuthUser {
         email: j['email']?.toString() ?? '',
         nickname: j['nickname']?.toString(),
         avatarUrl: j['avatarUrl']?.toString(),
+        bio: j['bio']?.toString(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -29,6 +32,7 @@ class AuthUser {
         'email': email,
         'nickname': nickname,
         'avatarUrl': avatarUrl,
+        'bio': bio,
       };
 }
 
@@ -55,10 +59,13 @@ class AuthApiService {
   }
 
   /// 发送邮箱验证码。SMTP 未配置的降级模式返回 devCode（App 可提示）。
-  Future<String?> sendCode(String backend, String email) async {
+  /// [purpose] 区分场景：register（默认）/ reset（忘记密码）
+  Future<String?> sendCode(String backend, String email,
+      {String purpose = 'register'}) async {
     try {
       final r = await _dio.post('$backend/api/auth/send-code', data: {
         'email': email,
+        'purpose': purpose,
       });
       return r.data is Map ? r.data['devCode']?.toString() : null;
     } on DioException catch (e) {
@@ -110,6 +117,68 @@ class AuthApiService {
       return AuthUser.fromJson((r.data['user'] as Map).cast<String, dynamic>());
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) return null;
+      throw _wrap(e);
+    }
+  }
+
+  /// 更新个人资料（昵称 / 简介 / 头像）。只提交非 null 字段。
+  /// 返回更新后的用户。
+  Future<AuthUser> updateProfile(
+    String backend,
+    String token, {
+    String? nickname,
+    String? bio,
+    String? avatarUrl,
+  }) async {
+    try {
+      final r = await _dio.patch(
+        '$backend/api/users/me',
+        data: {
+          if (nickname != null) 'nickname': nickname,
+          if (bio != null) 'bio': bio,
+          if (avatarUrl != null) 'avatarUrl': avatarUrl,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      return AuthUser.fromJson(
+          (r.data['user'] as Map).cast<String, dynamic>());
+    } on DioException catch (e) {
+      throw _wrap(e);
+    }
+  }
+
+  /// 修改密码（已登录，需旧密码）
+  Future<void> changePassword(
+    String backend,
+    String token, {
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    try {
+      await _dio.post(
+        '$backend/api/auth/change-password',
+        data: {'oldPassword': oldPassword, 'newPassword': newPassword},
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } on DioException catch (e) {
+      throw _wrap(e);
+    }
+  }
+
+  /// 重置密码（未登录，邮箱验证码）
+  Future<void> resetPassword(
+    String backend, {
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    try {
+      await _dio.post('$backend/api/auth/reset-password', data: {
+        'email': email,
+        'code': code,
+        'newPassword': newPassword,
+      });
+    } on DioException catch (e) {
       throw _wrap(e);
     }
   }

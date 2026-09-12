@@ -45,8 +45,9 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// 发送验证码；返回降级模式下的 devCode（SMTP 未配置时），正常发信返回 null
-  Future<String?> sendCode(String backend, String email) =>
-      _api.sendCode(backend, email);
+  Future<String?> sendCode(String backend, String email,
+          {String purpose = 'register'}) =>
+      _api.sendCode(backend, email, purpose: purpose);
 
   Future<void> register(
     String backend, {
@@ -109,4 +110,54 @@ class AuthProvider extends ChangeNotifier {
     await _prefs.remove(_kSession);
     notifyListeners();
   }
+
+  /// 更新个人资料并同步本地登录态（昵称 / 简介 / 头像）
+  Future<void> updateProfile(
+    String backend, {
+    String? nickname,
+    String? bio,
+    String? avatarUrl,
+  }) async {
+    final t = token;
+    if (t == null) throw AuthException('请先登录');
+    busy = true;
+    notifyListeners();
+    try {
+      final u = await _api.updateProfile(
+        backend,
+        t,
+        nickname: nickname,
+        bio: bio,
+        avatarUrl: avatarUrl,
+      );
+      user = u;
+      await _prefs.setString(
+          _kSession, jsonEncode({'token': t, 'user': u.toJson()}));
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  /// 修改密码（需旧密码）。成功后 token 仍有效，无需重新登录。
+  Future<void> changePassword(
+    String backend, {
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    final t = token;
+    if (t == null) throw AuthException('请先登录');
+    await _api.changePassword(backend, t,
+        oldPassword: oldPassword, newPassword: newPassword);
+  }
+
+  /// 重置密码（未登录，邮箱验证码）
+  Future<void> resetPassword(
+    String backend, {
+    required String email,
+    required String code,
+    required String newPassword,
+  }) =>
+      _api.resetPassword(backend,
+          email: email, code: code, newPassword: newPassword);
 }

@@ -26,6 +26,9 @@ Thumbs.db
 .mason-cache/
 .mason_cache/
 *.log
+# 构建/测试的临时输出（沙箱里重定向出来的日志，不入库）
+*_log.txt
+build_log.txt
 
 # ── 敏感文件 ──
 .env

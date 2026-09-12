@@ -28,53 +28,23 @@ class ProfilePage extends StatelessWidget {
         _section(
           scheme: scheme,
           child: GestureDetector(
-            onTap: () =>
-                auth.isLoggedIn ? null : context.push('/login'),
+            onTap: () => auth.isLoggedIn
+                ? context.push('/profile/edit')
+                : context.push('/login'),
             onLongPress: auth.isLoggedIn ? () => _confirmLogout(context) : null,
             child: Row(
               children: [
-              // 品牌渐变气泡头像（对话气泡形，与 Web 端 mark 统一）
-              Container(
-                width: 62,
-                height: 62,
-                decoration: BoxDecoration(
-                  gradient: TavoColors.signGradientDiagonal,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(999),
-                    topRight: Radius.circular(999),
-                    bottomLeft: Radius.circular(999),
-                    bottomRight: Radius.circular(14),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: TavoColors.violet.withValues(alpha: 0.35),
-                      blurRadius: 16,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  auth.isLoggedIn
-                      ? (auth.user!.nickname?.isNotEmpty == true
-                          ? auth.user!.nickname!.characters.first
-                          : auth.user!.email.characters.first)
-                      : 'V',
-                  style: const TextStyle(
-                    fontSize: 27,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF141414),
-                  ),
-                ),
-              ),
+              // 头像：已设置 avatarUrl 用网络图，否则品牌渐变气泡 + 首字母
+              _avatar(auth, scheme),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     GestureDetector(
-                      onTap: () =>
-                          auth.isLoggedIn ? null : context.push('/login'),
+                      onTap: () => auth.isLoggedIn
+                          ? context.push('/profile/edit')
+                          : context.push('/login'),
                       child: Text(
                         auth.isLoggedIn
                             ? (auth.user!.nickname?.isNotEmpty == true
@@ -224,6 +194,58 @@ class ProfilePage extends StatelessWidget {
       await context.read<AuthProvider>().logout();
     }
   }
+
+  /// 头像：有 avatarUrl 走网络图（失败回退首字母），否则品牌渐变气泡
+  Widget _avatar(AuthProvider auth, ColorScheme scheme) {
+    final url = auth.user?.avatarUrl ?? '';
+    final letter = auth.isLoggedIn
+        ? (auth.user!.nickname?.isNotEmpty == true
+            ? auth.user!.nickname!.characters.first
+            : auth.user!.email.characters.first)
+        : 'V';
+    const radius = BorderRadius.only(
+      topLeft: Radius.circular(999),
+      topRight: Radius.circular(999),
+      bottomLeft: Radius.circular(999),
+      bottomRight: Radius.circular(14),
+    );
+    return Container(
+      width: 62,
+      height: 62,
+      decoration: BoxDecoration(
+        gradient: url.isEmpty ? TavoColors.signGradientDiagonal : null,
+        color: url.isEmpty ? null : scheme.surfaceContainerHigh,
+        borderRadius: radius,
+        boxShadow: [
+          BoxShadow(
+            color: TavoColors.violet.withValues(alpha: 0.35),
+            blurRadius: 16,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      alignment: Alignment.center,
+      child: url.isEmpty
+          ? _avatarLetter(letter, 27)
+          : Image.network(
+              url,
+              width: 62,
+              height: 62,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _avatarLetter(letter, 27),
+            ),
+    );
+  }
+
+  Widget _avatarLetter(String letter, double size) => Text(
+        letter,
+        style: TextStyle(
+          fontSize: size,
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF141414),
+        ),
+      );
 
   Widget _section({required ColorScheme scheme, required Widget child}) {
     return Container(

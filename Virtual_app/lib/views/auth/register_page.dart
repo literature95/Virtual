@@ -81,7 +81,7 @@ class _RegisterPageState extends State<RegisterPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('注册成功，已自动登录')),
         );
-        context.pop();
+        context.go('/profile');
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -217,7 +217,7 @@ class _RegisterPageState extends State<RegisterPage> {
                             fontSize: 13, color: scheme.onSurfaceVariant),
                       ),
                       TextButton(
-                        onPressed: () => context.pop(),
+                        onPressed: () => context.go('/login'),
                         child: const Text('直接登录'),
                       ),
                     ],

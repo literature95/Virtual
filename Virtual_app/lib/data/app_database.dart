@@ -50,6 +50,8 @@ class AppDatabase extends ChangeNotifier {
   static const _kThemes = 'db_themes';
   static const _kPersonas = 'db_personas';
   static const _kPlugins = 'db_plugins';
+  /// 角色书架：{characterId: 加入时间 ISO}（有序，最新加入在前）
+  static const _kCharacterShelf = 'db_character_shelf';
 
   // ---------- 通用读写 ----------
   List<Map<String, dynamic>> _readList(String key) {
@@ -427,5 +429,60 @@ class AppDatabase extends ChangeNotifier {
     list.removeWhere((m) => m['id'] == id);
     _writeList(_kPlugins, list);
     notifyListeners();
+  }
+
+  // ========== 角色书架 ==========
+  /// 书架上已加入的角色 ID（按加入时间倒序，最新在前）。
+  /// 角色卡不会自动入架 —— 只有用户在详情页点「加入书架」才会写入。
+  List<String> getCharacterShelf() {
+    final raw = _prefs.getString(_kCharacterShelf);
+    if (raw == null) return [];
+    try {
+      final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      final entries = map.entries.toList()
+        ..sort((a, b) {
+          final ta = DateTime.tryParse(a.value.toString());
+          final tb = DateTime.tryParse(b.value.toString());
+          if (ta == null || tb == null) return 0;
+          return tb.compareTo(ta); // 最新加入在前
+        });
+      return entries.map((e) => e.key).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> addToCharacterShelf(String characterId) async {
+    final map = _readShelfMap();
+    map[characterId] = DateTime.now().toIso8601String();
+    _writeShelfMap(map);
+    notifyListeners();
+  }
+
+  Future<void> removeFromCharacterShelf(String characterId) async {
+    final map = _readShelfMap();
+    map.remove(characterId);
+    _writeShelfMap(map);
+    notifyListeners();
+  }
+
+  /// 清空整个角色库（测试 harness 与「清空库」入口共用）
+  Future<void> clearCharacterShelf() async {
+    await _prefs.remove(_kCharacterShelf);
+    notifyListeners();
+  }
+
+  Map<String, dynamic> _readShelfMap() {
+    final raw = _prefs.getString(_kCharacterShelf);
+    if (raw == null) return {};
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  void _writeShelfMap(Map<String, dynamic> map) {
+    _prefs.setString(_kCharacterShelf, jsonEncode(map));
   }
 }

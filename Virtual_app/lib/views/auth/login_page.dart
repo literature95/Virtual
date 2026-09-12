@@ -41,7 +41,7 @@ class _LoginPageState extends State<LoginPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('登录成功')),
         );
-        context.pop();
+        context.go('/profile');
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());

@@ -214,8 +214,80 @@ RETURNING *'''), parameters: {
         'email': row['email'],
         'nickname': row['nickname'],
         'avatarUrl': row['avatar_url'],
+        'bio': row['bio'],
         'createdAt': (row['created_at'] as DateTime?)?.toIso8601String(),
       };
+
+  // ── 资料更新 / 改密（2026-09-12）──────────────────────────
+
+  /// 更新可编辑资料（昵称 / 简介 / 头像 URL）。
+  /// 只更新显式传入的字段：传 null = 不动该字段（避免误清空）。
+  /// 返回更新后的用户行；用户不存在返回 null。
+  Future<Map<String, dynamic>?> updateProfile(
+    String userId, {
+    String? nickname,
+    String? bio,
+    String? avatarUrl,
+  }) async {
+    final db = AppDatabase.instance;
+    if (!db.isAvailable) await db.init();
+    if (!db.isAvailable) return null;
+    final conn = (await db.connection)!;
+
+    final sets = <String>[];
+    final params = <String, dynamic>{'i': userId};
+    if (nickname != null) {
+      sets.add('nickname = @n');
+      params['n'] = nickname.trim();
+    }
+    if (bio != null) {
+      sets.add('bio = @b');
+      params['b'] = bio.trim();
+    }
+    if (avatarUrl != null) {
+      sets.add('avatar_url = @a');
+      final v = avatarUrl.trim();
+      params['a'] = v.isEmpty ? null : v;
+    }
+    if (sets.isEmpty) return findUserById(userId);
+
+    final rows = await conn.execute(Sql.named('''
+UPDATE users SET ${sets.join(', ')}, updated_at = NOW()
+ WHERE id = @i::uuid
+RETURNING *'''), parameters: params);
+    if (rows.isEmpty) return null;
+    return rows.first.toColumnMap();
+  }
+
+  /// 修改密码（已知旧密码）：校验旧哈希 → 写新哈希。
+  /// 返回 (ok, 错误提示)；ok 时第二项为 null。
+  Future<(bool, String?)> changePassword(
+    String userId,
+    String oldPassword,
+    String newPassword,
+  ) async {
+    final row = await findUserById(userId);
+    if (row == null) return (false, '用户不存在');
+    if (!verifyPassword(oldPassword, row['password_hash'].toString())) {
+      return (false, '当前密码不正确');
+    }
+    return _writePassword(userId, newPassword);
+  }
+
+  /// 重置密码（验证码已校验通过后调用）：直接写新哈希。
+  Future<(bool, String?)> resetPassword(String userId, String newPassword) =>
+      _writePassword(userId, newPassword);
+
+  Future<(bool, String?)> _writePassword(
+      String userId, String newPassword) async {
+    final db = AppDatabase.instance;
+    final conn = (await db.connection)!;
+    await conn.execute(Sql.named('''
+UPDATE users SET password_hash = @h, updated_at = NOW()
+ WHERE id = @i::uuid
+'''), parameters: {'i': userId, 'h': hashPassword(newPassword)});
+    return (true, null);
+  }
 
   // ── 发信（SMTP，未配置时控制台降级）────────────────────────
 

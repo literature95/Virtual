@@ -35,6 +35,8 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
   OnlineCharacter? _character;
   bool _loading = true;
   bool _importing = false;
+  /// 角色库切换中（导入 + 入库是异步链路，防连点）
+  bool _shelfBusy = false;
   String? _error;
 
   // ── 互动数据（mock，后续接后端 API）──
@@ -185,6 +187,103 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
         duration: const Duration(seconds: 1),
       ),
     );
+  }
+
+  /// 「加入角色库 / 已加入」切换按钮（叠在立绘上的次级 CTA）
+  ///
+  /// 角色库是「角色」Tab 首段的内容来源：只有加入角色库的卡才出现在库里，
+  /// 因此这里是角色库的唯一入口（用户设计要求）。
+  ///
+  /// 关键点：列表接口给的是**后端卡 ID**（如「希露妲」），而角色库存的是
+  /// **本地角色 UUID**。在线卡未导入本地库时二者对不上 → 必须先把卡导入本地
+  /// （复用 [_importCharacter] / `findBySourceId` 查重），再用本地 id 入库存档，
+  /// 否则库里永远查不到这张卡（历史 bug 根因）。
+  Widget _shelfToggle(BuildContext context, ColorScheme scheme) {
+    final chars = context.watch<CharacterProvider>();
+    // 用本地 id 判定「已加入」，没有本地副本时自然为 false
+    final local = chars.findBySourceId(widget.characterId);
+    final inShelf = local != null && chars.isInShelf(local.id);
+    return Material(
+      color: inShelf
+          ? TavoColors.violet.withValues(alpha: 0.9)
+          : Colors.black.withValues(alpha: 0.42),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: _shelfBusy ? null : () => _toggleShelf(chars),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: inShelf ? 0.0 : 0.34),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_shelfBusy)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    color: Colors.white,
+                  ),
+                )
+              else
+                Icon(
+                  inShelf
+                      ? Icons.bookmark_added_rounded
+                      : Icons.bookmark_add_outlined,
+                  size: 20,
+                  color: Colors.white,
+                ),
+              const SizedBox(width: 6),
+              Text(
+                inShelf ? '已加入' : '加入角色库',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 切换角色库：先确保本地存在该卡（必要时从后端导入），再入库/出库
+  Future<void> _toggleShelf(CharacterProvider chars) async {
+    final c = _character;
+    if (c == null || _shelfBusy) return;
+
+    final backend = context.read<SettingsProvider>().backendBaseUrl;
+
+    // 已在库 → 直接移出（用本地 id）
+    final existing = chars.findBySourceId(widget.characterId);
+    if (existing != null && chars.isInShelf(existing.id)) {
+      await chars.removeFromShelf(existing.id);
+      if (!mounted) return;
+      _toast('已移出角色库');
+      return;
+    }
+
+    setState(() => _shelfBusy = true);
+    try {
+      final local =
+          existing ?? await _importCharacter(chars, backend, c);
+      await chars.addToShelf(local.id);
+      if (!mounted) return;
+      _toast('已加入角色库');
+    } catch (e) {
+      if (!mounted) return;
+      _toast('加入失败：$e');
+    } finally {
+      if (mounted) setState(() => _shelfBusy = false);
+    }
   }
 
   @override
@@ -375,38 +474,45 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
                     ),
                   ],
                   const SizedBox(height: 16),
-                  // 「开始对话」CTA（用户要求：立绘上加按钮）
-                  SizedBox(
-                    width: double.infinity,
-                    child: TavoBrand.gradientButton(
-                      onPressed: _importing ? null : _startChat,
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      child: _importing
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.4,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: const [
-                                Icon(Icons.chat_bubble_rounded,
-                                    size: 20, color: Colors.white),
-                                SizedBox(width: 8),
-                                Text(
-                                  '开始对话',
-                                  style: TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w700,
+                  // 「加入书架」+「开始对话」CTA（用户要求：立绘上加按钮）
+                  Row(
+                    children: [
+                      // 加入书架（次级按钮，切换态）
+                      _shelfToggle(context, scheme),
+                      const SizedBox(width: 10),
+                      // 开始对话（主按钮）
+                      Expanded(
+                        child: TavoBrand.gradientButton(
+                          onPressed: _importing ? null : _startChat,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          child: _importing
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.4,
                                     color: Colors.white,
                                   ),
+                                )
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: const [
+                                    Icon(Icons.chat_bubble_rounded,
+                                        size: 20, color: Colors.white),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      '开始对话',
+                                      style: TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                    ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

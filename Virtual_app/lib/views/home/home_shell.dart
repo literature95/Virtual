@@ -4,16 +4,17 @@ import 'package:go_router/go_router.dart';
 import '../../theme/tavo_brand.dart';
 import '../common/cosmos_background.dart';
 
-/// 主框架 — 5 Tab 导航：
+/// 主框架 — 4 Tab 导航：
 ///
-/// - 底部导航：首页 | 发现 | 对话 | 角色 | 我的
+/// - 底部导航：首页 | 发现 | 角色 | 我的
+///   （「对话」已并入「角色」Tab：角色 Tab 内分「角色 / 历史 / 收藏」三段，
+///    历史段承载会话列表，故底部不再单列对话）
 /// - AppBar 按路由条件渲染：
 ///   - 首页：右上角搜索图标
-///   - 角色：右上角 "+"（新建角色）
 ///   - API接入（/endpoints）：右上角 "+"（新增端点）
-///   - 其余页面不显示 "+"
+///   - 其余页面不显示 "+"（角色 Tab 的 "+" 由其内部 AppBar 自绘）
 /// - 左上角 ☰ 抽屉：复用「我的」的导航内容
-/// - 宽屏：左侧 NavigationRail（同样 5 项）
+/// - 宽屏：左侧 NavigationRail（同样 4 项）
 class HomeShell extends StatelessWidget {
   final Widget child;
 
@@ -33,12 +34,6 @@ class HomeShell extends StatelessWidget {
       activeIcon: Icons.explore
     ),
     (
-      path: '/chat',
-      label: '对话',
-      icon: Icons.chat_bubble_outline,
-      activeIcon: Icons.chat_bubble
-    ),
-    (
       path: '/characters',
       label: '角色',
       icon: Icons.face_3_outlined,
@@ -53,6 +48,9 @@ class HomeShell extends StatelessWidget {
   ];
 
   /// 当前选中的 Tab（子页面归到其所属 Tab：endpoints/settings→我的，lorebooks 等→发现）
+  ///
+  /// 注意：`/chat` 与 `/chat/:id` 仍保留为独立路由（会话详情从多处入口跳入），
+  /// 但导航高亮归属「角色」Tab —— 历史会话就在角色 Tab 的「历史」段里。
   int _currentIndex(BuildContext context) {
     final loc = GoRouterState.of(context).uri.path;
     if (loc.startsWith('/home')) return 0;
@@ -65,9 +63,8 @@ class HomeShell extends StatelessWidget {
         loc.startsWith('/debug')) {
       return 1;
     }
-    if (loc.startsWith('/chat')) return 2;
-    if (loc.startsWith('/character')) return 3;
-    return 4; // /profile、/endpoints、/more、/settings 等归入我的
+    if (loc.startsWith('/chat') || loc.startsWith('/character')) return 2;
+    return 3; // /profile、/endpoints、/more、/settings 等归入我的
   }
 
   void _onTap(BuildContext context, int index) => context.go(_tabs[index].path);
@@ -78,10 +75,10 @@ class HomeShell extends StatelessWidget {
     return _tabs.any((t) => loc == t.path);
   }
 
-  /// 是否显示右上角 "+"
+  /// 是否显示右上角 "+"（仅 API 接入页；角色 Tab 的 "+" 由其内部 AppBar 自绘）
   bool _showPlus(BuildContext context) {
     final loc = GoRouterState.of(context).uri.path;
-    return loc.startsWith('/character') || loc.startsWith('/endpoint');
+    return loc.startsWith('/endpoint');
   }
 
   /// 内容居中限宽
@@ -228,10 +225,13 @@ class HomeShell extends StatelessWidget {
       );
     }
     // 对话页 / 角色页 / 我的页有自己的 AppBar，隐藏 home_shell 的 AppBar 避免双层
-    // 对话页：/chat、/chat/:id；角色页：/characters；我的页：/profile
+    // 对话页：/chat、/chat/:id；角色 Tab：/characters；我的页：/profile
+    // 角色卡详情页：/home/character/:id —— 它是沉浸式立绘页，自带浮层返回键，
+    //   且 extendBodyBehindAppBar:true，故同样隐藏 shell AppBar（但**保留底部导航**）。
     if (loc == '/chat' ||
         loc.startsWith('/chat/') ||
-        loc == '/characters' ||
+        loc.startsWith('/character') ||
+        loc.startsWith('/home/character/') ||
         loc == '/profile') {
       return const PreferredSize(
         preferredSize: Size.fromHeight(0),
@@ -390,7 +390,6 @@ class CosmosDrawerBody extends StatelessWidget {
             ..._navItems(context, [
               (Icons.home_outlined, '首页', '/home'),
               (Icons.explore_outlined, '发现', '/discover'),
-              (Icons.chat_bubble_outline, '对话', '/chat'),
               (Icons.face_3_outlined, '角色', '/characters'),
             ]),
 
