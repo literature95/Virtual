@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/character.dart';
+import '../../models/lorebook.dart';
+import '../../data/app_database.dart';
 import '../../providers/character_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -155,8 +157,29 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
     String backend,
     OnlineCharacter c,
   ) async {
-    final full =
-        c.isFullCard ? c : await _service.fetchCharacter(backend, c.id);
+    // 列表精简条目不含世界书，且「角色全在世界书」的卡必须拉详情才能拿到
+    // characterBook；已有完整卡且带世界书时直接复用，避免无谓网络往返。
+    final full = (c.isFullCard && c.characterBook != null)
+        ? c
+        : await _service.fetchCharacter(backend, c.id);
+
+    // 世界书：详情下发的 characterBook 先落库为独立 Lorebook，拿到 id 后绑定到角色，
+    // 避免「角色全在世界书里」这类卡的 15 条设定在加入角色库时被静默丢弃。
+    String? lorebookId;
+    final book = full.characterBook;
+    if (book != null && (book['entries'] as List? ?? []).isNotEmpty) {
+      try {
+        final lorebook = Lorebook.fromCharacterBook(
+          Map<String, dynamic>.from(book),
+          fallbackName: '${full.name} 的世界书',
+        );
+        await AppDatabase.instance.saveLorebook(lorebook);
+        lorebookId = lorebook.id;
+      } catch (_) {
+        // 世界书解析失败不阻断角色导入
+      }
+    }
+
     return characters.createCharacter(
       name: full.name,
       nickname: full.nickname,
@@ -177,6 +200,7 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
       groupOnlyGreetings: full.groupOnlyGreetings,
       creatorNotesMultilingual: full.creatorNotesMultilingual,
       extensions: full.importExtensions,
+      lorebookId: lorebookId,
     );
   }
 

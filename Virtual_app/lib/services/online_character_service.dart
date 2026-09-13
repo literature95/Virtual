@@ -34,6 +34,10 @@ class OnlineCharacter {
   final Map<String, dynamic> extensions;
   final Map<String, String> creatorNotesMultilingual;
 
+  /// 世界书（详情接口下发的 `characterBook`；列表精简条目为 null）。
+  /// 「加入角色库」导入时据此落库为独立 Lorebook，避免角色全在世界书的卡丢失内容。
+  final Map<String, dynamic>? characterBook;
+
   const OnlineCharacter({
     required this.id,
     required this.name,
@@ -57,6 +61,7 @@ class OnlineCharacter {
     this.exampleMessages = const [],
     this.extensions = const {},
     this.creatorNotesMultilingual = const {},
+    this.characterBook,
   });
 
   factory OnlineCharacter.fromJson(Map<String, dynamic> json) {
@@ -90,6 +95,9 @@ class OnlineCharacter {
       extensions: Map<String, dynamic>.from(json['extensions'] ?? {}),
       creatorNotesMultilingual: (json['creatorNotesMultilingual'] as Map? ?? {})
           .map((k, v) => MapEntry(k.toString(), v.toString())),
+      characterBook: json['characterBook'] is Map
+          ? Map<String, dynamic>.from(json['characterBook'])
+          : null,
     );
   }
 
