@@ -59,7 +59,11 @@ class CharacterImportService {
     _dio.options.receiveTimeout = const Duration(seconds: 30);
   }
 
-  /// Import from URL (直链 JSON / RisuAI / JannyAI / Pygmalion)
+  /// 从 URL 导入 —— **自动识别直链内容**
+  ///
+  /// 以字节拉取后统一走 [importBundleFromBytes]，因此 JSON 直链与 PNG 角色卡
+  /// 直链（tEXt 内嵌 `chara` / `ccv3`）都能识别，覆盖各大社区站的
+  /// 「Download」按钮产出的两种文件形态。
   ///
   /// 注意：chub.ai 网页链接（`chub.ai/characters/...`）无法直接导入——其公开
   /// 下载 API 已废弃（实测 `POST /api/characters/download` 返回 405/422），
@@ -75,8 +79,18 @@ class CharacterImportService {
         '下载 PNG/JSON 文件，再使用「从文件导入」。',
       );
     }
-    final response = await _dio.get(url);
-    return importBundleFromResponse(response.data);
+    final response = await _dio.get<List<int>>(
+      url,
+      options: Options(responseType: ResponseType.bytes),
+    );
+    final bytes = response.data;
+    if (bytes == null || bytes.isEmpty) {
+      throw Exception('URL 响应为空，无法识别角色卡');
+    }
+    return importBundleFromBytes(
+      Uint8List.fromList(bytes),
+      sourceName: url,
+    );
   }
 
   CharacterImportBundle importBundleFromResponse(dynamic data) {

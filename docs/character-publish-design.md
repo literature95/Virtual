@@ -415,3 +415,20 @@ SELECT DISTINCT ON (id) * FROM characters ORDER BY id, updated_at DESC;
   非规范直写 JSON、多块取 spec 高者、同版本取文档序、截断不抛异常、UTF-8 优先于 latin1）；
   后端测试 43 → **57 全绿**，`dart analyze` 0 issues
 
+## §2.1 App 侧上传入口（2026-09-13 增补）
+
+发布协议的第一个 App 内入口已上线，位于**角色 Tab 右上角 ☁️（上传到后端）**：
+
+- 入口选本地角色卡 → `services/character_publish_service.dart` 发 multipart：
+  `card` = `CharacterExportService.toCCv3` 全字段包（`character_book` 随卡上送）、
+  `avatar` = 立绘字节（`data:` URL 就地解码 / http(s) 外链经 Dio 拉取；
+  本地路径取不到字节时不传文件，由后端按卡内 `avatar` 外链回退）。
+- 响应 `{id, characterVersion, avatarUrl, action}` 中 `action` 决定提示语
+  （`created` = 上传 / `updated` = 覆盖更新）。
+- **上传是显式动作**：角色 Tab `+` 的三种创建方式（新建 / 文件导入 / URL 导入）
+  一律只落本地角色库，不触达后端；与世界书、收藏一致，入库侧永不静默上云。
+- 导入侧配套增强：URL 导入改为按字节拉取走统一识别入口，JSON 与 PNG 直链均可；
+  文件导入由仅 PNG 扩为 JSON/PNG 同一入口（`views/character/character_import_flow.dart`
+  为角色 Tab 与旧角色管理页共用的落库链路：世界书先 `saveLorebook` 再绑定 `lorebookId`）。
+
+

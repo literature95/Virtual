@@ -1,8 +1,3 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
-import 'package:dio/dio.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -11,11 +6,11 @@ import '../../data/app_database.dart';
 import '../../providers/character_provider.dart';
 import '../../models/character.dart';
 import '../../models/lorebook.dart';
-import '../../services/character_import_service.dart';
 import '../../services/character_export_service.dart';
 import '../../theme/tavo_brand.dart';
 import '../../utils/file_saver.dart';
 import '../common/character_cover_card.dart' show resolveAvatarImage;
+import 'character_import_flow.dart';
 
 /// 角色列表页：搜索 + 管理（长按菜单：编辑/复制/导出/删除）
 class CharacterListPage extends StatefulWidget {
@@ -29,9 +24,6 @@ class _CharacterListPageState extends State<CharacterListPage> {
   bool _searchVisible = false;
   String _query = '';
   final TextEditingController _searchCtrl = TextEditingController();
-
-  /// 从 PNG 导入时暂存的立绘（data URL），随角色一并落库
-  String? _pendingAvatar;
 
   @override
   Widget build(BuildContext context) {
@@ -123,9 +115,9 @@ class _CharacterListPageState extends State<CharacterListPage> {
             ),
             ListTile(
               leading: const Icon(Icons.image),
-              title: const Text('从 PNG 卡片导入'),
-              subtitle: const Text('角色卡唯一支持的格式（内嵌 CCv3 数据）'),
-              onTap: () => Navigator.pop(context, 'png'),
+              title: const Text('从文件导入（JSON / PNG）'),
+              subtitle: const Text('PNG 卡内嵌 CCv2/v3 数据，自动识别'),
+              onTap: () => Navigator.pop(context, 'file'),
             ),
           ],
         ),
@@ -133,126 +125,14 @@ class _CharacterListPageState extends State<CharacterListPage> {
     );
 
     if (result == null || !context.mounted) return;
-    _pendingAvatar = null;
-
-    try {
-      final dio = Dio();
-      final importService = CharacterImportService(dio);
-      CharacterImportBundle? bundle;
-
-      switch (result) {
-        case 'url':
-          final controller = TextEditingController();
-          final url = await showDialog<String>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('输入角色卡 URL'),
-              content: TextField(
-                controller: controller,
-                decoration: const InputDecoration(
-                  hintText: 'https://example.com/character.json',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.url,
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('取消'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, controller.text),
-                  child: const Text('导入'),
-                ),
-              ],
-            ),
-          );
-          if (url != null && url.isNotEmpty) {
-            bundle = await importService.importBundleFromUrl(url);
-          }
-          break;
-        case 'png':
-          final bytes = await _pickCardBytes(const ['png']);
-          if (bytes != null) {
-            bundle = importService.importBundleFromBytes(
-              bytes,
-              sourceName: '角色卡 PNG',
-            );
-            // 卡片图本身就是立绘：转 data URL 落库，Web 与原生都能显示
-            _pendingAvatar = 'data:image/png;base64,${base64Encode(bytes)}';
-          }
-          break;
-      }
-
-      if (bundle != null && context.mounted) {
-        // 世界书先落库，拿到 id 后绑定到角色，避免丢失 character_book 设定
-        String? lorebookId;
-        if (bundle.hasLorebook) {
-          await AppDatabase.instance.saveLorebook(bundle.lorebook!);
-          lorebookId = bundle.lorebook!.id;
-        }
-
-        final character = bundle.character;
-        await context.read<CharacterProvider>().createCharacter(
-              name: character.name,
-              nickname: character.nickname,
-              description: character.description,
-              personality: character.personality,
-              scenario: character.scenario,
-              firstMessage: character.firstMessage,
-              avatarPath: _pendingAvatar ?? character.avatarPath,
-              creatorNotes: character.creatorNotes,
-              systemPrompt: character.systemPrompt,
-              postHistoryInstructions: character.postHistoryInstructions,
-              creator: character.creator,
-              characterVersion: character.characterVersion,
-              source: character.source,
-              groupOnlyGreetings: character.groupOnlyGreetings,
-              creatorNotesMultilingual: character.creatorNotesMultilingual,
-              tags: character.tags,
-              alternateGreetings: character.alternateGreetings,
-              exampleMessages: character.exampleMessages,
-              lorebookId: lorebookId,
-            );
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '成功导入「${character.name}」（${bundle.summary}）',
-              ),
-              duration: const Duration(seconds: 4),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入失败: $e')),
-        );
-      }
+    switch (result) {
+      case 'url':
+        await CharacterImportFlow.importFromUrl(context);
+        break;
+      case 'file':
+        await CharacterImportFlow.importFromFile(context);
+        break;
     }
-  }
-
-  /// 选取角色卡 PNG 并直接取出字节
-  ///
-  /// 为什么不复用「相册选图」：桌面端 `image_picker` 按后缀白名单过滤，
-  /// 且 Web 端它固定渲染 `accept="image/*"`，无法按需求限定单个扩展名。
-  /// 用 `file_picker` 才能明确限定为 `.png`。
-  ///
-  /// 为什么取字节而不是路径：Web 上没有文件系统，`dart:io File` 会抛
-  /// `Unsupported operation: _Namespace`。`withData: true` 让各端都回填
-  /// `bytes`，极端情况下再用跨平台的 `xFile` 兜底，全程不碰 `dart:io`。
-  Future<Uint8List?> _pickCardBytes(List<String> extensions) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: extensions,
-      withData: true,
-    );
-    final files = result?.files;
-    if (files == null || files.isEmpty) return null;
-    final file = files.first;
-    return file.bytes ?? await file.xFile.readAsBytes();
   }
 }
 

@@ -2,12 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/app_database.dart';
 import '../../models/character.dart';
 import '../../models/conversation.dart';
+import '../../models/lorebook.dart';
 import '../../providers/character_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/settings_provider.dart';
+import '../../services/character_publish_service.dart';
 import '../chat/chat_list_page.dart' show ConversationListView;
 import '../common/character_cover_card.dart' show resolveAvatarImage;
+import 'character_import_flow.dart';
 
 /// 「角色」Tab —— 底部导航合并后的单入口页
 ///
@@ -19,7 +24,8 @@ import '../common/character_cover_card.dart' show resolveAvatarImage;
 ///    只出现在历史分段，不会回流进角色库。
 ///  - **收藏**：预留分段位（复用角色卡既有 `isFavorite` 字段）。
 ///
-/// 右上角 `+`：新建角色卡。
+/// 右上角 `+`：三选一创建（新建 / 文件导入 / URL 导入），均只进**本地**角色库。
+/// 右上角上传：把本地角色卡显式发布到后端数据库。
 class CharacterTabPage extends StatefulWidget {
   const CharacterTabPage({super.key});
 
@@ -30,9 +36,6 @@ class CharacterTabPage extends StatefulWidget {
 class _CharacterTabPageState extends State<CharacterTabPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
-  String _query = '';
-  bool _searchVisible = false;
-  final _searchCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -44,7 +47,6 @@ class _CharacterTabPageState extends State<CharacterTabPage>
   @override
   void dispose() {
     _tab.dispose();
-    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -53,7 +55,7 @@ class _CharacterTabPageState extends State<CharacterTabPage>
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        // ── 单行顶部：左「角色|历史|收藏」分段 + 右「搜索/加号」 ──
+        // ── 单行顶部：左「角色|历史|收藏」分段 + 右「上传/加号」 ──
         // 不再单独放标题「角色」——它与第一个分段标签重复。
         automaticallyImplyLeading: false,
         titleSpacing: 16,
@@ -62,61 +64,185 @@ class _CharacterTabPageState extends State<CharacterTabPage>
         title: _segmentBar(scheme),
         actions: [
           IconButton(
-            icon: Icon(_searchVisible ? Icons.close : Icons.search),
-            tooltip: _searchVisible ? '关闭搜索' : '搜索',
-            onPressed: () {
-              setState(() {
-                _searchVisible = !_searchVisible;
-                if (!_searchVisible) {
-                  _searchCtrl.clear();
-                  _query = '';
-                }
-              });
-            },
+            icon: const Icon(Icons.cloud_upload_outlined),
+            tooltip: '上传到后端',
+            onPressed: _showPublishSheet,
           ),
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: '创建角色卡',
-            onPressed: () => context.push('/character/new'),
+            onPressed: _showCreateSheet,
           ),
           const SizedBox(width: 4),
         ],
-        bottom: _searchVisible
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(52),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                  child: TextField(
-                    controller: _searchCtrl,
-                    autofocus: true,
-                    style: const TextStyle(fontSize: 15),
-                    decoration: InputDecoration(
-                      hintText: '搜索角色 / 对话…',
-                      isDense: true,
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      filled: true,
-                      fillColor: scheme.surfaceContainerHighest
-                          .withValues(alpha: 0.5),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                    onChanged: (v) => setState(() => _query = v),
-                  ),
-                ),
-              )
-            : null,
       ),
       body: TabBarView(
         controller: _tab,
-        children: [
-          _ShelfView(query: _query),
-          _HistoryView(query: _query),
-          _FavoriteView(query: _query),
+        children: const [
+          _ShelfView(query: ''),
+          _HistoryView(query: ''),
+          _FavoriteView(query: ''),
         ],
       ),
     );
+  }
+
+  /// 右上角 `+`：三选一创建入口，全部只落**本地**角色库（不上传后端）
+  void _showCreateSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                '创建角色卡',
+                style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_add_alt_outlined),
+              title: const Text('新建角色'),
+              subtitle: const Text('从头开始，创建一个角色'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                context.push('/character/new');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.upload_file_outlined),
+              title: const Text('从文件导入角色卡'),
+              subtitle: const Text('支持 JSON 或 PNG 文件，自动识别格式'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                CharacterImportFlow.importFromFile(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('从 URL 导入角色卡'),
+              subtitle: const Text('粘贴社区角色站的文件直链，自动识别导入'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                CharacterImportFlow.importFromUrl(context);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 右上角上传：选一张本地角色卡发布到后端数据库（POST /api/characters）
+  void _showPublishSheet() {
+    final chars = context.read<CharacterProvider>().characters;
+    if (chars.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('本地还没有角色卡，先创建或导入一张吧')),
+      );
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                '选择要上传到后端的角色卡',
+                style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: chars.length,
+                itemBuilder: (_, i) {
+                  final c = chars[i];
+                  final avatar = resolveAvatarImage(c.avatarPath);
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundImage: avatar,
+                      child:
+                          avatar == null ? Text(c.name.characters.first) : null,
+                    ),
+                    title: Text(c.name),
+                    subtitle: Text(
+                      [
+                        if (c.characterVersion?.isNotEmpty ?? false)
+                          'v${c.characterVersion}',
+                        if (c.creator?.isNotEmpty ?? false) 'by ${c.creator}',
+                      ].join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () => _publishCard(sheetCtx, c),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 发布单张卡：世界书随卡上送，成功后关掉菜单并提示结果
+  Future<void> _publishCard(BuildContext sheetCtx, Character c) async {
+    final backend = context.read<SettingsProvider>().backendBaseUrl;
+    final navigator = Navigator.of(sheetCtx);
+    final messenger = ScaffoldMessenger.of(sheetCtx);
+
+    // 世界书随卡上送（本地按 lorebookId 关联的那本）
+    Lorebook? book;
+    if (c.lorebookId != null) {
+      for (final lb in AppDatabase.instance.getLorebooks()) {
+        if (lb.id == c.lorebookId) {
+          book = lb;
+          break;
+        }
+      }
+    }
+
+    // 加载态：关不掉的转圈，发布完成/失败后再关
+    showDialog<void>(
+      context: sheetCtx,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final result = await CharacterPublishService()
+          .publish(c, backend: backend, lorebook: book);
+      navigator.pop(); // loading
+      navigator.pop(); // sheet
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            '已${result.created ? '上传' : '覆盖更新'}「${c.name}」到后端'
+            '（${result.id} v${result.characterVersion}）',
+          ),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      navigator.pop(); // loading
+      messenger.showSnackBar(SnackBar(content: Text('上传失败: $e')));
+    }
   }
 
   /// 顶部分段切换（角色 / 历史 / 收藏）—— 放在 AppBar 内，占满左侧可达区

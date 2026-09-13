@@ -152,7 +152,8 @@ d:\Documents\Desktop\Virtual\
 | 来源 | 形态 | Web | 桌面 | 移动 |
 |---|---|---|---|---|
 | PNG 卡片 | `tEXt` / `zTXt` / `iTXt` 中的 `chara` / `ccv3`（base64，规范形态；压缩块自动 zlib 解压） | ✅ | ✅ | ✅ |
-| URL 直链 | 裸 JSON 端点（保留的远程获取通道，不受本地文件格式约束） | ✅ | ✅ | ✅ |
+| URL 直链 | 按字节拉取后走统一识别入口，**JSON 与 PNG 直链均支持**（自动识别，见 `CharacterImportService.importBundleFromUrl`） | ✅ | ✅ | ✅ |
+| 本地文件 | 角色库 `+` 菜单「从文件导入」：JSON / PNG 同一入口（`importBundleFromBytes` 回退链） | ✅ | ✅ | ✅ |
 
 **角色卡导出**：统一 PNG —— 写入 `chara` 与 `ccv3` 两个 `tEXt` 块（值同为
 `base64(UTF-8 CCv3 JSON)`）。底图取角色立绘，无立绘时生成品牌色占位图；
