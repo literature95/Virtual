@@ -358,6 +358,18 @@ class _ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        // 左上角返回图标：对话页经 ShellRoute 进入，home_shell 的 AppBar 对其隐藏，
+        // 故对话页必须自带返回键。用显式 leading 保证「无论 go 还是 push 进入都显示」，
+        // 点按优先 pop 回上一页（push 进入时回到来源页），无可 pop 时回角色 Tab 根。
+        leading: BackButton(
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/characters');
+            }
+          },
+        ),
         title: Consumer2<ChatProvider, CharacterProvider>(
           builder: (context, chatProvider, charProvider, _) {
             final conv = chatProvider.currentConversation;

@@ -43,7 +43,7 @@ Future<void> _startNewChat(BuildContext context) async {
   );
   if (chosen != null && context.mounted) {
     final conv = await chat.createConversation(characterId: chosen.id);
-    if (context.mounted) context.go('/chat/${conv.id}');
+    if (context.mounted) context.push('/chat/${conv.id}');
   }
 }
 

@@ -280,11 +280,11 @@ Future<void> openOrStartChat(BuildContext context, Character c) async {
   try {
     final existing = chat.latestConversationOf(c.id);
     if (existing != null) {
-      router.go('/chat/${existing.id}');
+      router.push('/chat/${existing.id}');
       return;
     }
     final conv = await chat.createConversation(characterId: c.id);
-    router.go('/chat/${conv.id}');
+    router.push('/chat/${conv.id}');
   } catch (e) {
     messenger.showSnackBar(
       SnackBar(content: Text('无法打开对话：$e')),

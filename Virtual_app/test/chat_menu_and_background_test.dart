@@ -101,6 +101,32 @@ void main() {
     await tester.pump(const Duration(seconds: 30));
   });
 
+  // ── 1b. 对话页左上角返回图标 ───────────────────────────────────────
+
+  testWidgets('对话页 AppBar 左上角始终显示返回图标', (tester) async {
+    final (prefs, db) = await setup();
+    await seedConversation(db);
+
+    await tester.pumpWidget(
+      buildAppProviders(
+        prefs: prefs,
+        database: db,
+        child: const MaterialApp(home: ChatPage(conversationId: 'conv-1')),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+
+    // 用户报障：从角色库点卡片进对话，左上角没有返回键。
+    // 根因：对话页经 ShellRoute 进入，home_shell 的 AppBar 对其隐藏，
+    // 而对话页未显式设 leading，且入口用 go 重置了导航栈 → canPop()==false
+    // → automaticallyImplyLeading 不画返回箭头。现改为显式 leading，必须始终存在。
+    expect(find.byType(BackButton), findsOneWidget,
+        reason: '对话页左上角必须有返回图标（无论 go 还是 push 进入）');
+
+    await tester.pump(const Duration(seconds: 30));
+  });
+
   // ── 2. 背景存取 ────────────────────────────────────────────────────
 
   group('对话背景存取', () {

@@ -139,7 +139,7 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
             title: local.name,
           );
       if (!mounted) return;
-      context.go('/chat/${conv.id}');
+      context.push('/chat/${conv.id}');
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
