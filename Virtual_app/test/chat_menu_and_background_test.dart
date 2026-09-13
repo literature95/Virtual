@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:virtual/data/app_database.dart';
@@ -11,6 +12,7 @@ import 'package:virtual/providers/chat_provider.dart';
 import 'package:virtual/views/chat/chat_background.dart';
 import 'package:virtual/views/chat/chat_character_info_page.dart';
 import 'package:virtual/views/chat/chat_page.dart';
+import 'package:virtual/views/home/home_shell.dart';
 
 /// 对话页右上角「更多」菜单 + 对话背景的回归防线
 ///
@@ -267,6 +269,71 @@ void main() {
     expect(find.byType(ChatBackgroundLayer), findsNothing);
 
     await tester.pump(const Duration(seconds: 30));
+  });
+
+  // ── 2. 对话窗口沉浸式：窄屏不显示底部导航栏 ───────────────────────
+
+  GoRouter _chatShellRouter({required String initial}) => GoRouter(
+        // 用 initialLocation 直接加载，避免路由切换过渡导致新旧页短暂共存
+        initialLocation: initial,
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, state) => const HomeShell(child: SizedBox()),
+          ),
+          GoRoute(
+            path: '/chat/:id',
+            builder: (context, state) => HomeShell(
+              child: ChatPage(conversationId: state.pathParameters['id']!),
+            ),
+          ),
+        ],
+      );
+
+  testWidgets('对话窗口（窄屏）不显示底部导航栏，且有返回图标', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    final (prefs, db) = await setup();
+    await seedConversation(db);
+
+    await tester.pumpWidget(
+      buildAppProviders(
+        prefs: prefs,
+        database: db,
+        child: MaterialApp.router(
+          routerConfig: _chatShellRouter(initial: '/chat/conv-1'),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    // 对话窗口：沉浸式全屏，不应有底部导航栏，但应有返回图标
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(BackButton), findsWidgets);
+  });
+
+  testWidgets('非对话页（窄屏）仍显示底部导航栏（对照）', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    final (prefs, db) = await setup();
+    await seedConversation(db);
+
+    await tester.pumpWidget(
+      buildAppProviders(
+        prefs: prefs,
+        database: db,
+        child: MaterialApp.router(
+          routerConfig: _chatShellRouter(initial: '/'),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(NavigationBar), findsOneWidget);
   });
 
   // ── 2c. 接线验证：角色信息页读的是本地卡 ───────────────────────────

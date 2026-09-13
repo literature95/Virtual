@@ -98,9 +98,19 @@ class HomeShell extends StatelessWidget {
     final screenWidth = MediaQuery.of(context).size.width;
     final isWide = screenWidth >= 720;
     final index = _currentIndex(context);
+    final loc = GoRouterState.of(context).uri.path;
+    // 对话窗口（/chat*）为沉浸式全屏：不显示底部导航栏 / 左侧导航栏
+    final isChat = loc.startsWith('/chat');
 
     // ── 宽屏模式：左侧导航栏 ──
     if (isWide) {
+      // 对话窗口：全屏，无左侧导航栏（沉浸式）
+      if (isChat) {
+        return Scaffold(
+          appBar: _buildAppBar(context),
+          body: CosmosBackground(child: _centered(child, screenWidth)),
+        );
+      }
       return Scaffold(
         body: Row(
           children: [
@@ -155,18 +165,21 @@ class HomeShell extends StatelessWidget {
       appBar: _buildAppBar(context),
       drawer: _buildDrawer(context),
       body: CosmosBackground(child: _centered(child, screenWidth)),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (i) => _onTap(context, i),
-        destinations: [
-          for (final t in _tabs)
-            NavigationDestination(
-              icon: Icon(t.icon),
-              selectedIcon: Icon(t.activeIcon),
-              label: t.label,
+      // 对话窗口：沉浸式全屏，不显示底部导航栏
+      bottomNavigationBar: isChat
+          ? null
+          : NavigationBar(
+              selectedIndex: index,
+              onDestinationSelected: (i) => _onTap(context, i),
+              destinations: [
+                for (final t in _tabs)
+                  NavigationDestination(
+                    icon: Icon(t.icon),
+                    selectedIcon: Icon(t.activeIcon),
+                    label: t.label,
+                  ),
+              ],
             ),
-        ],
-      ),
     );
   }
 
