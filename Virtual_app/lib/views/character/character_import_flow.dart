@@ -78,10 +78,14 @@ class CharacterImportFlow {
               lorebookId: lorebookId,
             );
 
+    // 显式导入 = 用户明确要这张卡进角色库，直接入架（幂等）。
+    // 「不自动收录」约定只针对首页在线卡的浏览场景 —— 浏览≠拥有。
+    await context.read<CharacterProvider>().addToShelf(created.id);
+
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('已导入「${created.name}」到本地角色库（${bundle.summary}）'),
+          content: Text('已导入「${created.name}」到角色库（${bundle.summary}）'),
           duration: const Duration(seconds: 4),
         ),
       );

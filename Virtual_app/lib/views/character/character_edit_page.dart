@@ -187,7 +187,7 @@ class _CharacterEditPageState extends State<CharacterEditPage>
         await provider.updateCharacter(updated);
       }
     } else {
-      await provider.createCharacter(
+      final created = await provider.createCharacter(
         name: name,
         nickname: _nicknameController.text.trim().isEmpty
             ? null
@@ -216,6 +216,8 @@ class _CharacterEditPageState extends State<CharacterEditPage>
         bubbleStyle: _bubbleStyle,
         avatarStyle: _avatarStyle,
       );
+      // 新建 = 显式创建，直接进角色库（幂等）。在线卡浏览仍需详情页手动加入。
+      await provider.addToShelf(created.id);
     }
 
     if (mounted) {

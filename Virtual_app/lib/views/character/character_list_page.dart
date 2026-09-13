@@ -169,6 +169,28 @@ class _CharacterTile extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // 角色库收录开关：处理「早期导入但未入架」的存量卡
+            ListTile(
+              leading: Icon(
+                context.read<CharacterProvider>().isInShelf(character.id)
+                    ? Icons.bookmark_remove_outlined
+                    : Icons.bookmark_add_outlined,
+              ),
+              title: Text(
+                context.read<CharacterProvider>().isInShelf(character.id)
+                    ? '移出角色库'
+                    : '加入角色库',
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                final provider = context.read<CharacterProvider>();
+                if (provider.isInShelf(character.id)) {
+                  provider.removeFromShelf(character.id);
+                } else {
+                  provider.addToShelf(character.id);
+                }
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.edit),
               title: const Text('编辑'),
