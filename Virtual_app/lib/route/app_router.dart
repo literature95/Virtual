@@ -1,5 +1,7 @@
 import 'package:go_router/go_router.dart';
 
+import '../views/chat/chat_background_page.dart';
+import '../views/chat/chat_character_info_page.dart';
 import '../views/chat/chat_list_page.dart';
 import '../views/chat/chat_page.dart';
 import '../views/character/character_list_page.dart';
@@ -119,6 +121,31 @@ class AppRouter {
           GoRoute(
             path: '/chat',
             builder: (context, state) => const ChatListPage(),
+          ),
+          // 对话页 → 右上角菜单「角色信息」：只读展示本地角色档案
+          // 注意：必须排在 `/chat/:id` 之前，且 `/chat/:id` 只吃单段路径，
+          // 所以 `/chat/info/xxx` 不会被它抢先匹配。
+          GoRoute(
+            path: '/chat/info/:characterId',
+            builder: (context, state) {
+              final raw = state.pathParameters['characterId'] ?? '';
+              // 角色 id 可能含中文（slugify 有意保留 CJK），需安全解码
+              String id;
+              try {
+                id = Uri.decodeComponent(raw);
+              } catch (_) {
+                id = raw;
+              }
+              return ChatCharacterInfoPage(characterId: id);
+            },
+          ),
+          // 对话页 → 右上角菜单「对话背景」：按对话维度设置背景
+          GoRoute(
+            path: '/chat/background/:conversationId',
+            builder: (context, state) {
+              final id = state.pathParameters['conversationId']!;
+              return ChatBackgroundPage(conversationId: id);
+            },
           ),
           GoRoute(
             path: '/chat/:id',

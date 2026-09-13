@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
@@ -13,6 +14,7 @@ import '../../providers/character_provider.dart';
 import '../../providers/endpoint_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../common/character_cover_card.dart' show resolveAvatarImage;
+import 'chat_background.dart';
 
 /// 聊天页面
 ///
@@ -147,46 +149,58 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  /// 聊天页「更多选项」：导出 Markdown / 清空消息 / 模型信息
-  void _showMoreMenu() {
-    showModalBottomSheet<void>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (sheetCtx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.text_snippet_outlined),
-              title: const Text('导出为 Markdown'),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                _exportMarkdown();
-              },
-            ),
-            ListTile(
-              leading:
-                  const Icon(Icons.delete_sweep_outlined, color: Colors.red),
-              title: const Text('清空消息', style: TextStyle(color: Colors.red)),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                _confirmClearMessages();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.memory_outlined),
-              title: const Text('模型信息'),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                _showModelInfo();
-              },
-            ),
-          ],
-        ),
+  /// 聊天页右上角「更多」菜单
+  ///
+  /// 以 `PopupMenuButton` 从按钮下方**右侧下拉弹出**（不再用底部弹层），
+  /// 条目按使用频率排序：角色信息 / 对话背景 / 导出 / 模型信息 / 清空消息。
+  void _onMenuSelected(_ChatMenuAction action) {
+    switch (action) {
+      case _ChatMenuAction.characterInfo:
+        _openCharacterInfo();
+      case _ChatMenuAction.background:
+        _openChatBackground();
+      case _ChatMenuAction.exportMarkdown:
+        _exportMarkdown();
+      case _ChatMenuAction.modelInfo:
+        _showModelInfo();
+      case _ChatMenuAction.clearMessages:
+        _confirmClearMessages();
+    }
+  }
+
+  PopupMenuItem<_ChatMenuAction> _menuItem(
+    _ChatMenuAction action,
+    IconData icon,
+    String label, {
+    bool danger = false,
+  }) {
+    final color = danger ? Theme.of(context).colorScheme.error : null;
+    return PopupMenuItem<_ChatMenuAction>(
+      value: action,
+      height: 44,
+      child: Row(
+        children: [
+          Icon(icon, size: 19, color: color),
+          const SizedBox(width: 12),
+          Text(label, style: TextStyle(color: color)),
+        ],
       ),
     );
+  }
+
+  /// 打开当前对话所用角色的「角色信息」只读页
+  void _openCharacterInfo() {
+    final conv = context.read<ChatProvider>().currentConversation;
+    if (conv == null) return;
+    // 角色 id 可能是中文（角色卡的 slugify 有意保留 CJK），拼进路径前必须编码
+    context.push('/chat/info/${Uri.encodeComponent(conv.characterId)}');
+  }
+
+  /// 打开当前对话的「对话背景」设置页
+  void _openChatBackground() {
+    final conv = context.read<ChatProvider>().currentConversation;
+    if (conv == null) return;
+    context.push('/chat/background/${conv.id}');
   }
 
   /// 导出当前对话为 Markdown（复制到剪贴板 + 可选保存为文件）
@@ -354,9 +368,29 @@ class _ChatPageState extends State<ChatPage> {
         ),
         centerTitle: true,
         actions: [
-          IconButton(
+          PopupMenuButton<_ChatMenuAction>(
             icon: const Icon(Icons.more_horiz),
-            onPressed: _showMoreMenu,
+            tooltip: '更多',
+            position: PopupMenuPosition.under,
+            offset: const Offset(0, 4),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            onSelected: _onMenuSelected,
+            itemBuilder: (context) => [
+              _menuItem(
+                  _ChatMenuAction.characterInfo, Icons.badge_outlined, '角色信息'),
+              _menuItem(_ChatMenuAction.background, Icons.wallpaper_outlined,
+                  '对话背景'),
+              _menuItem(_ChatMenuAction.exportMarkdown,
+                  Icons.text_snippet_outlined, '导出为 Markdown'),
+              _menuItem(
+                  _ChatMenuAction.modelInfo, Icons.memory_outlined, '模型信息'),
+              const PopupMenuDivider(),
+              _menuItem(_ChatMenuAction.clearMessages,
+                  Icons.delete_sweep_outlined, '清空消息',
+                  danger: true),
+            ],
           ),
         ],
       ),
@@ -369,23 +403,38 @@ class _ChatPageState extends State<ChatPage> {
                   _scrollToBottom();
                 });
 
+                final Widget content;
                 if (provider.messages.isEmpty) {
-                  return const Center(
+                  content = const Center(
                     child: Text('开始你们的对话吧'),
+                  );
+                } else {
+                  content = ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    itemCount: provider.messages.length,
+                    itemBuilder: (context, index) {
+                      final msg = provider.messages[index];
+                      return _MessageBubble(message: msg);
+                    },
                   );
                 }
 
-                return ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  itemCount: provider.messages.length,
-                  itemBuilder: (context, index) {
-                    final msg = provider.messages[index];
-                    return _MessageBubble(message: msg);
-                  },
+                // 对话背景：未设置时保持原样，不额外套一层 Stack
+                final background = provider
+                    .conversationBackground(widget.conversationId);
+                if (background == null) return content;
+
+                return Stack(
+                  children: [
+                    Positioned.fill(
+                      child: ChatBackgroundLayer(theme: background),
+                    ),
+                    content,
+                  ],
                 );
               },
             ),
@@ -943,4 +992,13 @@ class _MessageBubbleState extends State<_MessageBubble> {
       ),
     );
   }
+}
+
+/// 聊天页右上角「更多」菜单的条目
+enum _ChatMenuAction {
+  characterInfo,
+  background,
+  exportMarkdown,
+  modelInfo,
+  clearMessages,
 }

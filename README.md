@@ -86,7 +86,7 @@ d:\Documents\Desktop\Virtual\
 │   │   ├── theme/               # design_tokens（唯一来源）+ app_theme（浅/深双主题）+ tavo_brand
 │   │   ├── data/                # app_database.dart（SharedPreferences 持久化）
 │   │   └── utils/               # image_data 等工具类
-│   └── test/                    # 14 个测试（132 例：角色卡/PNG/世界书/角色库/社区/设置/Provider 注册）
+│   └── test/                    # 15 个测试（145 例：角色卡/PNG/世界书/角色库/社区/设置/Provider 注册/对话菜单与背景）
 │
 ├── Virtual_background/          # Dart Frog 后端（端口 8080）
 │   ├── routes/
@@ -132,7 +132,9 @@ d:\Documents\Desktop\Virtual\
 |---|---|
 | 导航 | **4 Tab 主导航（首页/发现/角色/我的）**，窄屏 NavigationBar / 宽屏 NavigationRail；GoRouter 30+ 路由。会话详情走独立路由 `/chat/:id`，但导航高亮归入「角色」Tab |
 | 首页 | 在线角色卡广场：后端 `/api/characters` 拉取 + 分类过滤 chips + 搜索；竖版封面卡（0.62 比例、照片铺满、2~3 列网格，已导入角色带角标）；点击卡片 → 拉详情 → 幂等导入 → 直达对话（已聊过则回原对话） |
-| 对话 | 会话列表（搜索/置顶/长按菜单：重命名/置顶/删除）；聊天页流式输出、导出 Markdown、清空消息、模型信息 |
+| 对话 | 会话列表（搜索/置顶/长按菜单：重命名/置顶/删除）；聊天页流式输出；右上角**三点下拉菜单**（从按钮下方右侧弹出，非底部弹层）：**角色信息** / **对话背景** / 导出为 Markdown / 模型信息 / 清空消息 |
+| 对话背景 | 按**对话**维度设置聊天页背景：内置渐变预设（6 款）/ 图片直链 / 本地图片 + 不透明度 + 模糊四档；**复用主题表 `ChatTheme`**（id 由对话 id 派生 `conv-bg-<convId>`），不新增数据表、不改 `Conversation` 模型；删除对话时连带清理 |
+| 角色信息 | 从对话页菜单进入的**只读**本地角色档案：立绘 / 简介 / 性格 / 场景 / 开场白 / 备选开场白 / 示例对话 / 系统提示 / 元信息。与在线卡详情页（`/home/character/:id`）互补 —— 这里展示的就是**真正参与 prompt 组装**的那份本地卡，便于排查 OOC |
 | 角色 | 顶栏**单行**「**角色 / 历史 / 收藏**」三分段 + 🔍（点开后展开搜索框）+ ➕ 创建角色卡。**角色**=角色库（3 列网格，卡面为立绘 + 名称 + 最近一条对话预览，**点卡片正文 = 直接进入对话**（有历史会话则续聊，否则新建）；长按菜单：查看角色卡详情、开始/继续对话、移出角色库；**初始为空**，不自动收录）；**历史**=会话列表（长按置顶/删除，与对话页共用同一列表组件）；**收藏**=已收藏角色。角色卡导入/导出 —— **唯一格式为 PNG**（内嵌 CCv3 全字段与 `character_book` 世界书），Web/桌面/移动共用一条字节流路径，浏览器端亦可导出下载 |
 | 社区 | 发现页社区信息流：帖子列表（分类 chips + 搜索）、点赞、评论（**正序分页** + 乐观插入并失败回滚）、关注/取关、点作者头像进**用户主页**、点卡片进**帖子详情**、点角色卡直达角色详情 |
 | 世界书 | **Lorebook 管理 —— 唯一格式为 JSON**：导入自动识别 SillyTavern World Info（`entries` 为对象）/ CCv3 `character_book`（`entries` 为数组）/ 本 App 导出格式；导出为 SillyTavern 形态，便于跨前端交换 |
@@ -155,6 +157,13 @@ d:\Documents\Desktop\Virtual\
 **角色卡导出**：统一 PNG —— 写入 `chara` 与 `ccv3` 两个 `tEXt` 块（值同为
 `base64(UTF-8 CCv3 JSON)`）。底图取角色立绘，无立绘时生成品牌色占位图；
 `data:` URL 头像会被剥离为 `"none"`，避免同一张图在卡内存两遍。
+
+**对话背景（项目级约定）**：背景值统一存在 `ChatTheme.backgroundImage` 这一个字符串字段里，
+用前缀区分来源 —— `preset:<id>` = 内置渐变，`http(s)://…` = 图片直链，其余 = 本地文件路径
+（Web 端无法渲染本地文件，自动降级为空，不抛异常）。归属关系由**对话 id 派生的固定主题 id**
+`conv-bg-<conversationId>` 表达：主题存在即设过背景。渲染入口只有
+`views/chat/chat_background.dart` 的 `ChatBackgroundLayer`，聊天页与设置页预览共用，避免两处效果不一致。
+**不要**给对话背景写 `isActive: true` —— 那是「全局生效主题」的标记，会被 `getActiveTheme()` 抢走。
 
 **Provider 注册（项目级约定）**：`AppDatabase` 是**全局单例**，在 `main()` 里创建后必须
 经 `ChangeNotifierProvider<AppDatabase>.value` 注册进 Provider 树，否则所有用到

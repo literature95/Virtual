@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 import '../data/app_database.dart';
 import '../models/chat_message.dart';
+import '../models/chat_theme.dart';
 import '../models/conversation.dart';
 import '../models/endpoint.dart';
 import '../models/persona.dart';
@@ -105,6 +106,8 @@ class ChatProvider extends ChangeNotifier {
   /// 删除对话
   Future<void> deleteConversation(String id) async {
     await _db.deleteConversation(id);
+    // 连带清掉该对话的背景设置，避免主题表里留下孤儿条目
+    await _db.deleteTheme(backgroundThemeId(id));
     if (_currentConversation?.id == id) {
       _currentConversation = null;
       _messages = [];
@@ -137,6 +140,58 @@ class ChatProvider extends ChangeNotifier {
       _messages = [];
       notifyListeners();
     }
+  }
+
+  // ========== 对话背景 ==========
+  //
+  // 背景按「对话」维度存储，且**不新增数据表 / 不改 Conversation 模型**：
+  // 复用既有的主题表（`db_themes` → `ChatTheme`），用**由对话 id 派生的固定主题 id**
+  // 建立归属关系 —— 主题存在 == 该对话设过背景，主题不存在 == 未设置。
+  //
+  // 这样做的理由：
+  //  1. `ChatTheme` 已经内建 `backgroundImage / backgroundOpacity / backgroundBlur`
+  //     三个字段，语义完全吻合，不必重造结构；
+  //  2. 避免往 `Conversation.toJson()` 里加字段（会牵动备份 / 导出的兼容性）；
+  //  3. 归属由 id 推导，无需读对话即可判断，省掉一次写回。
+
+  /// 由对话 id 派生出的背景主题 id（固定前缀，勿随意改动以免存量设置失联）
+  static String backgroundThemeId(String conversationId) =>
+      'conv-bg-$conversationId';
+
+  /// 读取指定对话的背景设置；未设置返回 null
+  ChatTheme? conversationBackground(String conversationId) {
+    final themes = _db.getThemes();
+    if (themes.isEmpty) return null;
+    final id = backgroundThemeId(conversationId);
+    for (final t in themes) {
+      if (t.id == id) return t;
+    }
+    return null;
+  }
+
+  /// 保存指定对话的背景设置
+  ///
+  /// `isActive` 恒为 false：`isActive` 是「全局生效主题」的标记，
+  /// 对话背景绝不能抢走它，否则会污染 `getActiveTheme()`。
+  Future<void> saveConversationBackground(
+    String conversationId,
+    ChatTheme background,
+  ) async {
+    await _db.saveTheme(
+      background.copyWith(
+        id: backgroundThemeId(conversationId),
+        name: '对话背景',
+        isActive: false,
+        isBuiltIn: false,
+      ),
+    );
+    notifyListeners();
+  }
+
+  /// 清除指定对话的背景设置
+  Future<void> clearConversationBackground(String conversationId) async {
+    await _db.deleteTheme(backgroundThemeId(conversationId));
+    notifyListeners();
   }
 
   // ========== 消息加载 ==========
