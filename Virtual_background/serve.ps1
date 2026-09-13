@@ -41,7 +41,7 @@ if ((Test-Path $server) -and -not (Select-String -Path $server -Pattern 'cache-c
   (Get-Content $server -Raw) `
     -replace [regex]::Escape('  final handler = Cascade().add(createStaticFileHandler()).add(buildRootHandler()).handler;'),
              @'
-  final handler = (RequestContext context) async { final rsp = await Cascade().add(createStaticFileHandler()).add(buildRootHandler()).handler(context); final p = context.request.uri.path; final isShell = p.isEmpty || p.endsWith(".js") || p.endsWith(".html") || p.endsWith(".json"); if (isShell) { final h = Map<String, Object>.from(rsp.headers); h["cache-control"] = "no-cache"; return rsp.copyWith(headers: h); } return rsp; };
+  final handler = (RequestContext context) async { final rsp = await Cascade().add(createStaticFileHandler()).add(buildRootHandler()).handler(context); final p = context.request.uri.path; final isShell = p.isEmpty || p == '/' || p.endsWith(".js") || p.endsWith(".html") || p.endsWith(".json"); if (isShell) { final h = Map<String, Object>.from(rsp.headers); h["cache-control"] = "no-cache"; return rsp.copyWith(headers: h); } return rsp; };
 '@ | Set-Content $server -Encoding UTF8
   Write-Host '[serve] 已打 App 壳禁缓存补丁'
 }
