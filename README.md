@@ -86,7 +86,7 @@ d:\Documents\Desktop\Virtual\
 │   │   ├── theme/               # design_tokens（唯一来源）+ app_theme（浅/深双主题）+ tavo_brand
 │   │   ├── data/                # app_database.dart（SharedPreferences 持久化）
 │   │   └── utils/               # image_data 等工具类
-│   └── test/                    # 13 个测试（130 例：角色卡/PNG/世界书/角色库/社区/设置）
+│   └── test/                    # 14 个测试（132 例：角色卡/PNG/世界书/角色库/社区/设置/Provider 注册）
 │
 ├── Virtual_background/          # Dart Frog 后端（端口 8080）
 │   ├── routes/
@@ -133,7 +133,7 @@ d:\Documents\Desktop\Virtual\
 | 导航 | **4 Tab 主导航（首页/发现/角色/我的）**，窄屏 NavigationBar / 宽屏 NavigationRail；GoRouter 30+ 路由。会话详情走独立路由 `/chat/:id`，但导航高亮归入「角色」Tab |
 | 首页 | 在线角色卡广场：后端 `/api/characters` 拉取 + 分类过滤 chips + 搜索；竖版封面卡（0.62 比例、照片铺满、2~3 列网格，已导入角色带角标）；点击卡片 → 拉详情 → 幂等导入 → 直达对话（已聊过则回原对话） |
 | 对话 | 会话列表（搜索/置顶/长按菜单：重命名/置顶/删除）；聊天页流式输出、导出 Markdown、清空消息、模型信息 |
-| 角色 | 顶栏**单行**「**角色 / 历史 / 收藏**」三分段 + 🔍（点开后展开搜索框）+ ➕ 创建角色卡。**角色**=角色库（3 列网格，卡面为立绘 + 名称 + 最近一条对话预览，长按菜单：开始/继续对话、查看详情、移出角色库；**初始为空**，不自动收录）；**历史**=会话列表（长按置顶/删除，与对话页共用同一列表组件）；**收藏**=已收藏角色。角色卡导入/导出 —— **唯一格式为 PNG**（内嵌 CCv3 全字段与 `character_book` 世界书），Web/桌面/移动共用一条字节流路径，浏览器端亦可导出下载 |
+| 角色 | 顶栏**单行**「**角色 / 历史 / 收藏**」三分段 + 🔍（点开后展开搜索框）+ ➕ 创建角色卡。**角色**=角色库（3 列网格，卡面为立绘 + 名称 + 最近一条对话预览，**点卡片正文 = 直接进入对话**（有历史会话则续聊，否则新建）；长按菜单：查看角色卡详情、开始/继续对话、移出角色库；**初始为空**，不自动收录）；**历史**=会话列表（长按置顶/删除，与对话页共用同一列表组件）；**收藏**=已收藏角色。角色卡导入/导出 —— **唯一格式为 PNG**（内嵌 CCv3 全字段与 `character_book` 世界书），Web/桌面/移动共用一条字节流路径，浏览器端亦可导出下载 |
 | 社区 | 发现页社区信息流：帖子列表（分类 chips + 搜索）、点赞、评论（**正序分页** + 乐观插入并失败回滚）、关注/取关、点作者头像进**用户主页**、点卡片进**帖子详情**、点角色卡直达角色详情 |
 | 世界书 | **Lorebook 管理 —— 唯一格式为 JSON**：导入自动识别 SillyTavern World Info（`entries` 为对象）/ CCv3 `character_book`（`entries` 为数组）/ 本 App 导出格式；导出为 SillyTavern 形态，便于跨前端交换 |
 | 模型接入 | OpenAI 兼容（20+ 平台）/ Anthropic / Gemini 三适配器，均 SSE 流式，已解析思维链字段 |
@@ -155,6 +155,18 @@ d:\Documents\Desktop\Virtual\
 **角色卡导出**：统一 PNG —— 写入 `chara` 与 `ccv3` 两个 `tEXt` 块（值同为
 `base64(UTF-8 CCv3 JSON)`）。底图取角色立绘，无立绘时生成品牌色占位图；
 `data:` URL 头像会被剥离为 `"none"`，避免同一张图在卡内存两遍。
+
+**Provider 注册（项目级约定）**：`AppDatabase` 是**全局单例**，在 `main()` 里创建后必须
+经 `ChangeNotifierProvider<AppDatabase>.value` 注册进 Provider 树，否则所有用到
+`context.read<AppDatabase>()` 的页面（角色编辑 / 角色管理 / 世界书 / 预设 / 正则 / 备份，
+共 9 个页面）都会在运行期抛 `ProviderNotFoundException`。
+
+这类缺陷**没有编译错误、没有 lint 提示**，且角色编辑页是在 `addPostFrameCallback`
+里读取的 —— 异常发生在 `setState(_isLoading = false)` **之前**，界面于是永久停在转圈上，
+表现为「点创建角色没反应」。回归测试 `test/app_providers_test.dart` 用两道防线钉死：
+① 逐类型断言 Provider 树里都取得到；② 真正 pump 一次「新建角色」页，断言它渲染出表单
+而不是一直转圈。注意必须用 `ChangeNotifierProvider` 而非普通 `Provider` —— 后者会触发
+provider 的 `debugCheckInvalidValueType` 断言。
 
 **「加入角色库」语义（项目级约定）**：不是加一个引用，而是把**整张卡下载到本地库**，
 之后离线亦可调用。两个后端接口字段量不同，必须注意：

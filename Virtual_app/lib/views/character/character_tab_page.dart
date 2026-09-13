@@ -14,6 +14,7 @@ import '../common/character_cover_card.dart' show resolveAvatarImage;
 /// 顶部分段切换：
 ///  - **角色**：角色库。三列卡片，展示立绘 / 名称 / 该角色最近一条对话内容。
 ///    角色库**默认空白** —— 只有用户在角色卡详情页点「加入角色库」才会出现。
+///    **点卡片 = 直接进入对话**（有历史会话则续聊）；长按出菜单（详情 / 移出）。
 ///  - **历史**：会话历史（复用 [ConversationListView]）。在这里发起的会话
 ///    只出现在历史分段，不会回流进角色库。
 ///  - **收藏**：预留分段位（复用角色卡既有 `isFavorite` 字段）。
@@ -261,19 +262,42 @@ class _ShelfView extends StatelessWidget {
       );
 
   /// 点卡片正文：有历史会话就续聊，否则新建
-  Future<void> _openOrStartChat(BuildContext context, Character c) async {
-    final chat = context.read<ChatProvider>();
+  Future<void> _openOrStartChat(BuildContext context, Character c) =>
+      openOrStartChat(context, c);
+}
+
+/// 打开角色对话：有历史会话就续聊，否则新建一条空会话。
+///
+/// 角色库与收藏两处共用。用 `chat.latestConversationOf` 而不是无脑新建 ——
+/// 否则重复点同一张卡会攒出一串空对话。
+///
+/// 路由与 Messenger 都在 `await` 之前取出：既避免
+/// `use_build_context_synchronously` 告警，也保证失败时还能弹出提示。
+Future<void> openOrStartChat(BuildContext context, Character c) async {
+  final chat = context.read<ChatProvider>();
+  final router = GoRouter.of(context);
+  final messenger = ScaffoldMessenger.of(context);
+  try {
     final existing = chat.latestConversationOf(c.id);
     if (existing != null) {
-      context.go('/chat/${existing.id}');
+      router.go('/chat/${existing.id}');
       return;
     }
     final conv = await chat.createConversation(characterId: c.id);
-    if (context.mounted) context.go('/chat/${conv.id}');
+    router.go('/chat/${conv.id}');
+  } catch (e) {
+    messenger.showSnackBar(
+      SnackBar(content: Text('无法打开对话：$e')),
+    );
   }
 }
 
 /// 角色库单卡：立绘 + 名称 + 最近对话内容
+///
+/// **点击整卡 = 进入对话**（用户要求「角色库里点角色卡就是对话」）。
+/// 此前 `onTap` 绑的是「查看角色卡详情」，只有最后一行 11px 的预览文字
+/// 才绑了对话 —— 点按区极小，实际几乎点不到。
+/// 现在：「查看角色卡详情」「移出角色库」都在长按菜单里。
 class _ShelfCard extends StatelessWidget {
   final Character character;
   final String? lastMessage;
@@ -296,7 +320,8 @@ class _ShelfCard extends StatelessWidget {
     final preview = (lastMessage ?? '').trim();
 
     return InkWell(
-      onTap: onOpen,
+      // 整卡直达对话（有历史会话续聊，否则新建）
+      onTap: onChat,
       onLongPress: () => _menu(context, scheme),
       borderRadius: BorderRadius.circular(14),
       child: Column(
@@ -341,19 +366,16 @@ class _ShelfCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 2),
-          // 最近对话内容
-          GestureDetector(
-            onTap: onChat,
-            child: Text(
-              preview.isEmpty ? '未开始对话' : preview,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                color: preview.isEmpty
-                    ? scheme.onSurfaceVariant.withValues(alpha: 0.7)
-                    : scheme.onSurfaceVariant,
-              ),
+          // 最近对话内容（点按由整卡接管，不再单独嵌套手势）
+          Text(
+            preview.isEmpty ? '点按开始对话' : preview,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              color: preview.isEmpty
+                  ? scheme.primary.withValues(alpha: 0.85)
+                  : scheme.onSurfaceVariant,
             ),
           ),
         ],
@@ -379,20 +401,21 @@ class _ShelfCard extends StatelessWidget {
                     fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ),
-            ListTile(
-              leading: const Icon(Icons.chat_bubble_outline),
-              title: const Text('开始 / 继续对话'),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                onChat();
-              },
-            ),
+            // 整卡点击已是「进入对话」，菜单里改把详情放第一位
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('查看角色卡详情'),
               onTap: () {
                 Navigator.pop(sheetCtx);
                 onOpen();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.chat_bubble_outline),
+              title: const Text('开始 / 继续对话'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                onChat();
               },
             ),
             ListTile(
@@ -551,17 +574,7 @@ class _FavoriteView extends StatelessWidget {
             context.read<ChatProvider>().latestConversationOf(favs[i].id)?.lastMessagePreview,
         onOpen: () =>
             context.push('/home/character/${Uri.encodeComponent(favs[i].id)}'),
-        onChat: () {
-          final chat = context.read<ChatProvider>();
-          final existing = chat.latestConversationOf(favs[i].id);
-          if (existing != null) {
-            context.go('/chat/${existing.id}');
-          } else {
-            chat.createConversation(characterId: favs[i].id).then((c) {
-              if (context.mounted) context.go('/chat/${c.id}');
-            });
-          }
-        },
+        onChat: () => openOrStartChat(context, favs[i]),
         onRemove: () => context.read<CharacterProvider>().toggleFavorite(favs[i].id),
       ),
     );
