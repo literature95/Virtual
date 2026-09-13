@@ -145,6 +145,17 @@ Cricket 这张卡用的是第 3 种，且**完全不含 `<START>`**，只用 `1.
 （`AuthProvider.user.nickname`，经 `main.dart` 的 ProxyProvider4 注入），
 不能硬编码回 'User'。回归：`test/user_macro_persona_test.dart`。
 
+**世界书与预设的绑定与切换（启用角色卡即生效）**：
+- 取值链 `会话 settings > 角色卡绑定 > 全局激活`（世界书：`settings.lorebookId ?? character.lorebookId`；
+  预设：`settings.presetId ?? getActivePreset()`），切换会话/角色即切换参数源。
+- 激活规则见 `lib/services/world_info_service.dart`：`constant` 恒注入；
+  关键词条目按最近 `scanDepth`（默认 4）条消息命中触发；`selective`（AND_ALL）
+  次要关键词须全部命中；`probability` 掷骰；`tokenBudget` 按优先级截断（1 token ≈ 2 字符粗估）。
+- 注入位置：`beforeSystem` 在角色定义前、`afterSystem` 在场景之后、
+  `beforeUser/afterUser` 以系统消息形式夹在最新用户消息前后；`top`→前、`bottom`→后。
+- 预设（`PresetService.mergePrompt`）作为全局风格层置于 system 最前。
+- 回归：`test/world_info_binding_test.dart`。
+
 **`creatorNotes` 不在此列。** 创作者备注是作者写给「人」看的元信息
 （推荐采样参数、prompt 排版建议等），第三方卡片常含 `{{...}}` 宏片段或 Markdown 代码块，
 直接注入会污染甚至误导模型。需要时用 `{{charCreatorNotes}}` 宏显式引用。

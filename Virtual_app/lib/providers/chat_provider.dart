@@ -6,7 +6,9 @@ import '../models/chat_message.dart';
 import '../models/chat_theme.dart';
 import '../models/conversation.dart';
 import '../models/endpoint.dart';
+import '../models/lorebook.dart';
 import '../models/persona.dart';
+import '../models/preset.dart';
 import '../services/api_service.dart';
 import '../services/prompt_service.dart';
 import 'settings_provider.dart';
@@ -98,6 +100,31 @@ class ChatProvider extends ChangeNotifier {
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
     );
+  }
+
+  /// 解析会话生效的世界书：会话显式绑定 > 角色卡绑定。
+  ///
+  /// 「启用角色卡」时卡上的 `lorebookId` 必须跟随进 Prompt 并随切换角色
+  /// 而切换（此前它只存在于编辑页展示，从未参与组装）；书被整体停用
+  /// (`enabled == false`) 或已被删除时返回 null。
+  @visibleForTesting
+  Lorebook? resolveLorebook(String? lorebookId) {
+    if (lorebookId == null || lorebookId.isEmpty) return null;
+    for (final b in _db.getLorebooks()) {
+      if (b.id == lorebookId) return b.enabled ? b : null;
+    }
+    return null;
+  }
+
+  /// 解析会话生效的预设：会话显式绑定 > 全局激活预设。
+  @visibleForTesting
+  Preset? resolvePreset(String? presetId) {
+    if (presetId != null && presetId.isNotEmpty) {
+      for (final p in _db.getPresets()) {
+        if (p.id == presetId) return p;
+      }
+    }
+    return _db.getActivePreset();
   }
 
   // ========== 对话列表 ==========
@@ -370,6 +397,8 @@ class ChatProvider extends ChangeNotifier {
       persona: persona,
       systemPromptOverride: conv.settings.systemPrompt,
       jailbreakPrompt: conv.settings.jailbreakPrompt,
+      lorebook: resolveLorebook(conv.settings.lorebookId ?? character.lorebookId),
+      preset: resolvePreset(conv.settings.presetId),
     );
 
     // 8. 调用 API 流式生成
@@ -534,6 +563,8 @@ class ChatProvider extends ChangeNotifier {
       persona: persona,
       systemPromptOverride: conv.settings.systemPrompt,
       jailbreakPrompt: conv.settings.jailbreakPrompt,
+      lorebook: resolveLorebook(conv.settings.lorebookId ?? character.lorebookId),
+      preset: resolvePreset(conv.settings.presetId),
     );
 
     // 流式生成

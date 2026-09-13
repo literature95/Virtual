@@ -3,8 +3,12 @@ import 'package:intl/intl.dart';
 import '../models/character.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
+import '../models/lorebook.dart';
 import '../models/persona.dart';
+import '../models/preset.dart';
 import '../utils/image_data.dart';
+import 'preset_service.dart';
+import 'world_info_service.dart';
 
 /// Prompt 构建服务
 ///
@@ -37,6 +41,8 @@ class PromptService {
     int? wordCountLimit,
     String? systemPromptOverride,
     String? jailbreakPrompt,
+    Lorebook? lorebook,
+    Preset? preset,
   }) {
     final macros = _buildMacros(
       character: character,
@@ -50,6 +56,26 @@ class PromptService {
       wordCountLimit: wordCountLimit,
     );
 
+    // ── 世界书（绑定与切换：会话 > 角色卡，由 ChatProvider 解析后传入）──
+    // 常驻条目恒注入；关键词条目按最近 scanDepth 条消息命中触发。
+    var loreBeforeSystem = '';
+    var loreAfterSystem = '';
+    var loreBeforeUser = '';
+    var loreAfterUser = '';
+    if (lorebook != null) {
+      final texts = [
+        for (final m in history)
+          if (!m.isHidden && m.role != MessageRole.system) m.content,
+        userMessage,
+      ];
+      final selected = WorldInfoService.selectEntries(lorebook, texts);
+      final blocks = WorldInfoService.renderBlocks(selected);
+      loreBeforeSystem = _applyMacros(blocks.beforeSystem, macros);
+      loreAfterSystem = _applyMacros(blocks.afterSystem, macros);
+      loreBeforeUser = _applyMacros(blocks.beforeUser, macros);
+      loreAfterUser = _applyMacros(blocks.afterUser, macros);
+    }
+
     final systemContent = _buildSystemPrompt(
       character: character,
       macros: macros,
@@ -59,6 +85,9 @@ class PromptService {
       summary: summary,
       systemPromptOverride: systemPromptOverride,
       jailbreakPrompt: jailbreakPrompt,
+      loreBeforeSystem: loreBeforeSystem,
+      loreAfterSystem: loreAfterSystem,
+      preset: preset,
     );
 
     final messages = <Map<String, dynamic>>[];
@@ -106,11 +135,17 @@ class PromptService {
       });
     }
 
-    // 最新用户消息
+    // 最新用户消息（世界书 AN/深度类条目插在其前后）
+    if (loreBeforeUser.isNotEmpty) {
+      messages.add({'role': 'system', 'content': loreBeforeUser});
+    }
     messages.add({
       'role': 'user',
       'content': _applyMacros(userMessage, macros),
     });
+    if (loreAfterUser.isNotEmpty) {
+      messages.add({'role': 'system', 'content': loreAfterUser});
+    }
 
     return messages;
   }
@@ -125,8 +160,24 @@ class PromptService {
     String? summary,
     String? systemPromptOverride,
     String? jailbreakPrompt,
+    String loreBeforeSystem = '',
+    String loreAfterSystem = '',
+    Preset? preset,
   }) {
     final parts = <String>[];
+
+    // 预设（全局激活 / 会话绑定）：全局风格层，置于最前
+    if (preset != null) {
+      final merged = presetPrompt(preset, macros: macros);
+      if (merged.trim().isNotEmpty) {
+        parts.add(merged);
+      }
+    }
+
+    // 世界书 beforeSystem 块（before_char / top：角色定义之前）
+    if (loreBeforeSystem.trim().isNotEmpty) {
+      parts.add(loreBeforeSystem.trim());
+    }
 
     // charPrompt（角色系统提示词，优先级最高）
     final charPrompt = character.systemPrompt?.trim() ?? '';
@@ -152,6 +203,11 @@ class PromptService {
         '';
     if (scenario.isNotEmpty) {
       parts.add(_applyMacros(scenario, macros));
+    }
+
+    // 世界书 afterSystem 块（after_char：角色定义之后、深度提示之前）
+    if (loreAfterSystem.trim().isNotEmpty) {
+      parts.add(loreAfterSystem.trim());
     }
 
     // charDepthPrompt（角色深度提示）
@@ -536,6 +592,8 @@ class PromptService {
     int? wordCountLimit,
     String? systemPromptOverride,
     String? jailbreakPrompt,
+    Lorebook? lorebook,
+    Preset? preset,
   }) {
     return buildMessages(
       character: character,
@@ -549,6 +607,17 @@ class PromptService {
       wordCountLimit: wordCountLimit,
       systemPromptOverride: systemPromptOverride,
       jailbreakPrompt: jailbreakPrompt,
+      lorebook: lorebook,
+      preset: preset,
     );
+  }
+
+  /// 渲染预设为 prompt 文本（条目排序 + 宏替换）
+  ///
+  /// 公开给测试与调用方复用；宏替换用 [macros] 提供的变量表，
+  /// 未提供的变量保持原样（与 _applyMacros 行为一致）。
+  static String presetPrompt(Preset preset, {Map<String, String> macros = const {}}) {
+    final merged = PresetService().mergePrompt(preset);
+    return _applyMacros(merged, macros);
   }
 }
