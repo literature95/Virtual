@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:dart_frog/dart_frog.dart';
 import 'package:postgres/postgres.dart';
 
@@ -12,14 +10,10 @@ import 'package:virtual_background/path_param.dart';
 /// POST /api/posts/[id]/comments — 发表评论（需登录，JWT 解析 user_id）
 Future<Response> onRequest(RequestContext context, String id) async {
   final postId = decodePathParam(id);
-  switch (context.request.method) {
-    case HttpMethod.get:
-      return _onGet(context, postId);
-    case HttpMethod.post:
-      return _onPost(context, postId);
-    default:
-      return Response(statusCode: 405, body: 'Method Not Allowed');
-  }
+  final method = context.request.method;
+  if (method == HttpMethod.get) return _onGet(context, postId);
+  if (method == HttpMethod.post) return _onPost(context, postId);
+  return Response(statusCode: 405, body: 'Method Not Allowed');
 }
 
 Future<Response> _onGet(RequestContext context, String postId) async {

@@ -14,10 +14,16 @@ class CommunityException implements Exception {
 }
 
 class CommunityApiService {
-  final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 8),
-    receiveTimeout: const Duration(seconds: 15),
-  ));
+  /// [dio] 可注入用于离线测试（配合 mock HttpClientAdapter）；
+  /// 不传则使用默认超时配置，与既有调用点 `CommunityApiService()` 完全兼容。
+  CommunityApiService([Dio? dio])
+      : _dio = dio ??
+            Dio(BaseOptions(
+              connectTimeout: const Duration(seconds: 8),
+              receiveTimeout: const Duration(seconds: 15),
+            ));
+
+  final Dio _dio;
 
   Options? _auth(String? token) =>
       token != null ? Options(headers: {'Authorization': 'Bearer $token'}) : null;

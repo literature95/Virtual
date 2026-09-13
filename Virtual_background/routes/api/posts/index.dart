@@ -4,7 +4,7 @@ import 'package:dart_frog/dart_frog.dart';
 import 'package:postgres/postgres.dart';
 
 import 'package:virtual_background/auth_service.dart';
-import 'package:virtual_background/character_card_mapper.dart';
+import 'package:virtual_background/community_mapper.dart';
 import 'package:virtual_background/database/db.dart';
 
 /// GET  /api/posts — 社区帖子列表
@@ -13,14 +13,10 @@ import 'package:virtual_background/database/db.dart';
 /// POST /api/posts — 发布帖子（需登录）
 ///      body: {title, content, community, tags[], type, characterId?, dialogue?[]}
 Future<Response> onRequest(RequestContext context) async {
-  switch (context.request.method) {
-    case HttpMethod.get:
-      return _onGet(context);
-    case HttpMethod.post:
-      return _onPost(context);
-    default:
-      return Response(statusCode: 405, body: 'Method Not Allowed');
-  }
+  final method = context.request.method;
+  if (method == HttpMethod.get) return _onGet(context);
+  if (method == HttpMethod.post) return _onPost(context);
+  return Response(statusCode: 405, body: 'Method Not Allowed');
 }
 
 Future<Response> _onGet(RequestContext context) async {
@@ -57,34 +53,11 @@ LIMIT 100
     'me': me ?? '00000000-0000-0000-0000-000000000000',
   });
 
+  // 行 → JSON 的唯一映射入口（见 lib/community_mapper.dart）
   return Response.json(
-    body: rows.map((r) => _postJson(r.toColumnMap())).toList(),
+    body: rows.map((r) => postJsonFromRow(r.toColumnMap())).toList(),
   );
 }
-
-/// 关注 / 推荐两种信息流共用同一行结构
-Map<String, dynamic> _postJson(Map<String, dynamic> r) => {
-      'id': r['id'].toString(),
-      'type': r['type'],
-      'title': r['title'],
-      'content': r['content'],
-      'community': r['community'],
-      'tags': CharacterCardMapper.decodeJson<List<dynamic>>(
-          r['tags'], const []),
-      'characterId': r['character_id']?.toString(),
-      'dialogue': CharacterCardMapper.decodeJson<List<dynamic>>(
-          r['dialogue'], const []),
-      'createdAt': (r['created_at'] as DateTime).toIso8601String(),
-      'author': {
-        'id': r['user_id'].toString(),
-        'name': r['author_name'],
-        'avatarUrl': r['author_avatar'],
-      },
-      'likes': r['likes'],
-      'likedByMe': r['liked_by_me'],
-      'comments': r['comments'],
-      'shares': 0,
-    };
 
 Future<Response> _onPost(RequestContext context) async {
   final userId = AuthService.userIdFromHeaders(context.request.headers);
@@ -109,7 +82,9 @@ Future<Response> _onPost(RequestContext context) async {
           body['type']?.toString())
       ? body['type'].toString()
       : 'text';
-  final community = body['community']?.toString().trim().isEmpty == true
+  // 注意：`null == true` 为 false 会落到 else 分支，把缺省值写成字符串 "null"。
+  // 用 `?? ''` 归一化，缺省/空白都落回数据库默认分类「综合」。
+  final community = (body['community']?.toString().trim() ?? '').isEmpty
       ? '综合'
       : body['community'].toString();
   final tags = (body['tags'] as List?)?.map((e) => e.toString()).toList() ??

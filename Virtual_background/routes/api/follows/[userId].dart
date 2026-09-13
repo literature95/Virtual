@@ -7,17 +7,15 @@ import 'package:virtual_background/database/db.dart';
 /// GET  /api/follows —— 我的关注列表（发现页关注栏）
 /// POST /api/follows/:userId —— 关注 / 取关（切换，需登录）
 Future<Response> onRequest(RequestContext context, [String? userId]) async {
-  switch (context.request.method) {
-    case HttpMethod.get:
-      return _onGet(context);
-    case HttpMethod.post:
-      if (userId == null || userId.isEmpty) {
-        return Response(statusCode: 400, body: 'Bad Request: missing user id');
-      }
-      return _onToggle(context, userId);
-    default:
-      return Response(statusCode: 405, body: 'Method Not Allowed');
+  final method = context.request.method;
+  if (method == HttpMethod.get) return _onGet(context);
+  if (method == HttpMethod.post) {
+    if (userId == null || userId.isEmpty) {
+      return Response(statusCode: 400, body: 'Bad Request: missing user id');
+    }
+    return _onToggle(context, userId);
   }
+  return Response(statusCode: 405, body: 'Method Not Allowed');
 }
 
 Future<Response> _onGet(RequestContext context) async {

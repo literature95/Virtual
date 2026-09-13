@@ -4,7 +4,7 @@ import 'package:postgres/postgres.dart';
 import 'package:virtual_background/auth_service.dart';
 import 'package:virtual_background/database/db.dart';
 
-/// GET /api/follows —— 我的关注列表（见 [userId].dart 同文件的 GET 实现）
+/// GET /api/follows —— 我的关注列表（见 `[userId].dart` 同文件的 GET 实现）
 Future<Response> onRequest(RequestContext context) async {
   if (context.request.method != HttpMethod.get) {
     return Response(statusCode: 405, body: 'Method Not Allowed');

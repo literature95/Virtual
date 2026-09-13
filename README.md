@@ -12,6 +12,8 @@ Virtual 是一个**本地优先、跨模型、隐私向**的 AI 角色聊天全�
 | **跨模型接入** | 直连 20+ LLM 平台（OpenAI 兼容 / Anthropic / Gemini），支持 BYOK（自带密钥） |
 | **自托管后端** | 除模型调用外，所有外部服务走本地后端，后端地址可配置（本机 / 局域网 / 自建服务器） |
 | **角色卡系统** | 导入、创建、分享 AI 角色，内置 5 个种子角色与在线角色卡广场 |
+| **角色库** | 详情页一键把整张角色卡**完整下载**到本地库，离线亦可调用 |
+| **社区互动** | 账号体系 + 帖子/点赞/评论/关注/用户主页，数据落在自托管后端 |
 | **多模态对话** | 支持图片输入，转 OpenAI 视觉格式参与对话 |
 | **统一品牌视觉** | 深空色 + 三色签名渐变（紫→珊瑚→橙）+ 玻璃拟态，App / Web 双端一致 |
 
@@ -29,14 +31,15 @@ Virtual 是一个**本地优先、跨模型、隐私向**的 AI 角色聊天全�
 
 | 类别 | 依赖 |
 |---|---|
-| 状态管理 | Provider（5 个 ChangeNotifier） |
-| 路由 | GoRouter（30+ 路由，ShellRoute 包裹 5 Tab） |
+| 状态管理 | Provider（6 个 ChangeNotifier：settings/metadata/endpoint/character/chat/**auth**） |
+| 路由 | GoRouter（30+ 路由，ShellRoute 包裹 4 Tab） |
 | 网络 | Dio、http（App 直连 LLM 厂商）；Dart Frog/shelf（后端） |
 | 本地存储 | SharedPreferences（整表 JSON 持久化，已引 `sqflite` 待启用） |
 | 数据库（可选） | PostgreSQL（`postgres` 驱动，未安装自动降级到内存种子） |
+| 鉴权 | bcrypt（口令哈希）+ dart_jsonwebtoken（会话 JWT）+ mailer（邮箱验证码） |
 | UI 组件 | flutter_markdown、cached_network_image、image_picker、lottie 等 |
 | 设计系统 | `design_tokens.dart` 单一来源（颜色/间距/圆角/字号） |
-| 测试 | flutter_test（App）、test + mocktail（后端）、oxlint（Web） |
+| 测试 | flutter_test（App）、test（后端）、oxlint（Web） |
 
 架构原则：
 
@@ -63,39 +66,49 @@ d:\Documents\Desktop\Virtual\
 ├── Virtual_app/                 # Flutter 客户端（功能主体）
 │   ├── lib/
 │   │   ├── main.dart            # 入口，MultiProvider 装配
-│   │   ├── providers/           # 5 个 ChangeNotifier：settings/metadata/endpoint/character/chat
+│   │   ├── providers/           # 6 个 ChangeNotifier：auth/settings/metadata/endpoint/character/chat
 │   │   ├── services/            # 业务服务层
 │   │   │   ├── adapters/        #   LLM 适配器：openai/anthropic/gemini/llm_adapter
 │   │   │   ├── api_service.dart #   模型调用分发（按 platform 路由到适配器）
 │   │   │   ├── asr/tts/image_generation/web_search_service.dart  # 已直连实现，未收敛后端
 │   │   │   ├── online_character_service.dart   # 在线角色卡（后端 /api/characters）
+│   │   │   ├── community_api_service.dart      # 社区：帖子/点赞/评论/关注/用户主页
 │   │   │   ├── prompt_service.dart             # 多模态消息组装
 │   │   │   └── ...（preset/lorebook/regex/plugin/backup/import/export 等 20 个）
-│   │   ├── models/              # 12 个数据模型：character/chat_message/conversation/endpoint/
+│   │   ├── models/              # 14 个数据模型：character/chat_message/conversation/endpoint/
 │   │   │                        #   lorebook/persona/preset/regex_rule/plugin/chat_theme/
-│   │   │                        #   app_metadata/agent_run
+│   │   │                        #   app_metadata/agent_run/banner_item/community_post
 │   │   ├── views/               # 按域分目录（character/chat/home/discover/profile/settings/
 │   │   │                        #   endpoint/lorebook/preset/regex/plugin/theme/more/
 │   │   │                        #   onboarding/debug/common）
-│   │   ├── route/               # GoRouter，30+ 路由，ShellRoute 包裹 5 Tab
+│   │   │                        #   discover/ 含 user_profile_page + post_detail_page
+│   │   ├── route/               # GoRouter，30+ 路由，ShellRoute 包裹 4 Tab
 │   │   ├── theme/               # design_tokens（唯一来源）+ app_theme（浅/深双主题）+ tavo_brand
 │   │   ├── data/                # app_database.dart（SharedPreferences 持久化）
 │   │   └── utils/               # image_data 等工具类
-│   └── test/                    # 2 个测试（settings_provider / widget）
+│   └── test/                    # 13 个测试（130 例：角色卡/PNG/世界书/角色库/社区/设置）
 │
 ├── Virtual_background/          # Dart Frog 后端（端口 8080）
 │   ├── routes/
 │   │   ├── _middleware.dart     # 全局 CORS 中间件
-│   │   ├── api/                 # health / metadata / characters(index,[id]) / app-info
-│   │   └── avatars/[file].dart  # 角色立绘静态文件（白名单 + 路径穿越防护）
+│   │   └── api/                 # 23 个 API 路由：health/metadata/app-info、
+│   │                            #   characters(index,[id],[id]/export)、
+│   │                            #   auth(send-code/register/login/me/change-password/reset-password)、
+│   │                            #   users([id],me)、posts(index,[id],[id]/like,[id]/comments)、
+│   │                            #   follows(index,[userId])、banners、avatars/[file]、uploads/[file]
 │   ├── lib/
-│   │   ├── config.dart          # 环境配置（DB 连接等）
+│   │   ├── config.dart          # 环境配置（DB/SMTP/JWT，全部走 env + --dart-define）
+│   │   ├── auth_service.dart    # bcrypt 口令、JWT 签发校验、验证码
 │   │   ├── avatar_url.dart      # 立绘 URL 解析器（相对路径 → 按请求来源补全）
 │   │   ├── character_card_mapper.dart # 角色卡映射/校验/共享 upsert SQL
+│   │   ├── community_mapper.dart      # 社区帖子 行→JSON 的**唯一**映射入口
+│   │   ├── path_param.dart      # 路径参数解码（dart_frog 不解码 %XX）
 │   │   └── database/            # db.dart（连接 + 降级）+ seed.dart（5 个种子角色）
 │   ├── tool/import_cards.dart   # 角色卡批量导入（PNG/JSON → PG upsert + 立绘落盘）
+│   ├── e2e_test.py              # 端到端脚本（28 项，覆盖注册→发帖→评论→关注→资料→改密→重置）
 │   ├── public/avatars/          # 5 张本地立绘（char-001~005.jpg）
-│   └── test/                    # 57 个测试（种子契约 / avatar URL / 往返 / 中文 id / PNG 提取）
+│   ├── serve.ps1                # 单端口预览启动器（含 App 壳禁缓存补丁）
+│   └── test/                    # 7 个测试文件（72 例）
 │
 ├── Virtual_web/                 # React 官网（端口 5173）
 │   └── src/
@@ -117,15 +130,16 @@ d:\Documents\Desktop\Virtual\
 
 | 功能域 | 说明 |
 |---|---|
-| 导航 | 5 Tab 主导航（首页/发现/对话/角色/我的），窄屏 NavigationBar / 宽屏 NavigationRail；GoRouter 30+ 路由 |
+| 导航 | **4 Tab 主导航（首页/发现/角色/我的）**，窄屏 NavigationBar / 宽屏 NavigationRail；GoRouter 30+ 路由。会话详情走独立路由 `/chat/:id`，但导航高亮归入「角色」Tab |
 | 首页 | 在线角色卡广场：后端 `/api/characters` 拉取 + 分类过滤 chips + 搜索；竖版封面卡（0.62 比例、照片铺满、2~3 列网格，已导入角色带角标）；点击卡片 → 拉详情 → 幂等导入 → 直达对话（已聊过则回原对话） |
 | 对话 | 会话列表（搜索/置顶/长按菜单：重命名/置顶/删除）；聊天页流式输出、导出 Markdown、清空消息、模型信息 |
-| 角色 | 本地角色管理（搜索 + 复制角色）；**角色卡导入/导出 —— 唯一格式为 PNG**（内嵌 CCv3 全字段与 `character_book` 世界书），Web/桌面/移动共用一条字节流路径，浏览器端亦可导出下载 |
+| 角色 | 顶栏**单行**「**角色 / 历史 / 收藏**」三分段 + 🔍（点开后展开搜索框）+ ➕ 创建角色卡。**角色**=角色库（3 列网格，卡面为立绘 + 名称 + 最近一条对话预览，长按菜单：开始/继续对话、查看详情、移出角色库；**初始为空**，不自动收录）；**历史**=会话列表（长按置顶/删除，与对话页共用同一列表组件）；**收藏**=已收藏角色。角色卡导入/导出 —— **唯一格式为 PNG**（内嵌 CCv3 全字段与 `character_book` 世界书），Web/桌面/移动共用一条字节流路径，浏览器端亦可导出下载 |
+| 社区 | 发现页社区信息流：帖子列表（分类 chips + 搜索）、点赞、评论（**正序分页** + 乐观插入并失败回滚）、关注/取关、点作者头像进**用户主页**、点卡片进**帖子详情**、点角色卡直达角色详情 |
 | 世界书 | **Lorebook 管理 —— 唯一格式为 JSON**：导入自动识别 SillyTavern World Info（`entries` 为对象）/ CCv3 `character_book`（`entries` 为数组）/ 本 App 导出格式；导出为 SillyTavern 形态，便于跨前端交换 |
 | 模型接入 | OpenAI 兼容（20+ 平台）/ Anthropic / Gemini 三适配器，均 SSE 流式，已解析思维链字段 |
 | 多模态 | 图片输入（≤4 张，预览条可删除），转 OpenAI 视觉格式（data URL） |
-| 发现 | 扩展内容聚合：世界书/预设/正则/插件/主题/调试 |
-| 我的 | 头像/昵称/ID + 我的角色卡计数 + API 接入/主题外观/插件/更多 |
+| 发现 | 扩展内容聚合：世界书/预设/正则/插件/主题/调试；上区为社区信息流（见「社区」行） |
+| 我的 | 头像/昵称/ID + 我的角色卡计数 + API 接入/主题外观/插件/更多；**资料编辑**（昵称/简介/头像）与**修改密码** |
 | 设置 | 后端地址配置、语言切换（跟随系统/简中/English/日本語）、数据迁移（JSON 导出导入） |
 | 设计系统 | `design_tokens.dart` 单一来源 + 浅/深双主题 + 星空背景/玻璃拟态，与 Web 端统一 |
 
@@ -141,6 +155,20 @@ d:\Documents\Desktop\Virtual\
 **角色卡导出**：统一 PNG —— 写入 `chara` 与 `ccv3` 两个 `tEXt` 块（值同为
 `base64(UTF-8 CCv3 JSON)`）。底图取角色立绘，无立绘时生成品牌色占位图；
 `data:` URL 头像会被剥离为 `"none"`，避免同一张图在卡内存两遍。
+
+**「加入角色库」语义（项目级约定）**：不是加一个引用，而是把**整张卡下载到本地库**，
+之后离线亦可调用。两个后端接口字段量不同，必须注意：
+
+| 接口 | 返回字段 |
+|---|---|
+| `GET /api/characters`（列表） | **仅 9 个精简字段**（无 personality / scenario / exampleMessages / systemPrompt） |
+| `GET /api/characters/:id`（详情） | **完整卡**（含上述全部 + alternateGreetings / creatorNotes / extensions / characterBook） |
+
+因此入库前必须判断是否为完整卡，否则本地只会存到一个「壳」，模型必然 OOC。
+另有一个易踩的坑：详情页的角色 id 是**后端卡 id**，而角色库存的是**本地角色 UUID**，
+二者命名空间不同 —— 任何「在线实体 → 本地集合」的收录动作都必须先经
+`findBySourceId(...) ?? 下载完整卡` 归一化为本地 id，**不能直接拿列表接口的 id 入库**
+（否则会表现为「点了加入但库里还是空」。回归测试见 `test/character_shelf_test.dart`）。
 
 **世界书导入/导出**：统一 JSON。导入自动识别三种形态（SillyTavern World Info /
 CCv3 `character_book` / 本 App 导出），导出为 SillyTavern World Info 形态。
@@ -163,27 +191,52 @@ dart run Virtual_app/tool/card_png_probe.dart <文件或目录>
 
 **待实现：**
 
+- [ ] **角色库完全离线**：当前 `avatarPath` 存的是后端 URL，立绘仍是网络图，断网时角色库卡面无图（仅占位）。要做到完全离线需把立绘字节也下载到本地（Web 端需另想持久化手段）
 - [ ] 消息存储由 SharedPreferences 整表 JSON 迁移到 SQLite（`sqflite` 已引入未启用，解决长会话性能悬崖）
 - [ ] 国际化补全 `.arb` 文件（当前仅框架级，业务文案硬编码中文）
 - [ ] 决定 TTS/ASR/图片生成/联网搜索是否收敛到后端（App 侧已直连实现，视统一计费需求而定）
 
 ### 4.2 Virtual_background（Dart Frog 后端）
 
-**已实现：**
+**已实现（23 个 API 路由）：**
 
 | 端点 | 用途 |
 |---|---|
 | `GET /api/health` | 健康检查 |
 | `GET /api/metadata` | App 元数据（顶级数组，`api-secret` 仅在编译期注入时下发） |
-| `GET /api/characters` | 角色卡列表（精简字段：id/name/description/avatarUrl/tags/greeting/persona/creator/characterVersion） |
+| `GET /api/app-info` | 应用介绍/下载信息 |
+| **角色卡** | |
+| `GET /api/characters` | 角色卡列表（**精简 9 字段**，见 4.1 的说明） |
 | `GET /api/characters/:id` | 角色卡详情（**完整 CCv3 字段** + `characterBook` 世界书原样下发） |
 | `POST /api/characters` | **发布角色卡**（multipart：`card`=角色卡 JSON、`avatar`=立绘文件；按 `id + character_version` upsert，同版本覆盖、换版本新增一行；卡内 `avatar: "none"` 占位值归一化为 NULL；可选 `X-Api-Token` 鉴权） |
 | `GET /api/characters/:id/export` | 导出角色卡（CCv2 完整包；上传过的角色由 `raw_card` 原样吐回，保证上传=导出） |
-| `GET /api/app-info` | 应用介绍/下载信息 |
+| **账号** | |
+| `POST /api/auth/send-code` | 发送邮箱验证码；`purpose=register\|reset` 两种用途在 `email_codes` 按 `(email,purpose)` 隔离 |
+| `POST /api/auth/register` | 注册，返回 JWT 与用户 id |
+| `POST /api/auth/login` | 登录，返回 JWT |
+| `GET /api/auth/me` | 当前登录用户资料（含 `bio`） |
+| `POST /api/auth/change-password` | 改密（需校验旧密码） |
+| `POST /api/auth/reset-password` | 用验证码重置密码（`purpose=reset`） |
+| `GET /api/users/:id` | 用户主页：`postCount`/`followerCount`/`followingCount`/`isFollowing` + TA 的帖子列表 |
+| `PATCH /api/users/me` | 更新资料（昵称/简介/头像）；**只更新 body 中显式出现的键**（不传=不动，`avatarUrl:""`=清空） |
+| **社区** | |
+| `GET /api/posts` | 帖子列表；`?community=` 分类过滤、`?following=1` 只看已关注作者 |
+| `POST /api/posts` | 发布帖子（需登录）；`community` 缺省落回「综合」 |
+| `GET /api/posts/:id` | 帖子详情，额外返回 **`isFollowingAuthor`**（当前用户是否关注作者） |
+| `POST /api/posts/:id/like` | 点赞 / 取消点赞（切换），返回最新 `liked` / `likes` |
+| `GET /api/posts/:id/comments` | 评论列表（**时间正序**，`?limit=&offset=` 分页，供前端上滑加载更早评论） |
+| `POST /api/posts/:id/comments` | 发表评论（需登录） |
+| `GET /api/follows` | 我的关注列表 |
+| `POST /api/follows/:userId` | 关注 / 取关（切换） |
+| **静态资源** | |
 | `GET /api/avatars/:file` | 内置角色立绘（jpg/png/webp 白名单，1 天缓存） |
-| `GET /api/uploads/:file` | 用户上传立绘（发布接口写入 `public/uploads/`，同白名单与 CORS 处理） |
+| `GET /api/uploads/:file` | 用户上传立绘（同白名单与 CORS 处理） |
 
-其他能力：全局 CORS 中间件；PostgreSQL 可选 + 失败降级内存种子（5 个角色，空库首次启动自动灌入）；角色卡 schema 已对齐 App 的完整角色模型（`characters` 表 27 列，含幂等增量迁移，**复合主键 `(id, character_version)`** 支持多版本）；**中文（非 ASCII）id 全链路可用** —— `slugify` 保留汉字，详情/导出路由对路径参数补解码（dart_frog 不解码，Dart `Uri.path` 也只归一化 ASCII 转义），立绘文件名对非 ASCII id 追加 FNV-1a 短哈希以免不同中文名同版本互相覆盖；立绘本地化（存相对路径，响应时按请求来源补全绝对 URL，App/Web 零改动）；api-secret 与 PUBLISH_TOKEN 编译期外置（`String.fromEnvironment`）；57 个单元测试（含角色卡密度护栏、Cricket 卡 round-trip、中文 id 编码回归、PNG 卡内文本块提取）。
+其他能力：全局 CORS 中间件；PostgreSQL 可选 + 失败降级内存种子（5 个角色，空库首次启动自动灌入）；角色卡 schema 已对齐 App 的完整角色模型（`characters` 表 27 列，含幂等增量迁移，**复合主键 `(id, character_version)`** 支持多版本）；社区表 `users`（含 `bio`）/ `email_codes` / `community_posts` / `post_likes` / `follows` / `post_comments`；**中文（非 ASCII）id 全链路可用** —— `slugify` 保留汉字，详情/导出路由对路径参数补解码（dart_frog 不解码，Dart `Uri.path` 也只归一化 ASCII 转义），立绘文件名对非 ASCII id 追加 FNV-1a 短哈希以免不同中文名同版本互相覆盖；立绘本地化（存相对路径，响应时按请求来源补全绝对 URL，App/Web 零改动）；api-secret 与 PUBLISH_TOKEN 编译期外置（`String.fromEnvironment`）；**72 个单元测试** + `e2e_test.py` **28 项端到端**（注册 → 发帖 → 评论 → 关注 → 用户主页 → 帖子详情 → 关注列表 → 改资料 → 改密 → 验证码重置）。
+
+**帖子 JSON 的唯一映射入口**：三个端点（列表 / 详情 / 用户主页帖子列表）共用
+`lib/community_mapper.dart` 的 `postJsonFromRow()`。历史上三处各写一份映射曾导致
+「列表页评论数恒为 0」这类**不抛异常的字段漂移**，故集中一处并配单元测试。
 
 **批量导入角色卡（PNG / JSON → 数据库）**：`tool/import_cards.dart` 把角色卡批量灌入 PostgreSQL，与 `POST /api/characters` 同一条 mapper/upsert 链路。**PNG 卡片**会解析其 `tEXt`/`zTXt`/`iTXt` 文本块取出内嵌卡片数据，并把**卡面图像本身落盘为立绘**（`public/uploads/`，命名与上传协议一致），App 的角色墙据此显示头像：
 
@@ -203,11 +256,13 @@ dart run tool/import_cards.dart "/路径/卡库" --recursive
 
 **待实现：**
 
+- [ ] **列表接口分页不统一**：`posts/[id]/comments` 已有完整 `?limit=&offset=`，但 `GET /api/posts` 是硬编码 `LIMIT 100`（会静默截断）、`GET /api/characters` **无任何 LIMIT**（全量返回）、`GET /api/follows` 无分页 —— 建议统一为 `?limit=&offset=` 并补 `hasMore`
 - [ ] 写接口补全：`PUT/PATCH/DELETE /api/characters`（POST 已支持；改删与版本历史列表待加）
 - [ ] 基础鉴权：`X-Install-Token` 自签 token 校验（当前仅 POST 支持可选 `X-Api-Token`）
 - [ ] Docker Compose 部署模板（PostgreSQL + 后端 + 数据卷）
 - [ ] 部署文档 `docs/deploy.md`（一键启动、升级、备份）
 - [ ] `metadata` 端点查询参数（`?ch=&lc=&pf=`）实际生效
+- [ ] 路由层测试：`posts`/`follows`/`comments`/`users` 的核心逻辑目前靠 `e2e_test.py` 覆盖；纯函数已抽出并有单测（`community_mapper.dart`），路由 handler 级测试需先做数据库注入改造
 
 ### 4.3 Virtual_web（React 官网）
 
@@ -223,14 +278,13 @@ dart run tool/import_cards.dart "/路径/卡库" --recursive
 - [ ] 角色卡管理后台
 - [ ] 接口离线降级数据（后端不可用时角色区隐藏、下载按钮回退为 `#`）
 - [ ] 补充更多角色立绘（当前 5 个）
-- [ ] 清理未使用静态资源（`hero.png`、`react.svg`、`vite.svg`）
 
 ### 4.4 后续计划（按优先级）
 
 | 优先级 | 阶段 | 内容 |
 |---|---|---|
-| 短期 | Tier 2 | 后端写接口 + 基础鉴权、Docker Compose、部署文档、metadata 查询参数生效 |
-| 中期 | 存储与质量 | SQLite 替换 SharedPreferences、国际化 `.arb` 补全、关键路径测试扩充 |
+| 短期 | 接口一致性 | 列表接口统一分页、角色库离线立绘本地化、路由层测试的数据库注入改造 |
+| 中期 | 存储与质量 | SQLite 替换 SharedPreferences、国际化 `.arb` 补全、后端写接口补全与部署模板 |
 | 长期 | 能力收敛 | TTS/ASR/图片生成/联网搜索代理到后端（若需统一用量统计）、Web 角色卡管理后台、CI/CD + Release 签名 |
 
 ## 五、快速启动
@@ -252,6 +306,16 @@ dart_frog dev --port 8080 --dart-define=API_SECRET_KEY=xxx --dart-define=API_SEC
 # 或直接运行构建产物（JIT 模式下 -D 生效）
 dart -DAPI_SECRET_KEY=xxx -DAPI_SECRET_IV=yyy build/bin/server.dart
 ```
+
+邮箱验证码（可选）：未配置 SMTP 时验证码走控制台降级输出，注册/改密/重置流程仍可完整跑通：
+
+```bash
+# PowerShell
+$env:SMTP_HOST='smtp.qq.com'; $env:SMTP_PORT='465'
+$env:SMTP_USER='you@qq.com'; $env:SMTP_PASS='授权码'
+```
+
+生产部署请固定 `JWT_SECRET`（未配置时每次启动随机生成，重启后所有登录态失效）。
 
 ### 2. 启动 Web 官网
 
@@ -284,12 +348,15 @@ App 首次启动后，进入 **设置 → 后端地址**，默认 `http://localh
 | App 元数据加载失败 | 自动回退 `assets/metadata_default.json`，无网也能跑 |
 | Web `npm run dev` 启动但 API 404 | 确认后端 8080 端口已启动 |
 | 真机 App 连不上后端 | 改设置页后端地址为 `http://<电脑局域网IP>:8080` |
+| 重新部署后 App 仍是旧界面 | App 壳文件（`/`）与 `main.dart.js` 必须带 `cache-control: no-cache`。`dart_frog build` 会重新生成 `build/bin/server.dart` 而**冲掉**该补丁，需按 `serve.ps1` 第 2.5 步重打。检查：`curl -sI http://localhost:8080/ \| grep -i cache-control` |
+| `flutter build web` 报 `errno 183`（字体复制冲突） | `pubspec.yaml` 里手动内置的 `fonts/materialicons-regular.otf` 与 Flutter 内置 `MaterialIcons-Regular.otf` **同路径**（Windows 大小写不敏感），构建产物目录中二者争抢同一文件名。清理 `build/web` 后重建即可缓解；根治见「相关文档」的已知问题说明 |
 
 ## 七、相关文档
 
 | 文档 | 内容 |
 |---|---|
 | `docs/character-card-schema.md` | 角色卡字段映射（CCv2/v3 → App）、`mes_example` 说话人解析规则、世界书映射、Prompt 组装顺序、密度护栏 |
+| `docs/character-publish-design.md` | 角色卡发布协议设计（multipart 字段、鉴权、upsert 语义） |
 | `docs/project-analysis-2026-09-08.md` | 全项目架构分析与技术债清单 |
 
 ## 八、开发约束

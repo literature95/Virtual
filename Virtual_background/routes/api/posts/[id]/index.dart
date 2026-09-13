@@ -2,7 +2,7 @@ import 'package:dart_frog/dart_frog.dart';
 import 'package:postgres/postgres.dart';
 
 import 'package:virtual_background/auth_service.dart';
-import 'package:virtual_background/character_card_mapper.dart';
+import 'package:virtual_background/community_mapper.dart';
 import 'package:virtual_background/database/db.dart';
 import 'package:virtual_background/path_param.dart';
 
@@ -51,28 +51,8 @@ SELECT p.id, p.user_id, p.type, p.title, p.content, p.community, p.tags,
     }
 
     final r = rows.first.toColumnMap();
-    final body = {
-      'id': r['id'].toString(),
-      'type': r['type'],
-      'title': r['title'],
-      'content': r['content'],
-      'community': r['community'],
-      'tags': CharacterCardMapper.decodeJson<List<dynamic>>(r['tags'], const []),
-      'characterId': r['character_id']?.toString(),
-      'dialogue': CharacterCardMapper.decodeJson<List<dynamic>>(r['dialogue'], const []),
-      'createdAt': (r['created_at'] as DateTime).toIso8601String(),
-      'author': {
-        'id': r['user_id'].toString(),
-        'name': r['author_name'],
-        'avatarUrl': r['author_avatar'],
-      },
-      'likes': r['likes'],
-      'likedByMe': r['liked_by_me'],
-      'comments': r['comments'],
-      'shares': 0,
-      'isFollowingAuthor': r['is_following_author'],
-    };
-    return Response.json(body: body);
+    // 行 → JSON 的唯一映射入口；该 SQL 会产出 is_following_author 列
+    return Response.json(body: postJsonFromRow(r));
   } catch (e) {
     return Response.json(statusCode: 500, body: {'error': e.toString()});
   }

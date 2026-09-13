@@ -2,7 +2,7 @@ import 'package:dart_frog/dart_frog.dart';
 import 'package:postgres/postgres.dart';
 
 import 'package:virtual_background/auth_service.dart';
-import 'package:virtual_background/character_card_mapper.dart';
+import 'package:virtual_background/community_mapper.dart';
 import 'package:virtual_background/database/db.dart';
 import 'package:virtual_background/path_param.dart';
 
@@ -74,26 +74,12 @@ SELECT p.id, p.user_id, p.type, p.title, p.content, p.community, p.tags,
 
     final posts = pRows.map((r) {
       final m = r.toColumnMap();
-      return {
-        'id': m['id'].toString(),
-        'type': m['type'],
-        'title': m['title'],
-        'content': m['content'],
-        'community': m['community'],
-        'tags': CharacterCardMapper.decodeJson<List<dynamic>>(m['tags'], const []),
-        'characterId': m['character_id']?.toString(),
-        'dialogue': CharacterCardMapper.decodeJson<List<dynamic>>(m['dialogue'], const []),
-        'createdAt': (m['created_at'] as DateTime).toIso8601String(),
-        'author': {
-          'id': m['user_id'].toString(),
-          'name': u['nickname'],
-          'avatarUrl': u['avatar_url'],
-        },
-        'likes': m['likes'],
-        'likedByMe': m['liked_by_me'],
-        'comments': m['comments'],
-        'shares': 0,
-      };
+      // 作者即主页主人：该 SQL 未 JOIN 作者列，显式传入用户行字段
+      return postJsonFromRow(
+        m,
+        authorName: u['nickname'] as String?,
+        authorAvatar: u['avatar_url'] as String?,
+      );
     }).toList();
 
     final body = {

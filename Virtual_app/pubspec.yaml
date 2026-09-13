@@ -124,7 +124,13 @@ flutter:
   # 图标字体：手动指定项目内置的完整 MaterialIcons（~1.6MB）。
   # 注意 fonts/ 下必须是完整字体；此前曾误放 7.5KB 残缺文件，导致
   # 搜索/底部导航等绝大多数图标渲染为空白。
+  #
+  # 文件名刻意**不要**叫 MaterialIcons-Regular.otf：该名字与 Flutter 内置的
+  # MaterialIcons 字体完全相同，而 Windows 文件系统大小写不敏感 —— 构建时
+  # 自定义资源与内置字体争抢 build/web/assets/fonts/ 下的同一路径，导致
+  # `flutter build web` 反复报 `errno 183`（当文件已存在时，无法创建该文件）。
+  # 图标解析只依赖下面的 `family`，与 asset 文件名无关，故改名无副作用。
   fonts:
     - family: MaterialIcons
       fonts:
-        - asset: fonts/materialicons-regular.otf
+        - asset: fonts/material-icons-full.otf
