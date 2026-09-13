@@ -356,7 +356,22 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 仅当设置了对话背景，才让 AppBar 透明、把背景铺到全屏之后；
+    // 未设置时保持原本的不透明样式，不影响其它观感。
+    final hasBg = context.select<ChatProvider, bool>(
+      (p) => p.conversationBackground(widget.conversationId) != null,
+    );
+    final background = hasBg
+        ? context.read<ChatProvider>().conversationBackground(widget.conversationId)
+        : null;
+
+    // 背景要铺满整个对话界面（含顶部 AppBar 与底部输入栏），故放在 body 的
+    // Stack 最底层；同时让 AppBar 延伸并透明，使背景透到顶栏之后。
+    final topInset =
+        hasBg ? MediaQuery.of(context).padding.top + kToolbarHeight : 0.0;
+
     return Scaffold(
+      extendBodyBehindAppBar: hasBg,
       appBar: AppBar(
         // 左上角返回图标：对话页经 ShellRoute 进入，home_shell 的 AppBar 对其隐藏，
         // 故对话页必须自带返回键。用显式 leading 保证「无论 go 还是 push 进入都显示」，
@@ -370,6 +385,9 @@ class _ChatPageState extends State<ChatPage> {
             }
           },
         ),
+        backgroundColor: hasBg ? Colors.transparent : null,
+        elevation: hasBg ? 0 : null,
+        scrolledUnderElevation: hasBg ? 0 : null,
         title: Consumer2<ChatProvider, CharacterProvider>(
           builder: (context, chatProvider, charProvider, _) {
             final conv = chatProvider.currentConversation;
@@ -406,59 +424,59 @@ class _ChatPageState extends State<ChatPage> {
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          Expanded(
-            child: Consumer<ChatProvider>(
-              builder: (context, provider, _) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _scrollToBottom();
-                });
-
-                final Widget content;
-                if (provider.messages.isEmpty) {
-                  content = const Center(
-                    child: Text('开始你们的对话吧'),
-                  );
-                } else {
-                  content = ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    itemCount: provider.messages.length,
-                    itemBuilder: (context, index) {
-                      final msg = provider.messages[index];
-                      return _MessageBubble(message: msg);
-                    },
-                  );
-                }
-
-                // 对话背景：未设置时保持原样，不额外套一层 Stack
-                final background = provider
-                    .conversationBackground(widget.conversationId);
-                if (background == null) return content;
-
-                return Stack(
-                  children: [
-                    Positioned.fill(
-                      child: ChatBackgroundLayer(theme: background),
-                    ),
-                    content,
-                  ],
-                );
-              },
+          if (hasBg && background != null)
+            Positioned.fill(
+              child: ChatBackgroundLayer(theme: background),
             ),
+          Column(
+            children: [
+              Expanded(
+                child: Consumer<ChatProvider>(
+                  builder: (context, provider, _) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _scrollToBottom();
+                    });
+
+                    final Widget content;
+                    if (provider.messages.isEmpty) {
+                      content = Center(
+                        child: Padding(
+                          padding: EdgeInsets.only(top: topInset),
+                          child: const Text('开始你们的对话吧'),
+                        ),
+                      );
+                    } else {
+                      content = ListView.builder(
+                        controller: _scrollController,
+                        padding: EdgeInsets.only(
+                          left: 12,
+                          right: 12,
+                          top: 8 + topInset,
+                          bottom: 8,
+                        ),
+                        itemCount: provider.messages.length,
+                        itemBuilder: (context, index) {
+                          final msg = provider.messages[index];
+                          return _MessageBubble(message: msg);
+                        },
+                      );
+                    }
+                    return content;
+                  },
+                ),
+              ),
+              _buildPendingImagesBar(),
+              _buildInputBar(transparent: hasBg),
+            ],
           ),
-          _buildPendingImagesBar(),
-          _buildInputBar(),
         ],
       ),
     );
   }
 
-  Widget _buildInputBar() {
+  Widget _buildInputBar({required bool transparent}) {
     return Consumer<ChatProvider>(
       builder: (context, provider, _) {
         final canSend = !provider.isGenerating &&
@@ -468,13 +486,18 @@ class _ChatPageState extends State<ChatPage> {
         return Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: Border(
-              top: BorderSide(
-                color: Theme.of(context).colorScheme.outlineVariant,
-                width: 0.5,
-              ),
-            ),
+            // 设置了对话背景时，输入栏透明，让背景透到栏之后（铺满整个对话界面）
+            color: transparent
+                ? Colors.transparent
+                : Theme.of(context).colorScheme.surface,
+            border: transparent
+                ? null
+                : Border(
+                    top: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                      width: 0.5,
+                    ),
+                  ),
           ),
           child: SafeArea(
             top: false,
