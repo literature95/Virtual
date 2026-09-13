@@ -48,14 +48,56 @@ class ChatProvider extends ChangeNotifier {
   ChatProvider(this._db) : _apiService = ApiService();
 
   /// 更新依赖的 Provider
+  String? _userNickname;
+
   void updateDependencies(
     SettingsProvider settings,
     CharacterProvider characterProvider,
-    EndpointProvider endpointProvider,
-  ) {
+    EndpointProvider endpointProvider, [
+    String? userNickname,
+  ]) {
+    _userNickname = userNickname;
     _characterProvider = characterProvider;
     _endpointProvider = endpointProvider;
     loadConversations();
+  }
+
+  /// 仅供测试：只注入账号昵称，不触发完整依赖装载（loadConversations 等）
+  @visibleForTesting
+  void updateDependenciesForTest({String? userNickname}) {
+    _userNickname = userNickname;
+  }
+
+  /// 解析当前会话生效的人设卡：显式绑定 > 全局激活 > 账号昵称兜底。
+  ///
+  /// `{{user}}` 宏的值就取自这里的 persona.name。用户直觉是「角色卡里的
+  /// {{user}} 就是我（账号昵称）」——所以在没有人设卡时不能硬编码回
+  /// 'User'，应当用登录账号的昵称兜底。返回的是临时 Persona（含账号
+  /// 昵称兜底时不会落库），仅用于 Prompt 组装。
+  @visibleForTesting
+  Persona resolvePersona(String? personaId) {
+    if (personaId != null && personaId.isNotEmpty) {
+      for (final p in _db.getPersonas()) {
+        if (p.id == personaId) return p;
+      }
+    }
+    final active = _db.getActivePersona();
+    if (active != null) return active;
+    final nick = _userNickname?.trim();
+    if (nick != null && nick.isNotEmpty) {
+      return Persona(
+        id: 'account',
+        name: nick,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+    }
+    return Persona(
+      id: 'default',
+      name: 'User',
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
   }
 
   // ========== 对话列表 ==========
@@ -272,24 +314,8 @@ class ChatProvider extends ChangeNotifier {
       return;
     }
 
-    // 3. 获取 Persona
-    Persona? persona;
-    final personaId = conv.settings.personaId ?? character.personaId;
-    if (personaId != null && personaId.isNotEmpty) {
-      persona = _db.getPersonas().firstWhere(
-            (p) => p.id == personaId,
-            orElse: () =>
-                _db.getActivePersona() ??
-                Persona(
-                  id: 'default',
-                  name: 'User',
-                  createdAt: DateTime.now(),
-                  updatedAt: DateTime.now(),
-                ),
-          );
-    } else {
-      persona = _db.getActivePersona();
-    }
+    // 3. 获取 Persona（绑定 > 激活 > 账号昵称兜底，见 resolvePersona）
+    final persona = resolvePersona(conv.settings.personaId ?? character.personaId);
 
     // 4. 添加用户消息
     final userMsg = ChatMessage(
@@ -493,8 +519,8 @@ class ChatProvider extends ChangeNotifier {
       return;
     }
 
-    // Persona
-    Persona? persona = _db.getActivePersona();
+    // Persona（重新生成与发送同源：绑定 > 激活 > 账号昵称兜底）
+    final persona = resolvePersona(conv.settings.personaId ?? character.personaId);
 
     // 历史消息（用户消息之前的 + 用户消息本身）
     final historyMessages =

@@ -139,6 +139,12 @@ Cricket 这张卡用的是第 3 种，且**完全不含 `<START>`**，只用 `1.
 8. `exampleMessages` 渲染结果
 9. memories / summary / override / jailbreak
 
+**`{{user}}` 宏的取值（`ChatProvider.resolvePersona`）**：
+会话/角色显式绑定的人设卡 → 全局激活的人设卡 → **登录账号昵称兜底** → `'User'`。
+用户直觉是「卡片里的 {{user}} 就是我」，所以没有人设卡时用账号昵称
+（`AuthProvider.user.nickname`，经 `main.dart` 的 ProxyProvider4 注入），
+不能硬编码回 'User'。回归：`test/user_macro_persona_test.dart`。
+
 **`creatorNotes` 不在此列。** 创作者备注是作者写给「人」看的元信息
 （推荐采样参数、prompt 排版建议等），第三方卡片常含 `{{...}}` 宏片段或 Markdown 代码块，
 直接注入会污染甚至误导模型。需要时用 `{{charCreatorNotes}}` 宏显式引用。

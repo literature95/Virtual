@@ -136,11 +136,18 @@ Widget buildAppProviders({
         ),
       ),
       ChangeNotifierProvider(create: (_) => CharacterProvider(database)),
-      ChangeNotifierProxyProvider3<SettingsProvider, CharacterProvider,
-          EndpointProvider, ChatProvider>(
+      // AuthProvider 也喂给 ChatProvider：账号昵称是 {{user}} 宏的兜底值
+      //（角色卡里的 {{user}} = 当前用户昵称，见 ChatProvider._resolvePersona）
+      ChangeNotifierProxyProvider4<AuthProvider, SettingsProvider,
+          CharacterProvider, EndpointProvider, ChatProvider>(
         create: (_) => ChatProvider(database),
-        update: (_, settings, character, endpoint, chat) {
-          chat?.updateDependencies(settings, character, endpoint);
+        update: (_, auth, settings, character, endpoint, chat) {
+          chat?.updateDependencies(
+            settings,
+            character,
+            endpoint,
+            auth.user?.nickname,
+          );
           return chat!;
         },
       ),
