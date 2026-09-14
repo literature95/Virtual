@@ -72,7 +72,13 @@ class EndpointListPage extends StatelessWidget {
                       ],
                     ],
                   ),
-                  subtitle: Text('${ep.platform} · ${ep.models.length} 个模型'),
+                  subtitle: Text(
+                    ep.effectiveModel == null
+                        ? '${ep.platform} · 未选择模型'
+                        : '${ep.platform} · ${ep.effectiveModel!.id}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.go('/endpoint/${ep.id}/edit'),
                 ),
