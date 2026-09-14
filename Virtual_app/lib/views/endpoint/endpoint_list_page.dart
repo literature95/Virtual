@@ -74,8 +74,8 @@ class EndpointListPage extends StatelessWidget {
                   ),
                   subtitle: Text(
                     ep.effectiveModel == null
-                        ? '${ep.platform} · 未选择模型'
-                        : '${ep.platform} · ${ep.effectiveModel!.id}',
+                        ? '未选择模型'
+                        : ep.effectiveModel!.id,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
