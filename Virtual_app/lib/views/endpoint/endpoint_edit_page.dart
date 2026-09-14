@@ -220,15 +220,45 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
     try {
       final adapter = ApiService().getAdapter(testEndpoint);
       final sw = Stopwatch()..start();
-      // 温度固定 1.0：思考类模型（如 kimi-k3/o1 系列）只接受 temperature=1，
-      // 通用连通性测试与采样随机性无关，1 是各厂商兼容度最高的值
-      final resp = await adapter.chatCompletions(
-        model: testModelId,
-        messages: const [
-          {'role': 'user', 'content': 'Hi'},
-        ],
-        settings: ChatSettings(maxTokens: 8, temperature: 1.0),
-      );
+      // 预置思考类模型兼容值（kimi-k3 等要求 temperature=1、top_p=0.95）；
+      // 若服务端仍报 "invalid <param>: only <v> is allowed" 类约束，
+      // 解析出允许值后自动重试一次（连通性测试与采样随机性无关）。
+      var settings = ChatSettings(maxTokens: 8, temperature: 1.0, topP: 0.95);
+      dynamic resp;
+      try {
+        resp = await adapter.chatCompletions(
+          model: testModelId,
+          messages: const [
+            {'role': 'user', 'content': 'Hi'},
+          ],
+          settings: settings,
+        );
+      } catch (e) {
+        final m = RegExp(
+          r'invalid\s+(\w+):\s*only\s+([\d.]+)\s+is\s+allowed',
+          caseSensitive: false,
+        ).firstMatch(e.toString());
+        if (m == null) rethrow;
+        final param = m.group(1)!.toLowerCase().replaceAll('_', '');
+        final value = double.tryParse(m.group(2)!);
+        if (value == null) rethrow;
+        if (param == 'temperature') {
+          settings = ChatSettings(
+              maxTokens: 8, temperature: value, topP: settings.topP);
+        } else if (param == 'topp') {
+          settings = ChatSettings(
+              maxTokens: 8, temperature: settings.temperature, topP: value);
+        } else {
+          rethrow;
+        }
+        resp = await adapter.chatCompletions(
+          model: testModelId,
+          messages: const [
+            {'role': 'user', 'content': 'Hi'},
+          ],
+          settings: settings,
+        );
+      }
       sw.stop();
 
       if (mounted) {
