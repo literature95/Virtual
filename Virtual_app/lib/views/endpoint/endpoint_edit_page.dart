@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../providers/endpoint_provider.dart';
 import '../../models/endpoint.dart';
+import '../../models/conversation.dart';
+import '../../services/api_service.dart';
 import '../../services/model_registry_service.dart';
 
 /// 端点编辑/新建页面
@@ -37,6 +39,7 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
 
   /// 接口默认模型（从已添加模型中点选；对话未显式选模型时优先用它）
   String _defaultModelId = '';
+  bool _testingConnection = false;
   Map<String, String> _customParams = {};
 
   static const List<Map<String, String>> _platforms = [
@@ -161,8 +164,159 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
     });
   }
 
-  Future<void> _saveEndpoint() async {
+  /// 连接测试：用当前表单配置临时构建端点，发一条 1-token 请求验证连通性。
+  /// 不依赖已保存的数据——未保存的新接口也能直接测。
+  Future<void> _testConnection() async {
     final name = _nameController.text.trim();
+    final baseUrl =
+        _baseUrlController.text.trim().replaceAll(RegExp(r'/$'), '');
+    final apiKey = _apiKeyController.text.trim();
+
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入接口名称')),
+      );
+      return;
+    }
+    if (baseUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入 Base URL')),
+      );
+      return;
+    }
+    if (apiKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入 API Key')),
+      );
+      return;
+    }
+    if (_selectedModels.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先添加或获取模型')),
+      );
+      return;
+    }
+
+    final testModelId = _defaultModelId.isNotEmpty
+        ? _defaultModelId
+        : _selectedModels.first.id;
+
+    setState(() => _testingConnection = true);
+
+    // 临时端点：只用于本次测试，不落库（ApiService 用新实例避免适配器缓存）
+    final testEndpoint = LlmEndpoint(
+      id: 'conn-test-${DateTime.now().millisecondsSinceEpoch}',
+      name: name,
+      platform: _selectedPlatform,
+      baseUrl: baseUrl,
+      apiKey: apiKey,
+      models: _selectedModels,
+      defaultModelId: _defaultModelId,
+      customParams: _customParams,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+
+    try {
+      final adapter = ApiService().getAdapter(testEndpoint);
+      final sw = Stopwatch()..start();
+      final resp = await adapter.chatCompletions(
+        model: testModelId,
+        messages: const [
+          {'role': 'user', 'content': 'Hi'},
+        ],
+        settings: ChatSettings(maxTokens: 8),
+      );
+      sw.stop();
+
+      if (mounted) {
+        final ms = sw.elapsedMilliseconds;
+        final preview = resp.content.trim();
+        showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.check_circle,
+                    color: Theme.of(ctx).colorScheme.primary),
+                const SizedBox(width: 8),
+                const Text('连接成功'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _testInfoRow('耗时', '${(ms / 1000).toStringAsFixed(1)} 秒'),
+                _testInfoRow('模型', testModelId),
+                if (preview.isNotEmpty) _testInfoRow('回复', preview),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('好的'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        final msg = e.toString();
+        showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.error_outline,
+                    color: Theme.of(ctx).colorScheme.error),
+                const SizedBox(width: 8),
+                const Text('连接失败'),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Text(
+                msg.length > 400 ? '${msg.substring(0, 400)}…' : msg,
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _testingConnection = false);
+    }
+  }
+
+  Widget _testInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 56,
+            child: Text(label,
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 13.5)),
+          ),
+          Expanded(
+            child: Text(value, style: const TextStyle(fontSize: 13.5)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveEndpoint() async {    final name = _nameController.text.trim();
     final baseUrl =
         _baseUrlController.text.trim().replaceAll(RegExp(r'/$'), '');
     final apiKey = _apiKeyController.text.trim();
@@ -887,6 +1041,24 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
           ),
 
           const SizedBox(height: 24),
+
+          // 连接测试按钮
+          OutlinedButton.icon(
+            onPressed: _testingConnection ? null : _testConnection,
+            icon: _testingConnection
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.bolt),
+            label: Text(_testingConnection ? '测试中…' : '测试连接'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 48),
+            ),
+          ),
+
+          const SizedBox(height: 12),
 
           // 保存按钮
           FilledButton.icon(
