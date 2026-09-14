@@ -16,7 +16,7 @@ class ProfilePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final characterCount =
-        context.watch<CharacterProvider>().characters.length;
+        context.watch<CharacterProvider>().shelfCharacters.length;
     final endpointCount =
         context.watch<EndpointProvider>().llmEndpoints.length;
     final auth = context.watch<AuthProvider>();
@@ -106,7 +106,7 @@ class ProfilePage extends StatelessWidget {
             icon: Icons.face_3,
             iconColor: TavoColors.violet,
             title: '我的角色卡',
-            subtitle: '本地创建与导入的角色',
+            subtitle: '已加入角色库的角色',
             count: characterCount,
             onTap: () => context.go('/characters'),
           ),
