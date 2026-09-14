@@ -65,6 +65,11 @@ class _CharacterTabPageState extends State<CharacterTabPage>
         title: _segmentBar(scheme),
         actions: [
           IconButton(
+            icon: const Icon(Icons.view_list_outlined),
+            tooltip: '管理全部角色（含未入架的本地卡）',
+            onPressed: () => context.push('/character/manage'),
+          ),
+          IconButton(
             icon: const Icon(Icons.cloud_upload_outlined),
             tooltip: '上传到后端',
             onPressed: _showPublishSheet,
@@ -345,6 +350,34 @@ class _ShelfView extends StatelessWidget {
             '/home/character/${Uri.encodeComponent(shelf[i].id)}'),
         onChat: () => _openOrStartChat(context, shelf[i]),
         onRemove: () => chars.removeFromShelf(shelf[i].id),
+        onDelete: (c) => _confirmDelete(context, chars, c),
+      ),
+    );
+  }
+
+  /// 彻底删除确认框：与「移出角色库」明确区分——删除会从本地移除角色卡
+  void _confirmDelete(
+      BuildContext context, CharacterProvider chars, Character character) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('彻底删除角色'),
+        content: Text(
+          '确定要从本地删除角色「${character.name}」吗？\n角色卡数据将被移除，此操作不可撤销。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogCtx);
+              chars.deleteCharacter(character.id);
+            },
+            child: const Text('删除', style: TextStyle(color: Colors.red)),
+          ),
+        ],
       ),
     );
   }
@@ -430,7 +463,13 @@ class _ShelfCard extends StatelessWidget {
   final String? lastMessage;
   final VoidCallback onOpen;
   final VoidCallback onChat;
+
+  /// 菜单里的「轻移除」动作：角色库=移出角色库，收藏页=取消收藏
   final VoidCallback onRemove;
+  final String removeLabel;
+
+  /// 菜单里的「彻底删除」动作（带确认）；null 则不显示该项
+  final void Function(Character character)? onDelete;
 
   const _ShelfCard({
     required this.character,
@@ -438,6 +477,8 @@ class _ShelfCard extends StatelessWidget {
     required this.onOpen,
     required this.onChat,
     required this.onRemove,
+    this.removeLabel = '移出角色库',
+    this.onDelete,
   });
 
   @override
@@ -548,12 +589,26 @@ class _ShelfCard extends StatelessWidget {
             ListTile(
               leading: Icon(Icons.bookmark_remove_outlined,
                   color: scheme.error),
-              title: Text('移出角色库', style: TextStyle(color: scheme.error)),
+              title: Text(removeLabel, style: TextStyle(color: scheme.error)),
               onTap: () {
                 Navigator.pop(sheetCtx);
                 onRemove();
               },
             ),
+            if (onDelete != null)
+              ListTile(
+                leading:
+                    Icon(Icons.delete_forever_outlined, color: scheme.error),
+                title: Text('彻底删除角色',
+                    style: TextStyle(color: scheme.error)),
+                subtitle: Text('从本地删除角色卡，不可恢复',
+                    style: TextStyle(
+                        fontSize: 12, color: scheme.onSurfaceVariant)),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  onDelete!(character);
+                },
+              ),
             const SizedBox(height: 8),
           ],
         ),
@@ -703,6 +758,7 @@ class _FavoriteView extends StatelessWidget {
             context.push('/home/character/${Uri.encodeComponent(favs[i].id)}'),
         onChat: () => openOrStartChat(context, favs[i]),
         onRemove: () => context.read<CharacterProvider>().toggleFavorite(favs[i].id),
+        removeLabel: '取消收藏',
       ),
     );
   }

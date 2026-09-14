@@ -97,6 +97,12 @@ class CharacterProvider extends ChangeNotifier {
 
   Future<void> deleteCharacter(String id) async {
     await _db.deleteCharacter(id);
+    // 同步清理角色库残留 id（shelfCharacters 本有 whereType 兜底过滤，
+    // 但显式清掉可避免 getCharacterShelf 里积攒僵尸 id）
+    if (_shelfIds.contains(id)) {
+      await _db.removeFromCharacterShelf(id);
+      _shelfIds = _db.getCharacterShelf();
+    }
     if (_currentCharacter?.id == id) {
       _currentCharacter = null;
     }
