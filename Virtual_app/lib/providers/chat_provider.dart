@@ -483,22 +483,22 @@ class ChatProvider extends ChangeNotifier {
     }
 
     try {
-      try {
-        await consume(chatSettings);
-      } catch (e) {
-        // 思考类模型（如 kimi-k3）拒绝默认采样参数
-        // （"invalid temperature: only 1 is allowed" / "invalid top_p: ..."）:
-        // 解析允许值自动重试一次；仅当尚未产出任何内容时才重试
-        if (accumulatedContent.isEmpty) {
-          final clamped = _clampedSamplingSettings(chatSettings, e.toString());
-          if (clamped == null) rethrow;
+      // 采样参数约束可能逐个暴露（先 temperature 后 top_p…），循环钳制最多 4 轮
+      var attemptSettings = chatSettings;
+      for (var attempt = 0;; attempt++) {
+        try {
+          await consume(attemptSettings);
+          break;
+        } catch (e) {
+          final clamped = accumulatedContent.isEmpty
+              ? _clampedSamplingSettings(attemptSettings, e.toString())
+              : null;
+          if (clamped == null || attempt >= 3) rethrow;
+          attemptSettings = clamped;
           accumulatedContent = '';
           accumulatedReasoning = '';
           promptTokens = 0;
           completionTokens = 0;
-          await consume(clamped);
-        } else {
-          rethrow;
         }
       }
 
@@ -683,18 +683,20 @@ class ChatProvider extends ChangeNotifier {
     }
 
     try {
-      try {
-        await consume(chatSettings);
-      } catch (e) {
-        // 采样参数被模型拒绝时自动钳制重试一次（同发送路径）
-        if (accumulatedContent.isEmpty) {
-          final clamped = _clampedSamplingSettings(chatSettings, e.toString());
-          if (clamped == null) rethrow;
+      // 采样参数约束循环钳制（同发送路径，最多 4 轮）
+      var attemptSettings = chatSettings;
+      for (var attempt = 0;; attempt++) {
+        try {
+          await consume(attemptSettings);
+          break;
+        } catch (e) {
+          final clamped = accumulatedContent.isEmpty
+              ? _clampedSamplingSettings(attemptSettings, e.toString())
+              : null;
+          if (clamped == null || attempt >= 3) rethrow;
+          attemptSettings = clamped;
           accumulatedContent = '';
           accumulatedReasoning = '';
-          await consume(clamped);
-        } else {
-          rethrow;
         }
       }
 
@@ -864,19 +866,30 @@ class ChatProvider extends ChangeNotifier {
   /// 非此类错误、或设置已是允许值（避免死循环）时返回 null。
   ChatSettings? _clampedSamplingSettings(ChatSettings s, String err) {
     final m = RegExp(
-      r'invalid\s+(temperature|top_p|topp)\s*:\s*only\s+([\d.]+)\s+is\s+allowed',
+      r'invalid\s+(temperature|top_p|topp|presence_penalty|frequency_penalty)\s*:\s*only\s+([\d.]+)\s+is\s+allowed',
       caseSensitive: false,
     ).firstMatch(err);
     if (m == null) return null;
     final param = m.group(1)!.toLowerCase();
     final value = double.tryParse(m.group(2)!);
     if (value == null) return null;
-    if (param == 'temperature') {
-      if (s.temperature == value) return null;
-      return s.copyWith(temperature: value);
+    switch (param) {
+      case 'temperature':
+        return s.temperature == value ? null : s.copyWith(temperature: value);
+      case 'top_p':
+      case 'topp':
+        return s.topP == value ? null : s.copyWith(topP: value);
+      case 'presence_penalty':
+        return s.presencePenalty == value
+            ? null
+            : s.copyWith(presencePenalty: value);
+      case 'frequency_penalty':
+        return s.frequencyPenalty == value
+            ? null
+            : s.copyWith(frequencyPenalty: value);
+      default:
+        return null;
     }
-    if (s.topP == value) return null;
-    return s.copyWith(topP: value);
   }
 
   /// 错误信息展示格式化：去掉 "Exception: " 前缀,保留可读正文
