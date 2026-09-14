@@ -26,7 +26,9 @@ class AppDatabase extends ChangeNotifier {
   static Future<AppDatabase> init() async {
     if (_instance != null) return _instance!;
     final prefs = await SharedPreferences.getInstance();
-    _instance = AppDatabase._(prefs);
+    final db = AppDatabase._(prefs);
+    db._migrateLegacyMessages();
+    _instance = db;
     return _instance!;
   }
 
@@ -42,7 +44,10 @@ class AppDatabase extends ChangeNotifier {
   // ---------- 存储键 ----------
   static const _kCharacters = 'db_characters';
   static const _kConversations = 'db_conversations';
-  static const _kMessages = 'db_messages_';
+  /// 旧版整表 key（`db_messages_<convId>`），仅迁移时读取，新数据不再写入
+  static const _kMessagesLegacy = 'db_messages_';
+  /// 新版单条 key：`db_msg_<convId>_<msgId>`，避免每条消息 O(n) 全表重写
+  static const _kMessagesOne = 'db_msg_';
   static const _kEndpoints = 'db_endpoints';
   static const _kLorebooks = 'db_lorebooks';
   static const _kPresets = 'db_presets';
@@ -139,43 +144,115 @@ class AppDatabase extends ChangeNotifier {
     final list = _readList(_kConversations);
     list.removeWhere((m) => m['id'] == uuid);
     _writeList(_kConversations, list);
-    _prefs.remove('$_kMessages$uuid');
+    // 清消息：新版单条 key + 旧版整表 key（幂等）+ 缓存
+    final msgPrefix = '$_kMessagesOne${uuid}_';
+    final msgKeys =
+        _prefs.getKeys().where((k) => k.startsWith(msgPrefix)).toList();
+    for (final key in msgKeys) {
+      _prefs.remove(key);
+    }
+    _prefs.remove('$_kMessagesLegacy$uuid');
+    _msgCache.remove(uuid);
     notifyListeners();
   }
 
   // ========== 消息 ==========
+  /// 消息内存缓存：convId → 消息列表（按时间升序）。
+  /// 缓存是读写的一致视图，单条 key 只是持久化格式——
+  /// 这样 saveMessage 只写一条 key（O(1)），不再整表重写。
+  final Map<String, List<ChatMessage>> _msgCache = {};
+
+  /// 旧版整表 key 一次性迁移到单条 key（幂等）：迁移后删除旧 key
+  void _migrateLegacyMessages() {
+    final legacyKeys = _prefs.getKeys().where((k) => k.startsWith(_kMessagesLegacy)).toList();
+    for (final key in legacyKeys) {
+      final convId = key.substring(_kMessagesLegacy.length);
+      if (convId.isEmpty) continue;
+      _migrateLegacyConversation(convId);
+    }
+  }
+
+  /// 单个对话的旧数据迁移（幂等，坏数据直接丢弃旧 key）
+  void _migrateLegacyConversation(String conversationId) {
+    final legacyKey = '$_kMessagesLegacy$conversationId';
+    final raw = _prefs.getString(legacyKey);
+    if (raw == null) return;
+    List<Map<String, dynamic>> list;
+    try {
+      list = List<Map<String, dynamic>>.from(jsonDecode(raw));
+    } catch (_) {
+      _prefs.remove(legacyKey);
+      return;
+    }
+    for (final m in list) {
+      final id = m['id']?.toString();
+      if (id == null || id.isEmpty) continue;
+      _prefs.setString(_msgKey(conversationId, id), jsonEncode(m));
+    }
+    _prefs.remove(legacyKey);
+  }
+
+  String _msgKey(String conversationId, String messageId) =>
+      '$_kMessagesOne${conversationId}_$messageId';
+
+  /// 从单条 key 装载一个对话的全部消息进缓存（无数据时缓存空列表）
+  void _loadMessagesIntoCache(String conversationId) {
+    final prefix = '$_kMessagesOne${conversationId}_';
+    final keys =
+        _prefs.getKeys().where((k) => k.startsWith(prefix)).toList();
+    final messages = <ChatMessage>[];
+    for (final key in keys) {
+      try {
+        final m = jsonDecode(_prefs.getString(key) ?? '');
+        if (m is Map<String, dynamic>) {
+          messages.add(ChatMessage.fromJson(m));
+        }
+      } catch (_) {
+        // 坏数据跳过
+      }
+    }
+    messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    _msgCache[conversationId] = messages;
+  }
+
   List<ChatMessage> getMessages(String conversationId) {
-    final all = _readList('$_kMessages$conversationId');
-    return all.map((m) => ChatMessage.fromJson(m)).toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    if (!_msgCache.containsKey(conversationId)) {
+      // 先做该对话的懒迁移（兼容旧版本写入的数据），再装载缓存
+      _migrateLegacyConversation(conversationId);
+      _loadMessagesIntoCache(conversationId);
+    }
+    return List<ChatMessage>.from(_msgCache[conversationId]!);
   }
 
   Future<void> saveMessage(String conversationId, ChatMessage msg) async {
-    final key = '$_kMessages$conversationId';
-    final list = _readList(key);
-    final index = list.indexWhere((m) => m['id'] == msg.id);
+    final cached =
+        _msgCache.putIfAbsent(conversationId, () => <ChatMessage>[]);
+    final index = cached.indexWhere((m) => m.id == msg.id);
     if (index >= 0) {
-      list[index] = msg.toJson();
+      cached[index] = msg;
     } else {
-      list.add(msg.toJson());
+      cached.add(msg);
+      cached.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     }
-    _writeList(key, list);
+    _prefs.setString(_msgKey(conversationId, msg.id), jsonEncode(msg.toJson()));
     notifyListeners();
   }
 
   Future<void> deleteMessage(String conversationId, String messageId) async {
-    final key = '$_kMessages$conversationId';
-    final list = _readList(key);
-    list.removeWhere((m) => m['id'] == messageId);
-    _writeList(key, list);
+    _msgCache[conversationId]?.removeWhere((m) => m.id == messageId);
+    _prefs.remove(_msgKey(conversationId, messageId));
     notifyListeners();
   }
 
-  /// 清空指定对话的所有消息
+  /// 清空指定对话的所有消息（含旧版整表 key，幂等）
   Future<void> clearMessages(String conversationId) async {
-    final key = '$_kMessages$conversationId';
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(key);
+    _msgCache[conversationId] = [];
+    final prefix = '$_kMessagesOne${conversationId}_';
+    final keys = _prefs.getKeys().where((k) => k.startsWith(prefix)).toList();
+    for (final key in keys) {
+      _prefs.remove(key);
+    }
+    _prefs.remove('$_kMessagesLegacy$conversationId');
     notifyListeners();
   }
 

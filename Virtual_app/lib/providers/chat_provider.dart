@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/app_database.dart';
+import '../models/character.dart';
 import '../models/chat_message.dart';
 import '../models/chat_theme.dart';
 import '../models/conversation.dart';
@@ -10,6 +11,7 @@ import '../models/lorebook.dart';
 import '../models/persona.dart';
 import '../models/preset.dart';
 import '../services/api_service.dart';
+import '../services/context_window_service.dart';
 import '../services/prompt_service.dart';
 import 'settings_provider.dart';
 import 'character_provider.dart';
@@ -383,11 +385,16 @@ class ChatProvider extends ChangeNotifier {
     _isStopRequested = false;
     notifyListeners();
 
-    // 6. 历史消息（排除刚添加的两条）
-    final historyMessages = _messages
-        .where((m) => m.id != userMsg.id && m.id != assistantMsg.id)
-        .where((m) => !m.isHidden)
-        .toList();
+    // 6. 历史消息（排除刚添加的两条）+ 上下文窗口裁剪
+    final historyMessages = ContextWindowService.trim(
+      _messages
+          .where((m) => m.id != userMsg.id && m.id != assistantMsg.id)
+          .where((m) => !m.isHidden)
+          .toList(),
+      maxTokens: _resolveContextWindow(endpoint, modelId),
+      reservedForSystem:
+          _estimateSystemTokens(character, persona, conv),
+    );
 
     // 7. 构建 Prompt
     final messages = PromptService.buildMessages(
@@ -551,9 +558,16 @@ class ChatProvider extends ChangeNotifier {
     // Persona（重新生成与发送同源：绑定 > 激活 > 账号昵称兜底）
     final persona = resolvePersona(conv.settings.personaId ?? character.personaId);
 
-    // 历史消息（用户消息之前的 + 用户消息本身）
-    final historyMessages =
-        _messages.sublist(0, msgIndex).where((m) => !m.isHidden).toList();
+    // 历史消息（用户消息之前的 + 用户消息本身）+ 上下文窗口裁剪
+    final historyMessages = ContextWindowService.trim(
+      _messages
+          .sublist(0, msgIndex)
+          .where((m) => !m.isHidden)
+          .toList(),
+      maxTokens: _resolveContextWindow(endpoint, modelId),
+      reservedForSystem:
+          _estimateSystemTokens(character, persona, conv),
+    );
 
     // 构建 Prompt
     final messages = PromptService.buildMessages(
@@ -711,6 +725,34 @@ class ChatProvider extends ChangeNotifier {
     }
 
     return null;
+  }
+
+  /// 模型上下文长度（未知时给保守值 8192）
+  int _resolveContextWindow(LlmEndpoint endpoint, String modelId) {
+    for (final m in endpoint.models) {
+      if (m.id == modelId) return m.contextLength;
+    }
+    return 8192;
+  }
+
+  /// 估算 system 区（角色定义 + 覆盖项 + 世界书/预设头部）token 占用。
+  /// 与 ContextWindowService 同口径（1 token ≈ 2 字符），再加固定余量
+  /// 覆盖宏文本与预设注入的额外内容——宁大勿小，避免挤掉回复空间。
+  int _estimateSystemTokens(
+    Character character,
+    Persona? persona,
+    Conversation conv,
+  ) {
+    var chars = 0;
+    chars += character.description?.length ?? 0;
+    chars += character.personality?.length ?? 0;
+    chars += character.scenario?.length ?? 0;
+    chars += character.systemPrompt?.length ?? 0;
+    chars += character.firstMessage?.length ?? 0;
+    chars += conv.settings.systemPrompt?.length ?? 0;
+    chars += conv.settings.jailbreakPrompt?.length ?? 0;
+    chars += persona?.name.length ?? 0;
+    return (chars / 2).ceil() + 256;
   }
 
   /// 将非流式调用转换为单块流
