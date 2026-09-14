@@ -92,7 +92,7 @@ void main() {
       '角色信息',
       '对话背景',
       '导出为 Markdown',
-      '模型信息',
+      '模型选择',
       '清空消息',
     ]) {
       expect(find.text(label), findsOneWidget, reason: '菜单应包含「$label」');

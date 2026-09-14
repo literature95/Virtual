@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/chat_message.dart';
+import '../../models/endpoint.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/character_provider.dart';
 import '../../providers/endpoint_provider.dart';
@@ -301,55 +302,140 @@ class _ChatPageState extends State<ChatPage> {
     if (ok == true) await chat.clearMessages(conv.id);
   }
 
-  /// 当前使用的端点与模型信息
+  /// 模型选择面板：接入点 + 该接入点下的模型，选中即写入当前对话并持久化
+  ///
+  /// 此前这里是只读的「模型信息」——对话实际一直用 endpoint.models.first，
+  /// 用户获取了模型却没有任何地方能选。现在把 setCurrentModel /
+  /// setCurrentEndpoint（均已持久化到会话）接到 UI 上。
   void _showModelInfo() {
     final chat = context.read<ChatProvider>();
-    final endpointProvider = context.read<EndpointProvider>();
-    final endpointId =
-        chat.currentConversation?.endpointId ?? chat.currentEndpointId;
-    final endpoint = endpointId != null
-        ? endpointProvider.llmEndpoints
-            .where((e) => e.id == endpointId)
-            .firstOrNull
-        : null;
-    final modelId = chat.currentConversation?.modelId ?? chat.currentModelId;
+    final endpoints = context.read<EndpointProvider>().llmEndpoints;
 
-    showDialog<void>(
+    if (endpoints.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('尚未配置 API 接入点，请先到「我的 API」添加')),
+      );
+      return;
+    }
+
+    // 当前生效值（与 _resolveEndpoint/_resolveModelId 同口径）
+    LlmEndpoint currentEndpoint() {
+      final endpointId =
+          chat.currentConversation?.endpointId ?? chat.currentEndpointId;
+      return endpoints.firstWhere(
+        (e) => e.id == endpointId,
+        orElse: () => endpoints.first,
+      );
+    }
+
+    String? currentModelId() =>
+        chat.currentConversation?.modelId ?? chat.currentModelId;
+
+    showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('模型信息'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _infoRow('接入点', endpoint?.name ?? '未设置'),
-            _infoRow('平台', endpoint?.platform ?? '-'),
-            _infoRow('模型', modelId ?? '默认'),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
-        ],
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-    );
-  }
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final endpoint = currentEndpoint();
+          final modelId = currentModelId();
+          final scheme = Theme.of(ctx).colorScheme;
 
-  Widget _infoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 64,
-            child: Text(label,
-                style: const TextStyle(color: Colors.grey, fontSize: 13.5)),
-          ),
-          Expanded(
-            child: Text(value, style: const TextStyle(fontSize: 13.5)),
-          ),
-        ],
+          return SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(0, 12, 0, 8),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text('模型选择',
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onSurface)),
+                ),
+
+                // ── 接入点 ──
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text('接入点',
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurfaceVariant)),
+                ),
+                for (final ep in endpoints)
+                  ListTile(
+                    dense: true,
+                    leading: Icon(ep.id == endpoint.id
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_off),
+                    title: Text(ep.name),
+                    subtitle: Text('${ep.platform} · ${ep.models.length} 个模型',
+                        style: const TextStyle(fontSize: 12)),
+                    onTap: () {
+                      chat.setCurrentEndpoint(ep.id);
+                      // 切换接入点后旧模型多半不存在，落到新接入点的第一个模型
+                      if (ep.models.isNotEmpty &&
+                          !ep.models.any((m) => m.id == modelId)) {
+                        chat.setCurrentModel(ep.models.first.id);
+                      }
+                      setSheetState(() {});
+                    },
+                  ),
+
+                const Divider(height: 20),
+
+                // ── 模型 ──
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                      '模型（${endpoint.name}）',
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurfaceVariant)),
+                ),
+                if (endpoint.models.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text('该接入点还没有模型，请到「我的 API → 编辑接口」获取或添加',
+                        style: TextStyle(
+                            fontSize: 13, color: scheme.onSurfaceVariant)),
+                  )
+                else
+                  for (final m in endpoint.models)
+                    ListTile(
+                      dense: true,
+                      leading: Icon(m.id == modelId
+                          ? Icons.check_circle
+                          : Icons.circle_outlined),
+                      title: Text(m.name.isNotEmpty ? m.name : m.id,
+                          style: const TextStyle(fontSize: 14)),
+                      subtitle: m.name.isNotEmpty && m.name != m.id
+                          ? Text(m.id,
+                              style: const TextStyle(fontSize: 11.5))
+                          : null,
+                      onTap: () {
+                        chat.setCurrentModel(m.id);
+                        setSheetState(() {});
+                      },
+                    ),
+
+                // ── 当前生效提示 ──
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Text(
+                    '当前：${endpoint.name} · ${modelId ?? endpoint.models.firstOrNull?.id ?? '未选择'}',
+                    style: TextStyle(
+                        fontSize: 12, color: scheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -415,7 +501,7 @@ class _ChatPageState extends State<ChatPage> {
               _menuItem(_ChatMenuAction.exportMarkdown,
                   Icons.text_snippet_outlined, '导出为 Markdown'),
               _menuItem(
-                  _ChatMenuAction.modelInfo, Icons.memory_outlined, '模型信息'),
+                  _ChatMenuAction.modelInfo, Icons.memory_outlined, '模型选择'),
               const PopupMenuDivider(),
               _menuItem(_ChatMenuAction.clearMessages,
                   Icons.delete_sweep_outlined, '清空消息',
