@@ -1,4 +1,4 @@
-package app.bitbear.tav
+package app.bitbear.virtual
 
 import com.ryanheise.audioservice.AudioServiceActivity
 

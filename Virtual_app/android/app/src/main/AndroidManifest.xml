@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="app.bitbear.tav">
+    package="app.bitbear.virtual">
 
     <!-- 网络权限 -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -53,14 +53,14 @@
     </queries>
 
     <permission
-        android:name="app.bitbear.tav.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        android:name="app.bitbear.virtual.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
         android:protectionLevel="signature" />
-    <uses-permission android:name="app.bitbear.tav.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+    <uses-permission android:name="app.bitbear.virtual.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
 
     <application
         android:name="android.app.Application"
         android:label="Virtual"
-        android:icon="@mipmap/tavo_app_icon"
+        android:icon="@mipmap/app_icon"
         android:extractNativeLibs="true"
         android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true"
@@ -144,7 +144,7 @@
         <!-- FileProvider: image_picker -->
         <provider
             android:name="io.flutter.plugins.imagepicker.ImagePickerFileProvider"
-            android:authorities="app.bitbear.tav.flutter.image_provider"
+            android:authorities="app.bitbear.virtual.flutter.image_provider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
@@ -155,7 +155,7 @@
         <!-- FileProvider: share_plus -->
         <provider
             android:name="dev.fluttercommunity.plus.share.ShareFileProvider"
-            android:authorities="app.bitbear.tav.flutter.share_provider"
+            android:authorities="app.bitbear.virtual.flutter.share_provider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
@@ -174,7 +174,7 @@
         <!-- FileProvider: open_file -->
         <provider
             android:name="com.crazecoder.openfile.FileProvider"
-            android:authorities="app.bitbear.tav.fileProvider.com.crazecoder.openfile"
+            android:authorities="app.bitbear.virtual.fileProvider.com.crazecoder.openfile"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
@@ -185,20 +185,20 @@
         <!-- Sentry -->
         <provider
             android:name="io.sentry.android.core.SentryPerformanceProvider"
-            android:authorities="app.bitbear.tav.SentryPerformanceProvider"
+            android:authorities="app.bitbear.virtual.SentryPerformanceProvider"
             android:exported="false"
             android:initOrder="200" />
 
         <provider
             android:name="io.sentry.ndk.SentryNdkPreloadProvider"
-            android:authorities="app.bitbear.tav.SentryNdkPreloadProvider"
+            android:authorities="app.bitbear.virtual.SentryNdkPreloadProvider"
             android:exported="false"
             android:initOrder="2000000000" />
 
         <!-- Startup -->
         <provider
             android:name="androidx.startup.InitializationProvider"
-            android:authorities="app.bitbear.tav.androidx-startup"
+            android:authorities="app.bitbear.virtual.androidx-startup"
             android:exported="false">
             <meta-data
                 android:name="androidx.emoji2.text.EmojiCompatInitializer"

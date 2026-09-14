@@ -406,7 +406,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
             )
           else
             Image.asset(
-              'assets/images/app_logo.png',
+              'assets/images/app_icon.png',
               width: 200,
               fit: BoxFit.contain,
               errorBuilder: (_, __, ___) => TavoBrand.logo(size: 160),
