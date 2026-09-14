@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/app_database.dart';
-import '../models/character.dart';
 import '../models/chat_message.dart';
 import '../models/chat_theme.dart';
 import '../models/conversation.dart';
@@ -284,13 +283,21 @@ class ChatProvider extends ChangeNotifier {
       if (character != null &&
           character.firstMessage != null &&
           character.firstMessage!.trim().isNotEmpty) {
+        // 开场白渲染 {{user}} 等宏:persona 走 resolvePersona 链
+        // (绑定 > 激活 > 账号昵称 > 'User'),插入时渲染并落库。
+        final persona =
+            resolvePersona(conv.settings.personaId ?? character.personaId);
+        final greetingText = PromptService.renderGreeting(
+          character: character,
+          persona: persona,
+        );
         final greetingMsg = ChatMessage(
           id: _uuid.v4(),
           conversationId: conv.id,
           role: MessageRole.assistant,
           source: MessageSource.model,
           variant: MessageVariant.standard,
-          content: character.firstMessage!.trim(),
+          content: greetingText,
           isGenerating: false,
           createdAt: DateTime.now(),
         );
@@ -300,7 +307,7 @@ class ChatProvider extends ChangeNotifier {
         // 更新对话的最后消息时间和预览
         final updatedConv = conv.copyWith(
           lastMessageAt: DateTime.now(),
-          lastMessagePreview: _truncatePreview(character.firstMessage!),
+          lastMessagePreview: _truncatePreview(greetingText),
         );
         _currentConversation = updatedConv;
         await _db.saveConversation(updatedConv);
@@ -385,27 +392,45 @@ class ChatProvider extends ChangeNotifier {
     _isStopRequested = false;
     notifyListeners();
 
-    // 6. 历史消息（排除刚添加的两条）+ 上下文窗口裁剪
-    final historyMessages = ContextWindowService.trim(
-      _messages
-          .where((m) => m.id != userMsg.id && m.id != assistantMsg.id)
-          .where((m) => !m.isHidden)
-          .toList(),
-      maxTokens: _resolveContextWindow(endpoint, modelId),
-      reservedForSystem:
-          _estimateSystemTokens(character, persona, conv),
-    );
-
-    // 7. 构建 Prompt
-    final messages = PromptService.buildMessages(
+    // 6. 两遍拼装第一遍:先拼出完整 system 文本(含预设/世界书/示例对话),
+    //    用真实文本估算 token,避免旧「字段累加」估算漏项导致超窗
+    final visibleHistory = _messages
+        .where((m) => m.id != userMsg.id && m.id != assistantMsg.id)
+        .where((m) => !m.isHidden)
+        .toList();
+    final assembled = PromptService.assembleSystem(
       character: character,
-      history: historyMessages,
+      history: visibleHistory,
       userMessage: content.trim(),
       persona: persona,
       systemPromptOverride: conv.settings.systemPrompt,
       jailbreakPrompt: conv.settings.jailbreakPrompt,
-      lorebook: resolveLorebook(conv.settings.lorebookId ?? character.lorebookId),
+      lorebook:
+          resolveLorebook(conv.settings.lorebookId ?? character.lorebookId),
       preset: resolvePreset(conv.settings.presetId),
+    );
+
+    // 7. system 区真实占用(含预设/世界书/示例,beforeUser/afterUser 块与余量)
+    final reservedForSystem =
+        PromptService.estimateSystemTokens(assembled);
+
+    // 8. 历史消息（排除刚添加的两条）+ 上下文窗口裁剪
+    final historyMessages = ContextWindowService.trim(
+      visibleHistory,
+      maxTokens: _resolveContextWindow(endpoint, modelId),
+      reservedForSystem: reservedForSystem,
+    );
+
+    // 9. 构建 Prompt（复用第一遍拼装结果,世界书只选一次）
+    final messages = PromptService.buildMessages(
+      character: character,
+      history: historyMessages,
+      userMessage: content.trim(),
+      userAttachments: userMsg.attachments,
+      persona: persona,
+      systemPromptOverride: conv.settings.systemPrompt,
+      jailbreakPrompt: conv.settings.jailbreakPrompt,
+      assembled: assembled,
     );
 
     // 8. 调用 API 流式生成
@@ -558,27 +583,44 @@ class ChatProvider extends ChangeNotifier {
     // Persona（重新生成与发送同源：绑定 > 激活 > 账号昵称兜底）
     final persona = resolvePersona(conv.settings.personaId ?? character.personaId);
 
-    // 历史消息（用户消息之前的 + 用户消息本身）+ 上下文窗口裁剪
-    final historyMessages = ContextWindowService.trim(
-      _messages
-          .sublist(0, msgIndex)
-          .where((m) => !m.isHidden)
-          .toList(),
-      maxTokens: _resolveContextWindow(endpoint, modelId),
-      reservedForSystem:
-          _estimateSystemTokens(character, persona, conv),
-    );
-
-    // 构建 Prompt
-    final messages = PromptService.buildMessages(
+    // 两遍拼装第一遍:先拼完整 system 文本(与发送路径同口径)
+    final visibleHistory = _messages
+        .sublist(0, msgIndex)
+        .where((m) => !m.isHidden)
+        .toList();
+    final assembled = PromptService.assembleSystem(
       character: character,
-      history: historyMessages,
+      history: visibleHistory,
       userMessage: userMsg.content,
       persona: persona,
       systemPromptOverride: conv.settings.systemPrompt,
       jailbreakPrompt: conv.settings.jailbreakPrompt,
-      lorebook: resolveLorebook(conv.settings.lorebookId ?? character.lorebookId),
+      lorebook:
+          resolveLorebook(conv.settings.lorebookId ?? character.lorebookId),
       preset: resolvePreset(conv.settings.presetId),
+    );
+
+    // system 区真实占用(与发送路径同口径)
+    final reservedForSystem =
+        PromptService.estimateSystemTokens(assembled);
+
+    // 历史消息（用户消息之前的 + 用户消息本身）+ 上下文窗口裁剪
+    final historyMessages = ContextWindowService.trim(
+      visibleHistory,
+      maxTokens: _resolveContextWindow(endpoint, modelId),
+      reservedForSystem: reservedForSystem,
+    );
+
+    // 构建 Prompt（复用第一遍拼装结果）
+    final messages = PromptService.buildMessages(
+      character: character,
+      history: historyMessages,
+      userMessage: userMsg.content,
+      userAttachments: userMsg.attachments,
+      persona: persona,
+      systemPromptOverride: conv.settings.systemPrompt,
+      jailbreakPrompt: conv.settings.jailbreakPrompt,
+      assembled: assembled,
     );
 
     // 流式生成
@@ -733,26 +775,6 @@ class ChatProvider extends ChangeNotifier {
       if (m.id == modelId) return m.contextLength;
     }
     return 8192;
-  }
-
-  /// 估算 system 区（角色定义 + 覆盖项 + 世界书/预设头部）token 占用。
-  /// 与 ContextWindowService 同口径（1 token ≈ 2 字符），再加固定余量
-  /// 覆盖宏文本与预设注入的额外内容——宁大勿小，避免挤掉回复空间。
-  int _estimateSystemTokens(
-    Character character,
-    Persona? persona,
-    Conversation conv,
-  ) {
-    var chars = 0;
-    chars += character.description?.length ?? 0;
-    chars += character.personality?.length ?? 0;
-    chars += character.scenario?.length ?? 0;
-    chars += character.systemPrompt?.length ?? 0;
-    chars += character.firstMessage?.length ?? 0;
-    chars += conv.settings.systemPrompt?.length ?? 0;
-    chars += conv.settings.jailbreakPrompt?.length ?? 0;
-    chars += persona?.name.length ?? 0;
-    return (chars / 2).ceil() + 256;
   }
 
   /// 将非流式调用转换为单块流

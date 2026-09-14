@@ -139,7 +139,7 @@ d:\Documents\Desktop\Virtual\
 | 社区 | 发现页社区信息流：帖子列表（分类 chips + 搜索）、点赞、评论（**正序分页** + 乐观插入并失败回滚）、关注/取关、点作者头像进**用户主页**、点卡片进**帖子详情**、点角色卡直达角色详情 |
 | 世界书 | **Lorebook 管理 —— 唯一格式为 JSON**：导入自动识别 SillyTavern World Info（`entries` 为对象）/ CCv3 `character_book`（`entries` 为数组）/ 本 App 导出格式；导出为 SillyTavern 形态，便于跨前端交换 |
 | 模型接入 | OpenAI 兼容（20+ 平台）/ Anthropic / Gemini 三适配器，均 SSE 流式，已解析思维链字段 |
-| 多模态 | 图片输入（≤4 张，预览条可删除），转 OpenAI 视觉格式（data URL） |
+| 多模态 | 图片输入（≤4 张，预览条可删除），转 OpenAI 视觉格式（data URL）。**上传策略（2026-09-14）**：只有**最新一条用户消息**的图片随请求上传；历史消息中的图片一律降级为 `[图片]` 文本占位，不重复上传（未来图片生成走「最新对话文本 + 图片」同一口径） |
 | 发现 | 扩展内容聚合：世界书/预设/正则/插件/主题/调试；上区为社区信息流（见「社区」行） |
 | 我的 | 头像/昵称/ID + 我的角色卡计数 + API 接入/主题外观/插件/更多；**资料编辑**（昵称/简介/头像）与**修改密码** |
 | 设置 | 后端地址配置、语言切换（跟随系统/简中/English/日本語）、数据迁移（JSON 导出导入） |
@@ -201,6 +201,15 @@ CCv3 `character_book` / 本 App 导出），导出为 SillyTavern World Info 形
 （其公开下载 API 已废弃，需先在页面点 Download 拿到文件）。
 若一块卡片同时带 `chara` 与 `ccv3` 且内容不一致，取 `spec` 版本更高的一方，
 避免丢掉 V3 独有字段。
+
+**上下文编译两遍拼装（2026-09-14）**：发送/重新生成时先经
+`PromptService.assembleSystem` 拼出**完整 system 文本**（预设 + 世界书块 +
+角色全字段 + 示例对话），用真实文本估算 token（`estimateSystemTokens`，含
+beforeUser/afterUser 块与余量）→ `ContextWindowService.trim` 裁剪历史 →
+`buildMessages(assembled:)` 复用第一遍结果（世界书只选一次）。替代旧的
+「字段长度累加」估算——旧法漏掉预设/世界书/示例对话三个大头，长对话必超窗。
+开场白在插入消息列表时经 `resolvePersona` 链渲染 `{{user}}` 等宏并落库。
+回归测试 `test/context_assembly_test.dart`（8 例）。
 容器布局、写入规范与世界书字段映射见 `docs/character-card-schema.md` 第八、九节。
 卡片疑似有问题时：
 

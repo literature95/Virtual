@@ -7,8 +7,27 @@ import '../models/lorebook.dart';
 import '../models/persona.dart';
 import '../models/preset.dart';
 import '../utils/image_data.dart';
+import 'context_window_service.dart';
 import 'preset_service.dart';
 import 'world_info_service.dart';
+
+/// 两遍拼装的中间产物:完整 system 文本(已应用宏)+ 已选世界书块 + 宏表。
+///
+/// 背景:此前 ChatProvider 用「字段长度累加」粗估 system 占用,漏掉预设/
+/// 世界书/示例对话等大头,导致历史裁剪预算虚高、总上下文超窗。现在先拼
+/// 完整 system 文本再按真实长度估算,拼装结果直接复用进 buildMessages,
+/// 避免世界书二次选择(两次掷骰/扫描可能导致估算与实际不一致)。
+class AssembledSystem {
+  final String text;
+  final Map<String, String> macros;
+  final WorldInfoBlocks? loreBlocks;
+
+  const AssembledSystem({
+    required this.text,
+    required this.macros,
+    this.loreBlocks,
+  });
+}
 
 /// Prompt 构建服务
 ///
@@ -16,20 +35,12 @@ import 'world_info_service.dart';
 /// 支持宏变量替换，兼容主流角色卡格式（SillyTavern / Character.AI）。
 /// 支持 46+ 种宏变量，包括身份、时间、条件块、注释等。
 class PromptService {
-  /// 构建完整的聊天消息列表（OpenAI 格式）
+  /// 第一遍拼装:选世界书条目 + 生成完整 system 文本。
   ///
-  /// [character] 角色信息
-  /// [history] 历史消息列表
-  /// [userMessage] 最新用户消息内容
-  /// [persona] 用户人设（可选）
-  /// [conversation] 对话信息（可选，用于群聊、覆盖场景等）
-  /// [groupCharacters] 群聊中的角色列表（可选）
-  /// [memories] 记忆内容（可选）
-  /// [summary] 对话摘要（可选）
-  /// [wordCountLimit] 字数限制（可选）
-  /// [systemPromptOverride] 自定义 system prompt（可选，会追加到角色描述后）
-  /// [jailbreakPrompt] 越狱提示词（可选，追加在 system prompt 末尾）
-  static List<Map<String, dynamic>> buildMessages({
+  /// 调用方(ChatProvider)先用返回的 [AssembledSystem.text] 做真实 token
+  /// 估算 → 裁剪历史 → 把整个结果传给 [buildMessages] 的 `assembled`
+  /// 参数复用,保证估算与最终请求一致。
+  static AssembledSystem assembleSystem({
     required Character character,
     required List<ChatMessage> history,
     required String userMessage,
@@ -46,9 +57,9 @@ class PromptService {
   }) {
     final macros = _buildMacros(
       character: character,
-      persona: persona,
       history: history,
       userMessage: userMessage,
+      persona: persona,
       conversation: conversation,
       groupCharacters: groupCharacters,
       memories: memories,
@@ -56,27 +67,18 @@ class PromptService {
       wordCountLimit: wordCountLimit,
     );
 
-    // ── 世界书（绑定与切换：会话 > 角色卡，由 ChatProvider 解析后传入）──
-    // 常驻条目恒注入；关键词条目按最近 scanDepth 条消息命中触发。
-    var loreBeforeSystem = '';
-    var loreAfterSystem = '';
-    var loreBeforeUser = '';
-    var loreAfterUser = '';
+    WorldInfoBlocks? blocks;
     if (lorebook != null) {
       final texts = [
         for (final m in history)
           if (!m.isHidden && m.role != MessageRole.system) m.content,
         userMessage,
       ];
-      final selected = WorldInfoService.selectEntries(lorebook, texts);
-      final blocks = WorldInfoService.renderBlocks(selected);
-      loreBeforeSystem = _applyMacros(blocks.beforeSystem, macros);
-      loreAfterSystem = _applyMacros(blocks.afterSystem, macros);
-      loreBeforeUser = _applyMacros(blocks.beforeUser, macros);
-      loreAfterUser = _applyMacros(blocks.afterUser, macros);
+      blocks = WorldInfoService.renderBlocks(
+          WorldInfoService.selectEntries(lorebook, texts));
     }
 
-    final systemContent = _buildSystemPrompt(
+    final text = _buildSystemPrompt(
       character: character,
       macros: macros,
       persona: persona,
@@ -85,10 +87,109 @@ class PromptService {
       summary: summary,
       systemPromptOverride: systemPromptOverride,
       jailbreakPrompt: jailbreakPrompt,
-      loreBeforeSystem: loreBeforeSystem,
-      loreAfterSystem: loreAfterSystem,
+      loreBlocks: blocks,
       preset: preset,
     );
+    return AssembledSystem(text: text, macros: macros, loreBlocks: blocks);
+  }
+
+  /// 两遍拼装的 system 区 token 预算:system 文本 + beforeUser/afterUser
+  /// 世界书块(它们单独成 system 消息,不在 text 里)+ 固定余量。
+  /// 结果直接传给 ContextWindowService.trim 的 reservedForSystem。
+  static int estimateSystemTokens(AssembledSystem assembled, {int margin = 64}) {
+    return ContextWindowService.estimateTokens(assembled.text) +
+        ContextWindowService.estimateTokens(
+            assembled.loreBlocks?.beforeUser ?? '') +
+        ContextWindowService.estimateTokens(
+            assembled.loreBlocks?.afterUser ?? '') +
+        margin;
+  }
+
+  /// 渲染开场白(firstMessage):应用 {{user}}/{{char}}/时间等全部宏。
+  ///
+  /// {{user}} 的值来自 [persona],调用方先经 ChatProvider.resolvePersona
+  /// 链(绑定 > 激活 > 账号昵称 > 'User')解析。开场白在插入消息列表时
+  /// 渲染并落库——之后改昵称不会回写旧对话的开场白,符合"当时身份"直觉。
+  static String renderGreeting({
+    required Character character,
+    Persona? persona,
+  }) {
+    final macros = _buildMacros(
+      character: character,
+      history: const [],
+      userMessage: '',
+      persona: persona,
+    );
+    return _applyMacros(character.firstMessage?.trim() ?? '', macros);
+  }
+
+  /// 构建完整的聊天消息列表（OpenAI 格式）
+  ///
+  /// [character] 角色信息
+  /// [history] 历史消息列表
+  /// [userMessage] 最新用户消息内容
+  /// [userAttachments] 最新用户消息的图片附件(仅此一条随请求上传;
+  ///   历史消息中的图片一律降级为 `[图片]` 文本占位,不重复上传)
+  /// [assembled] 两遍拼装复用:传入时忽略 [lorebook]/[preset],
+  ///   直接使用其 system 文本/宏表/世界书块
+  static List<Map<String, dynamic>> buildMessages({
+    required Character character,
+    required List<ChatMessage> history,
+    required String userMessage,
+    List<MessageAttachment>? userAttachments,
+    Persona? persona,
+    Conversation? conversation,
+    List<Character>? groupCharacters,
+    String? memories,
+    String? summary,
+    int? wordCountLimit,
+    String? systemPromptOverride,
+    String? jailbreakPrompt,
+    Lorebook? lorebook,
+    Preset? preset,
+    AssembledSystem? assembled,
+  }) {
+    final macros = assembled?.macros ??
+        _buildMacros(
+          character: character,
+          persona: persona,
+          history: history,
+          userMessage: userMessage,
+          conversation: conversation,
+          groupCharacters: groupCharacters,
+          memories: memories,
+          summary: summary,
+          wordCountLimit: wordCountLimit,
+        );
+
+    // ── 世界书（绑定与切换：会话 > 角色卡，由 ChatProvider 解析后传入）──
+    // 常驻条目恒注入；关键词条目按最近 scanDepth 条消息命中触发。
+    WorldInfoBlocks? loreBlocks;
+    if (assembled != null) {
+      loreBlocks = assembled.loreBlocks;
+    } else if (lorebook != null) {
+      final texts = [
+        for (final m in history)
+          if (!m.isHidden && m.role != MessageRole.system) m.content,
+        userMessage,
+      ];
+      loreBlocks = WorldInfoService.renderBlocks(
+          WorldInfoService.selectEntries(lorebook, texts));
+    }
+
+    final systemContent = assembled?.text ??
+        _buildSystemPrompt(
+          character: character,
+          macros: macros,
+          persona: persona,
+          conversation: conversation,
+          memories: memories,
+          summary: summary,
+          systemPromptOverride: systemPromptOverride,
+          jailbreakPrompt: jailbreakPrompt,
+          loreBlocks: loreBlocks,
+          preset: preset,
+        );
 
     final messages = <Map<String, dynamic>>[];
 
@@ -109,25 +210,12 @@ class PromptService {
           .where((a) => a.type == MessageAttachmentType.image)
           .toList();
 
+      // 历史图片不随每轮请求重复上传(base64 内联体积大、token 成本高):
+      // 统一降级为文本占位,只有最新一条用户消息的图片才真正上传。
       if (images.isNotEmpty) {
-        // 多模态消息：文本 + 图片（OpenAI 视觉格式）
-        final parts = <Map<String, dynamic>>[];
-        if (content.isNotEmpty) {
-          parts.add({'type': 'text', 'text': content});
-        }
-        for (final a in images) {
-          final url = imageDataUrlFromPath(a.path);
-          if (url != null) {
-            parts.add({
-              'type': 'image_url',
-              'image_url': {'url': url},
-            });
-          }
-        }
-        if (parts.isNotEmpty) {
-          messages.add({'role': role, 'content': parts});
-          continue;
-        }
+        final withMedia = content.isEmpty ? '[图片]' : '$content\n[图片]';
+        messages.add({'role': role, 'content': withMedia});
+        continue;
       }
       messages.add({
         'role': role,
@@ -135,16 +223,53 @@ class PromptService {
       });
     }
 
-    // 最新用户消息（世界书 AN/深度类条目插在其前后）
-    if (loreBeforeUser.isNotEmpty) {
-      messages.add({'role': 'system', 'content': loreBeforeUser});
+    // 最新用户消息(世界书 AN/深度类条目插在其前后;图片附件随本次
+    // 请求上传一次,图片生成场景复用「最新对话文本 + 图片」这一口径)
+    if (loreBlocks != null && loreBlocks.beforeUser.trim().isNotEmpty) {
+      messages.add({
+        'role': 'system',
+        'content': _applyMacros(loreBlocks.beforeUser, macros),
+      });
     }
-    messages.add({
-      'role': 'user',
-      'content': _applyMacros(userMessage, macros),
-    });
-    if (loreAfterUser.isNotEmpty) {
-      messages.add({'role': 'system', 'content': loreAfterUser});
+    final userImages = (userAttachments ?? const [])
+        .where((a) => a.type == MessageAttachmentType.image)
+        .toList();
+    if (userImages.isNotEmpty) {
+      final parts = <Map<String, dynamic>>[];
+      final text = _applyMacros(userMessage, macros);
+      if (text.isNotEmpty) {
+        parts.add({'type': 'text', 'text': text});
+      }
+      for (final a in userImages) {
+        final url = imageDataUrlFromPath(a.path);
+        if (url != null) {
+          parts.add({
+            'type': 'image_url',
+            'image_url': {'url': url},
+          });
+        }
+      }
+      if (parts.isNotEmpty) {
+        messages.add({'role': 'user', 'content': parts});
+      } else {
+        // 图片全部读取失败:保底发文本,不让用户消息凭空消失
+        final text = _applyMacros(userMessage, macros);
+        messages.add({
+          'role': 'user',
+          'content': text.isEmpty ? '[图片]' : text,
+        });
+      }
+    } else {
+      messages.add({
+        'role': 'user',
+        'content': _applyMacros(userMessage, macros),
+      });
+    }
+    if (loreBlocks != null && loreBlocks.afterUser.trim().isNotEmpty) {
+      messages.add({
+        'role': 'system',
+        'content': _applyMacros(loreBlocks.afterUser, macros),
+      });
     }
 
     return messages;
@@ -160,8 +285,7 @@ class PromptService {
     String? summary,
     String? systemPromptOverride,
     String? jailbreakPrompt,
-    String loreBeforeSystem = '',
-    String loreAfterSystem = '',
+    WorldInfoBlocks? loreBlocks,
     Preset? preset,
   }) {
     final parts = <String>[];
@@ -175,6 +299,8 @@ class PromptService {
     }
 
     // 世界书 beforeSystem 块（before_char / top：角色定义之前）
+    final loreBeforeSystem =
+        _applyMacros(loreBlocks?.beforeSystem ?? '', macros);
     if (loreBeforeSystem.trim().isNotEmpty) {
       parts.add(loreBeforeSystem.trim());
     }
@@ -206,6 +332,8 @@ class PromptService {
     }
 
     // 世界书 afterSystem 块（after_char：角色定义之后、深度提示之前）
+    final loreAfterSystem =
+        _applyMacros(loreBlocks?.afterSystem ?? '', macros);
     if (loreAfterSystem.trim().isNotEmpty) {
       parts.add(loreAfterSystem.trim());
     }
@@ -584,6 +712,7 @@ class PromptService {
     required Character character,
     required List<ChatMessage> history,
     required String userMessage,
+    List<MessageAttachment>? userAttachments,
     Persona? persona,
     Conversation? conversation,
     List<Character>? groupCharacters,
@@ -594,11 +723,13 @@ class PromptService {
     String? jailbreakPrompt,
     Lorebook? lorebook,
     Preset? preset,
+    AssembledSystem? assembled,
   }) {
     return buildMessages(
       character: character,
       history: history,
       userMessage: userMessage,
+      userAttachments: userAttachments,
       persona: persona,
       conversation: conversation,
       groupCharacters: groupCharacters,
@@ -609,6 +740,7 @@ class PromptService {
       jailbreakPrompt: jailbreakPrompt,
       lorebook: lorebook,
       preset: preset,
+      assembled: assembled,
     );
   }
 
