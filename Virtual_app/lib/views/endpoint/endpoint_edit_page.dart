@@ -569,10 +569,17 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
               ),
               const Spacer(),
               Text(
-                '点击模型设为默认 · ${_selectedModels.length} 个',
+                _defaultModelId.isEmpty
+                    ? '未选择模型'
+                    : '当前使用：${_selectedModels.where((m) => m.id == _defaultModelId).firstOrNull?.name ?? _defaultModelId}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  color: _defaultModelId.isEmpty
+                      ? Theme.of(context).colorScheme.error
+                      : Theme.of(context).colorScheme.primary,
                   fontSize: 13,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
