@@ -85,7 +85,7 @@ class OpenAIAdapter implements LLMAdapter {
 
       yield const ChatChunk(isFinal: true);
     } on DioException catch (e) {
-      throw Exception(_extractError(e));
+      throw Exception(await extractDioErrorMessage(e));
     }
   }
 
@@ -186,24 +186,8 @@ class OpenAIAdapter implements LLMAdapter {
         finishReason: choices[0]['finish_reason'] as String?,
       );
     } on DioException catch (e) {
-      throw Exception(_extractError(e));
+      throw Exception(await extractDioErrorMessage(e));
     }
   }
 
-  String _extractError(DioException e) {
-    if (e.response?.data != null) {
-      try {
-        final data = e.response!.data;
-        if (data is Map<String, dynamic>) {
-          final error = data['error'];
-          if (error is Map<String, dynamic>) {
-            return error['message']?.toString() ?? e.message ?? 'Unknown error';
-          }
-          return data['message']?.toString() ?? e.message ?? 'Unknown error';
-        }
-        return data.toString();
-      } catch (_) {}
-    }
-    return e.message ?? 'Network error';
-  }
 }

@@ -442,14 +442,15 @@ class ChatProvider extends ChangeNotifier {
     String accumulatedContent = '';
     String accumulatedReasoning = '';
 
-    try {
-      final stream = chatSettings.enableStream
+    // 单次流式消费。采样参数被模型拒绝时可带钳制后的设置重试（见下方 catch）。
+    Future<void> consume(ChatSettings s) async {
+      final stream = s.enableStream
           ? adapter.chatCompletionsStream(
               model: modelId,
               messages: messages,
-              settings: chatSettings,
+              settings: s,
             )
-          : _nonStreamToStream(adapter, modelId, messages, chatSettings);
+          : _nonStreamToStream(adapter, modelId, messages, s);
 
       await for (final chunk in stream) {
         if (_isStopRequested) break;
@@ -479,6 +480,27 @@ class ChatProvider extends ChangeNotifier {
           notifyListeners();
         }
       }
+    }
+
+    try {
+      try {
+        await consume(chatSettings);
+      } catch (e) {
+        // 思考类模型（如 kimi-k3）拒绝默认采样参数
+        // （"invalid temperature: only 1 is allowed" / "invalid top_p: ..."）:
+        // 解析允许值自动重试一次；仅当尚未产出任何内容时才重试
+        if (accumulatedContent.isEmpty) {
+          final clamped = _clampedSamplingSettings(chatSettings, e.toString());
+          if (clamped == null) rethrow;
+          accumulatedContent = '';
+          accumulatedReasoning = '';
+          promptTokens = 0;
+          completionTokens = 0;
+          await consume(clamped);
+        } else {
+          rethrow;
+        }
+      }
 
       // 生成完成，保存到数据库
       final finalIndex = _messages.indexWhere((m) => m.id == assistantMsg.id);
@@ -506,8 +528,8 @@ class ChatProvider extends ChangeNotifier {
       if (errorIndex != -1) {
         _messages[errorIndex] = _messages[errorIndex].copyWith(
           content: accumulatedContent.isNotEmpty
-              ? '$accumulatedContent\n\n**生成失败**: $e'
-              : '生成失败: $e',
+              ? '$accumulatedContent\n\n**生成失败**: ${_formatError(e)}'
+              : '生成失败: ${_formatError(e)}',
           isError: true,
           isGenerating: false,
           variant: MessageVariant.error,
@@ -630,14 +652,15 @@ class ChatProvider extends ChangeNotifier {
     String accumulatedContent = '';
     String accumulatedReasoning = '';
 
-    try {
-      final stream = chatSettings.enableStream
+    // 单次流式消费。采样参数被模型拒绝时可带钳制后的设置重试（见下方 catch）。
+    Future<void> consume(ChatSettings s) async {
+      final stream = s.enableStream
           ? adapter.chatCompletionsStream(
               model: modelId,
               messages: messages,
-              settings: chatSettings,
+              settings: s,
             )
-          : _nonStreamToStream(adapter, modelId, messages, chatSettings);
+          : _nonStreamToStream(adapter, modelId, messages, s);
 
       await for (final chunk in stream) {
         if (_isStopRequested) break;
@@ -657,6 +680,23 @@ class ChatProvider extends ChangeNotifier {
           notifyListeners();
         }
       }
+    }
+
+    try {
+      try {
+        await consume(chatSettings);
+      } catch (e) {
+        // 采样参数被模型拒绝时自动钳制重试一次（同发送路径）
+        if (accumulatedContent.isEmpty) {
+          final clamped = _clampedSamplingSettings(chatSettings, e.toString());
+          if (clamped == null) rethrow;
+          accumulatedContent = '';
+          accumulatedReasoning = '';
+          await consume(clamped);
+        } else {
+          rethrow;
+        }
+      }
 
       final finalIndex = _messages.indexWhere((m) => m.id == targetMsg.id);
       if (finalIndex != -1) {
@@ -669,7 +709,7 @@ class ChatProvider extends ChangeNotifier {
         await _db.saveMessage(conv.id, finalMsg);
       }
     } catch (e) {
-      _finishWithError(targetMsg.id, '生成失败: $e');
+      _finishWithError(targetMsg.id, '生成失败: ${_formatError(e)}');
     } finally {
       _isGenerating = false;
       _isStopRequested = false;
@@ -818,6 +858,32 @@ class ChatProvider extends ChangeNotifier {
   }
 
   /// 以错误状态结束生成中的消息
+  /// 采样参数被模型拒绝时,从错误信息解析服务端允许值并钳制设置。
+  /// 例："invalid temperature: only 1 is allowed for this model"
+  /// 　→ temperature=1；"invalid top_p: only 0.95 is allowed" → topP=0.95。
+  /// 非此类错误、或设置已是允许值（避免死循环）时返回 null。
+  ChatSettings? _clampedSamplingSettings(ChatSettings s, String err) {
+    final m = RegExp(
+      r'invalid\s+(temperature|top_p|topp)\s*:\s*only\s+([\d.]+)\s+is\s+allowed',
+      caseSensitive: false,
+    ).firstMatch(err);
+    if (m == null) return null;
+    final param = m.group(1)!.toLowerCase();
+    final value = double.tryParse(m.group(2)!);
+    if (value == null) return null;
+    if (param == 'temperature') {
+      if (s.temperature == value) return null;
+      return s.copyWith(temperature: value);
+    }
+    if (s.topP == value) return null;
+    return s.copyWith(topP: value);
+  }
+
+  /// 错误信息展示格式化：去掉 "Exception: " 前缀,保留可读正文
+  String _formatError(Object e) {
+    return e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+  }
+
   void _finishWithError(String messageId, String error) {
     final idx = _messages.indexWhere((m) => m.id == messageId);
     if (idx != -1) {
