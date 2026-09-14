@@ -57,7 +57,7 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
     {'key': 'groq', 'name': 'Groq', 'url': 'https://api.groq.com/openai/v1'},
     {
       'key': 'moonshot',
-      'name': 'Moonshot (Kimi)',
+      'name': 'Kimi (月之暗面)',
       'url': 'https://api.moonshot.cn/v1'
     },
     {
