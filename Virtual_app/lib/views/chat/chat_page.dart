@@ -328,9 +328,6 @@ class _ChatPageState extends State<ChatPage> {
       );
     }
 
-    String? currentModelId() =>
-        chat.currentConversation?.modelId ?? chat.currentModelId;
-
     showModalBottomSheet<void>(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -339,7 +336,11 @@ class _ChatPageState extends State<ChatPage> {
       builder: (sheetCtx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
           final endpoint = currentEndpoint();
-          final modelId = currentModelId();
+          // 未显式选过模型时，端点的默认模型就是生效模型
+          final modelId =
+              chat.currentConversation?.modelId ?? chat.currentModelId;
+          final effectiveModelId =
+              modelId?.isNotEmpty == true ? modelId : endpoint.effectiveModel?.id;
           final scheme = Theme.of(ctx).colorScheme;
 
           return SafeArea(
@@ -376,10 +377,11 @@ class _ChatPageState extends State<ChatPage> {
                         style: const TextStyle(fontSize: 12)),
                     onTap: () {
                       chat.setCurrentEndpoint(ep.id);
-                      // 切换接入点后旧模型多半不存在，落到新接入点的第一个模型
+                      // 切换接入点后旧模型多半不存在，落到新接入点的默认模型
                       if (ep.models.isNotEmpty &&
                           !ep.models.any((m) => m.id == modelId)) {
-                        chat.setCurrentModel(ep.models.first.id);
+                        final target = ep.effectiveModel?.id;
+                        if (target != null) chat.setCurrentModel(target);
                       }
                       setSheetState(() {});
                     },
@@ -408,7 +410,7 @@ class _ChatPageState extends State<ChatPage> {
                   for (final m in endpoint.models)
                     ListTile(
                       dense: true,
-                      leading: Icon(m.id == modelId
+                      leading: Icon(m.id == effectiveModelId
                           ? Icons.check_circle
                           : Icons.circle_outlined),
                       title: Text(m.name.isNotEmpty ? m.name : m.id,
@@ -427,7 +429,7 @@ class _ChatPageState extends State<ChatPage> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                   child: Text(
-                    '当前：${endpoint.name} · ${modelId ?? endpoint.models.firstOrNull?.id ?? '未选择'}',
+                    '当前：${endpoint.name} · ${effectiveModelId ?? '未选择'}',
                     style: TextStyle(
                         fontSize: 12, color: scheme.onSurfaceVariant),
                   ),

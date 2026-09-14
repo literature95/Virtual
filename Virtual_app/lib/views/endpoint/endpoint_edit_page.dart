@@ -34,6 +34,9 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
   bool _showAdvanced = false;
 
   List<LlmModelDescriptor> _selectedModels = [];
+
+  /// 接口默认模型（从已添加模型中点选；对话未显式选模型时优先用它）
+  String _defaultModelId = '';
   Map<String, String> _customParams = {};
 
   static const List<Map<String, String>> _platforms = [
@@ -118,6 +121,7 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
       _isDefault = endpoint.isDefault;
       _enabled = endpoint.enabled;
       _selectedModels = List.from(endpoint.models);
+      _defaultModelId = endpoint.defaultModelId;
       _customParams = Map.from(endpoint.customParams);
     }
 
@@ -196,6 +200,7 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
         baseUrl: baseUrl,
         apiKey: apiKey,
         models: _selectedModels,
+        defaultModelId: _defaultModelId,
         isDefault: _isDefault,
         enabled: _enabled,
         customParams: _customParams,
@@ -210,6 +215,7 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
         baseUrl: baseUrl,
         apiKey: apiKey,
         models: _selectedModels,
+        defaultModelId: _defaultModelId,
         isDefault: _isDefault,
         enabled: _enabled,
         customParams: _customParams,
@@ -296,6 +302,10 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
       final newModels =
           fetched.where((m) => !existingIds.contains(m.id)).toList();
       _selectedModels = [..._selectedModels, ...newModels];
+      // 尚未指定默认模型时，自动落到第一个，保证接口始终有明确的可用模型
+      if (_defaultModelId.isEmpty && _selectedModels.isNotEmpty) {
+        _defaultModelId = _selectedModels.first.id;
+      }
 
       if (mounted) {
         setState(() {});
@@ -330,6 +340,9 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
             final existingIds = _selectedModels.map((m) => m.id).toSet();
             final newModels = models.where((m) => !existingIds.contains(m.id));
             _selectedModels = [..._selectedModels, ...newModels];
+            if (_defaultModelId.isEmpty && _selectedModels.isNotEmpty) {
+              _defaultModelId = _selectedModels.first.id;
+            }
           });
         },
       ),
@@ -382,6 +395,9 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
                   id: id,
                   name: name.isEmpty ? id : name,
                 ));
+                if (_defaultModelId.isEmpty) {
+                  _defaultModelId = id;
+                }
               });
               Navigator.of(ctx).pop();
             },
@@ -395,6 +411,10 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
   void _removeModel(String modelId) {
     setState(() {
       _selectedModels.removeWhere((m) => m.id == modelId);
+      // 删掉的恰是默认模型：顺移到剩余第一个
+      if (_defaultModelId == modelId) {
+        _defaultModelId = _selectedModels.firstOrNull?.id ?? '';
+      }
     });
   }
 
@@ -549,7 +569,7 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
               ),
               const Spacer(),
               Text(
-                '${_selectedModels.length} 个模型',
+                '点击模型设为默认 · ${_selectedModels.length} 个',
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                   fontSize: 13,
@@ -662,8 +682,12 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
                 ),
                 itemBuilder: (context, index) {
                   final model = _filteredModels[index];
+                  final isDefaultModel = model.id == _defaultModelId;
                   return ListTile(
                     dense: true,
+                    // 点击模型行 = 设为该接口的默认模型
+                    onTap: () =>
+                        setState(() => _defaultModelId = model.id),
                     leading: CircleAvatar(
                       radius: 16,
                       child: Icon(
@@ -676,17 +700,29 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
                       style: const TextStyle(fontSize: 14),
                     ),
                     subtitle: Text(
-                      model.id,
+                      isDefaultModel ? '${model.id} · 当前使用' : model.id,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        color: isDefaultModel
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (isDefaultModel)
+                          Icon(Icons.check_circle,
+                              size: 18,
+                              color: Theme.of(context).colorScheme.primary)
+                        else
+                          Icon(Icons.circle_outlined,
+                              size: 18,
+                              color:
+                                  Theme.of(context).colorScheme.outlineVariant),
+                        const SizedBox(width: 6),
                         if (model.visionSupported)
                           const Icon(Icons.photo, size: 14),
                         const SizedBox(width: 4),

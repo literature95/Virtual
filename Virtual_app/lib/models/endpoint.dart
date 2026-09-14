@@ -46,6 +46,7 @@ class LlmEndpoint {
   final String baseUrl;
   final String apiKey;
   final List<LlmModelDescriptor> models;
+  final String defaultModelId; // 接口的默认模型（须在 models 中）
   final bool isDefault;
   final bool enabled;
   final int priority;
@@ -60,6 +61,7 @@ class LlmEndpoint {
     required this.baseUrl,
     required this.apiKey,
     this.models = const [],
+    this.defaultModelId = '',
     this.isDefault = false,
     this.enabled = true,
     this.priority = 0,
@@ -75,6 +77,7 @@ class LlmEndpoint {
     String? baseUrl,
     String? apiKey,
     List<LlmModelDescriptor>? models,
+    String? defaultModelId,
     bool? isDefault,
     bool? enabled,
     int? priority,
@@ -89,6 +92,7 @@ class LlmEndpoint {
       baseUrl: baseUrl ?? this.baseUrl,
       apiKey: apiKey ?? this.apiKey,
       models: models ?? this.models,
+      defaultModelId: defaultModelId ?? this.defaultModelId,
       isDefault: isDefault ?? this.isDefault,
       enabled: enabled ?? this.enabled,
       priority: priority ?? this.priority,
@@ -105,6 +109,7 @@ class LlmEndpoint {
         'baseUrl': baseUrl,
         'apiKey': apiKey,
         'models': models.map((m) => m.toJson()).toList(),
+        'defaultModelId': defaultModelId,
         'isDefault': isDefault,
         'enabled': enabled,
         'priority': priority,
@@ -123,6 +128,7 @@ class LlmEndpoint {
                 ?.map((m) => LlmModelDescriptor.fromJson(m))
                 .toList() ??
             [],
+        defaultModelId: json['defaultModelId'] ?? '',
         isDefault: json['isDefault'] ?? false,
         enabled: json['enabled'] ?? true,
         priority: json['priority'] ?? 0,
@@ -130,6 +136,15 @@ class LlmEndpoint {
         updatedAt: DateTime.parse(json['updatedAt']),
         customParams: Map<String, String>.from(json['customParams'] ?? {}),
       );
+
+  /// 生效模型：默认模型仍存在时用它，否则回落列表第一个
+  LlmModelDescriptor? get effectiveModel {
+    if (models.isEmpty) return null;
+    for (final m in models) {
+      if (m.id == defaultModelId) return m;
+    }
+    return models.first;
+  }
 }
 
 /// LLM 模型描述

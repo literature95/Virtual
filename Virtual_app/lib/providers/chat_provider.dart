@@ -757,16 +757,14 @@ class ChatProvider extends ChangeNotifier {
   }
 
   /// 解析要使用的模型 ID
+  ///
+  /// 优先级：对话绑定 > 接口默认模型（defaultModelId）> 列表第一个
   String? _resolveModelId(LlmEndpoint endpoint) {
     final modelId = _currentModelId ?? _currentConversation?.modelId;
     if (modelId != null && modelId.isNotEmpty) return modelId;
 
-    // 使用端点的第一个模型
-    if (endpoint.models.isNotEmpty) {
-      return endpoint.models.first.id;
-    }
-
-    return null;
+    final effective = endpoint.effectiveModel;
+    return effective?.id;
   }
 
   /// 模型上下文长度（未知时给保守值 8192）
