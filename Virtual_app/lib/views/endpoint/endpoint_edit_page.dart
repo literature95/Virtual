@@ -436,7 +436,18 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
-        appBar: AppBar(title: Text(_isEditing ? '编辑接口' : '新接口')),
+        appBar: AppBar(
+          title: Text(_isEditing ? '编辑接口' : '新接口'),
+          leading: BackButton(
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/endpoints');
+              }
+            },
+          ),
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
@@ -444,6 +455,15 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEditing ? '编辑接口' : '新接口'),
+        leading: BackButton(
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/endpoints');
+            }
+          },
+        ),
         actions: [
           TextButton(
             onPressed: _saveEndpoint,

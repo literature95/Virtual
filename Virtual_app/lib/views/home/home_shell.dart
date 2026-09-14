@@ -11,7 +11,7 @@ import '../common/cosmos_background.dart';
 ///    历史段承载会话列表，故底部不再单列对话）
 /// - AppBar 按路由条件渲染：
 ///   - 首页：右上角搜索图标
-///   - API接入（/endpoints）：右上角 "+"（新增端点）
+///   - 接口页（/endpoint*）：页面自带 AppBar（返回+标题+新建），隐藏 shell 的
 ///   - 其余页面不显示 "+"（角色 Tab 的 "+" 由其内部 AppBar 自绘）
 /// - 左上角 ☰ 抽屉：复用「我的」的导航内容
 /// - 宽屏：左侧 NavigationRail（同样 4 项）
@@ -73,12 +73,6 @@ class HomeShell extends StatelessWidget {
   bool _isRootTab(BuildContext context) {
     final loc = GoRouterState.of(context).uri.path;
     return _tabs.any((t) => loc == t.path);
-  }
-
-  /// 是否显示右上角 "+"（仅 API 接入页；角色 Tab 的 "+" 由其内部 AppBar 自绘）
-  bool _showPlus(BuildContext context) {
-    final loc = GoRouterState.of(context).uri.path;
-    return loc.startsWith('/endpoint');
   }
 
   /// 内容居中限宽
@@ -241,10 +235,13 @@ class HomeShell extends StatelessWidget {
     // 对话页：/chat、/chat/:id；角色 Tab：/characters；我的页：/profile
     // 角色卡详情页：/home/character/:id —— 它是沉浸式立绘页，自带浮层返回键，
     //   且 extendBodyBehindAppBar:true，故同样隐藏 shell AppBar（但**保留底部导航**）。
+    // 接口页：/endpoints、/endpoint/new、/endpoint/:id/edit 自带 AppBar
+    //   （返回 + 标题 + 新建），也隐藏 shell AppBar 避免双层。
     if (loc == '/chat' ||
         loc.startsWith('/chat/') ||
         loc.startsWith('/character') ||
         loc.startsWith('/home/character/') ||
+        loc.startsWith('/endpoint') ||
         loc == '/profile') {
       return const PreferredSize(
         preferredSize: Size.fromHeight(0),
@@ -294,19 +291,6 @@ class HomeShell extends StatelessWidget {
             icon: const Icon(Icons.search, size: 23),
             tooltip: '搜索',
             onPressed: () => context.go('/home/search'),
-          ),
-        // 角色 / API接入 → "+" 新建
-        if (_showPlus(context))
-          IconButton(
-            icon: const Icon(Icons.add, size: 24),
-            tooltip: '新建',
-            onPressed: () {
-              if (loc.startsWith('/endpoint')) {
-                context.go('/endpoint/new');
-              } else {
-                context.push('/character/new');
-              }
-            },
           ),
         const SizedBox(width: 4),
       ],

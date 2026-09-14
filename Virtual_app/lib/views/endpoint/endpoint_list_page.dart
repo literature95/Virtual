@@ -13,6 +13,16 @@ class EndpointListPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('接口'),
+        // shell AppBar 已隐藏，返回键由本页承担（go 跳入无栈时回落到「我的」）
+        leading: BackButton(
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/profile');
+            }
+          },
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
