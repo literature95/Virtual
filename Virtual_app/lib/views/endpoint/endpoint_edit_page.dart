@@ -220,12 +220,14 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
     try {
       final adapter = ApiService().getAdapter(testEndpoint);
       final sw = Stopwatch()..start();
+      // 温度固定 1.0：思考类模型（如 kimi-k3/o1 系列）只接受 temperature=1，
+      // 通用连通性测试与采样随机性无关，1 是各厂商兼容度最高的值
       final resp = await adapter.chatCompletions(
         model: testModelId,
         messages: const [
           {'role': 'user', 'content': 'Hi'},
         ],
-        settings: ChatSettings(maxTokens: 8),
+        settings: ChatSettings(maxTokens: 8, temperature: 1.0),
       );
       sw.stop();
 
