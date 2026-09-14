@@ -13,13 +13,15 @@ class AuthProvider extends ChangeNotifier {
   static const _kSession = 'auth_session';
 
   final SharedPreferences _prefs;
-  final AuthApiService _api = AuthApiService();
+  final AuthApiService _api;
 
   AuthUser? user;
   String? token;
   bool busy = false;
 
-  AuthProvider(this._prefs) {
+  /// [api] 可注入（测试用假服务），默认真实网络实现
+  AuthProvider(this._prefs, {AuthApiService? api})
+      : _api = api ?? AuthApiService() {
     _restore();
   }
 
@@ -86,6 +88,28 @@ class AuthProvider extends ChangeNotifier {
     } finally {
       busy = false;
       notifyListeners();
+    }
+  }
+
+  /// 启动时校验本地恢复的会话（_restore 只读本地、不验真）：
+  /// token 已失效（/api/auth/me 返回 401）则静默清除登录态，
+  /// 避免后端重启/数据重置后「我的」页仍显示已失效的账号。
+  /// 网络异常时保留本地会话——离线不应丢失登录态，下次启动再校验。
+  Future<void> validateSession(String backend) async {
+    final t = token;
+    if (t == null) return;
+    try {
+      final u = await _api.me(backend, t);
+      if (u == null) {
+        await logout();
+        return;
+      }
+      user = u;
+      _prefs.setString(
+          _kSession, jsonEncode({'token': t, 'user': u.toJson()}));
+      notifyListeners();
+    } catch (_) {
+      // 网络不通 / 后端未启动：保留会话，不视为登出
     }
   }
 

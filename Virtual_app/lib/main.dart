@@ -157,56 +157,71 @@ Widget buildAppProviders({
 }
 
 /// 应用入口门控：未引导则显示 Onboarding，否则进入主应用
-class AppGate extends StatelessWidget {
+class AppGate extends StatefulWidget {
   final SharedPreferences prefs;
 
   const AppGate({super.key, required this.prefs});
 
   @override
-  Widget build(BuildContext context) {
-    return Consumer<SettingsProvider>(
-      builder: (context, settings, _) {
-        if (!settings.onboardingCompleted) {
-          return MaterialApp(
-            title: 'Virtual',
-            debugShowCheckedModeBanner: false,
-            theme: AppTheme.light(settings),
-            darkTheme: AppTheme.dark(settings),
-            themeMode: settings.themeMode,
-            locale: settings.locale,
-            localizationsDelegates: GlobalMaterialLocalizations.delegates,
-            supportedLocales: AppConstants.supportedLocales,
-            home: OnboardingPage(
-              onFinished: () => settings.setOnboardingCompleted(true),
-            ),
-          );
-        }
+  State<AppGate> createState() => _AppGateState();
+}
 
-        return MaterialApp.router(
-          title: 'Virtual',
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.light(settings),
-          darkTheme: AppTheme.dark(settings),
-          themeMode: settings.themeMode,
-          routerConfig: AppRouter.router,
-          locale: settings.locale,
-          localizationsDelegates: GlobalMaterialLocalizations.delegates,
-          supportedLocales: AppConstants.supportedLocales,
-          builder: (context, child) {
-            return UpdateChecker(
-              child: Consumer<MetadataProvider>(
-                builder: (context, meta, _) {
-                  if (meta.loaded && meta.metadata != null) {
-                    WukTrace.instance.init(
-                      prefs: prefs,
-                      apiSecret: meta.metadata!.apiSecret,
-                    );
-                  }
-                  return child ?? const SizedBox.shrink();
-                },
-              ),
-            );
-          },
+class _AppGateState extends State<AppGate> {
+  @override
+  void initState() {
+    super.initState();
+    // 启动即校验本地恢复的登录会话：后端重启/数据重置后旧 token 已失效，
+    // 不校验会让「我的」页一直显示已失效的账号（假登录态）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthProvider>();
+      if (!auth.isLoggedIn) return;
+      final backend = context.read<SettingsProvider>().backendBaseUrl;
+      auth.validateSession(backend);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<SettingsProvider>();
+    if (!settings.onboardingCompleted) {
+      return MaterialApp(
+        title: 'Virtual',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light(settings),
+        darkTheme: AppTheme.dark(settings),
+        themeMode: settings.themeMode,
+        locale: settings.locale,
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        supportedLocales: AppConstants.supportedLocales,
+        home: OnboardingPage(
+          onFinished: () => settings.setOnboardingCompleted(true),
+        ),
+      );
+    }
+
+    return MaterialApp.router(
+      title: 'Virtual',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.light(settings),
+      darkTheme: AppTheme.dark(settings),
+      themeMode: settings.themeMode,
+      routerConfig: AppRouter.router,
+      locale: settings.locale,
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      supportedLocales: AppConstants.supportedLocales,
+      builder: (context, child) {
+        return UpdateChecker(
+          child: Consumer<MetadataProvider>(
+            builder: (context, meta, _) {
+              if (meta.loaded && meta.metadata != null) {
+                WukTrace.instance.init(
+                  prefs: widget.prefs,
+                  apiSecret: meta.metadata!.apiSecret,
+                );
+              }
+              return child ?? const SizedBox.shrink();
+            },
+          ),
         );
       },
     );

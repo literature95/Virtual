@@ -339,6 +339,8 @@ $env:SMTP_USER='you@qq.com'; $env:SMTP_PASS='授权码'
 
 生产部署请固定 `JWT_SECRET`（未配置时每次启动随机生成，重启后所有登录态失效）。
 
+App 侧登录会话持久化在 SharedPreferences（键 `auth_session`），启动时经 `AuthProvider.validateSession` 调 `GET /api/auth/me` 校验：token 失效（401）自动清除登录态（「我的」页回到「点击登录 / 注册」）；网络不通时保留会话（离线不丢登录态）。回归测试 `test/auth_session_validation_test.dart`。
+
 ### 2. 启动 Web 官网
 
 ```bash
