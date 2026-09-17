@@ -62,7 +62,7 @@ export default function Home() {
           </p>
 
           <div className="hero-cta reveal r4" id="download">
-            <a className="btn-grad" href={appInfo?.downloadUrl || '#'}>
+            <a className="btn-grad" href="/app-release.apk" download="Virtual-Android.apk">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 3v12m0 0l-5-5m5 5l5-5" />
                 <path d="M4 21h16" />
@@ -183,7 +183,7 @@ export default function Home() {
         <BrandMark size={44} />
         <h2>现在，开启你的故事</h2>
         <p>{appInfo?.description ?? '本地优先 · 角色扮演 · 跨模型接入的 AI 角色聊天客户端'}</p>
-        <a className="btn-grad big" href={appInfo?.downloadUrl || '#'}>
+        <a className="btn-grad big" href="/app-release.apk" download="Virtual-Android.apk">
           免费下载 <span className="mono">APK</span>
         </a>
       </section>

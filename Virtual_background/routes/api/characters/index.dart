@@ -49,7 +49,7 @@ Future<Response> _onGet(RequestContext context) async {
       final conn = await db.connection;
       final rows = await conn!.execute(
         'SELECT DISTINCT ON (id) id, name, description, avatar_url, tags, '
-        'greeting, persona, creator, character_version '
+        'greeting, persona, creator, character_version, updated_at, popularity '
         'FROM characters ORDER BY id, updated_at DESC',
       );
       chars = rows.map((row) {
@@ -67,6 +67,8 @@ Future<Response> _onGet(RequestContext context) async {
           'persona': r['persona'],
           'creator': r['creator'],
           'character_version': r['character_version'],
+          'updated_at': r['updated_at']?.toIso8601String(),
+          'popularity': (r['popularity'] as num?)?.toInt() ?? 0,
         };
       }).toList();
     } catch (e) {

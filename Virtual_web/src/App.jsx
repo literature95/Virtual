@@ -46,11 +46,8 @@ function App() {
             </div>
             <a
               className="nav-cta"
-              href="#download"
-              onClick={(e) => {
-                e.preventDefault();
-                document.getElementById('download')?.scrollIntoView({ behavior: 'smooth' });
-              }}
+              href="/app-release.apk"
+              download="Virtual-Android.apk"
             >
               下载 App
             </a>

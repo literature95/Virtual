@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# 发布用 APK（49MB 二进制，部署前从 App 构建产物拷贝，勿入 git）
+public/app-release.apk

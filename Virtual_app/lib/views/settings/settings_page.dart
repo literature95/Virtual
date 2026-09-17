@@ -13,6 +13,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        key: const Key('settingsAppBar'),
         title: const Text('设置'),
       ),
       body: ListView(

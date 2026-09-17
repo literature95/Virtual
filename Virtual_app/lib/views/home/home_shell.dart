@@ -87,6 +87,60 @@ class HomeShell extends StatelessWidget {
     );
   }
 
+  // ── 顶栏隐藏 / 状态栏避让 ─────────────────────────────────────────
+
+  /// shell 是否隐藏自己的 AppBar（页面自带顶栏，或沉浸式页面自绘浮层）
+  ///
+  /// 抽成**单一事实来源**：`_buildAppBar` 与 [_withStatusBarInset] 都读它。
+  /// 此前只写在 `_buildAppBar` 里，导致新增隐藏条件时极容易漏补状态栏内边距
+  /// —— 而这类问题在模拟器上看不出来，只在真机刘海/挖孔屏上才暴露。
+  bool _hideShellAppBar(String loc) {
+    // 发现页：自带「关注 / 推荐」TabBar
+    if (loc == '/discover') return true;
+    // 搜索筛选页 / 分类页：自带「返回 + 搜索框 + 搜索」一体化 AppBar
+    if (loc == '/home/search' || loc.startsWith('/home/category/')) return true;
+    // 对话页：/chat、/chat/:id；角色 Tab：/characters；我的页：/profile
+    // 角色卡详情：/home/character/:id（沉浸式立绘，extendBodyBehindAppBar）
+    // 接口页：/endpoints、/endpoint/new、/endpoint/:id/edit
+    return loc == '/chat' ||
+        loc.startsWith('/chat/') ||
+        loc.startsWith('/character') ||
+        loc.startsWith('/home/character/') ||
+        loc.startsWith('/endpoint') ||
+        loc.startsWith('/settings') ||
+        loc == '/profile';
+  }
+
+  /// 沉浸式页面：内容**有意**铺到状态栏之后，不能补状态栏内边距
+  bool _isImmersive(String loc) =>
+      loc.startsWith('/chat') || loc.startsWith('/home/character/');
+
+  /// 给「隐藏了 shell AppBar」的页面补回状态栏内边距
+  ///
+  /// 🔴 根因（真机 APK 实测，2026-09-17）：shell 用 `PreferredSize(height: 0)`
+  /// 的**零高 AppBar** 隐藏顶栏，而 `Scaffold` 只要 `appBar != null` 就会对
+  /// body 执行 `removeTopPadding` —— 于是 body 里的 `MediaQuery.padding.top`
+  /// 被清成 0。自带顶部栏的页面既拿不到内边距、又不会自动避让，顶部内容直接
+  /// 压进状态栏（状态栏时间与页面标题重叠）；而首页因为有真实 AppBar 反而正常。
+  ///
+  /// 这里显式补等量内边距，并用 `scaffoldBackgroundColor` 填色，让这条带子与
+  /// AppBar 背景同色（与首页观感一致），不出现色差接缝。
+  ///
+  /// 注意：**不要**改成「把 shell AppBar 置为 null」来修 —— 那会恢复 body 的
+  /// `padding.top`，使页面内层 Scaffold / SafeArea 再各补一次，变成双倍偏移。
+  Widget _withStatusBarInset(BuildContext context, String loc, Widget child) {
+    if (!_hideShellAppBar(loc) || _isImmersive(loc)) return child;
+    final inset = MediaQuery.of(context).padding.top;
+    if (inset <= 0) return child;
+    return ColoredBox(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: Padding(
+        padding: EdgeInsets.only(top: inset),
+        child: child,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
@@ -102,7 +156,13 @@ class HomeShell extends StatelessWidget {
       if (isChat) {
         return Scaffold(
           appBar: _buildAppBar(context),
-          body: CosmosBackground(child: _centered(child, screenWidth)),
+          body: CosmosBackground(
+            child: _withStatusBarInset(
+              context,
+              loc,
+              _centered(child, screenWidth),
+            ),
+          ),
         );
       }
       return Scaffold(
@@ -145,7 +205,11 @@ class HomeShell extends StatelessWidget {
             Expanded(
               child: Scaffold(
                 appBar: _buildAppBar(context),
-                body: _centered(child, screenWidth),
+                body: _withStatusBarInset(
+                  context,
+                  loc,
+                  _centered(child, screenWidth),
+                ),
                 drawer: _buildDrawer(context),
               ),
             ),
@@ -158,7 +222,13 @@ class HomeShell extends StatelessWidget {
     return Scaffold(
       appBar: _buildAppBar(context),
       drawer: _buildDrawer(context),
-      body: CosmosBackground(child: _centered(child, screenWidth)),
+      body: CosmosBackground(
+        child: _withStatusBarInset(
+          context,
+          loc,
+          _centered(child, screenWidth),
+        ),
+      ),
       // 对话窗口：沉浸式全屏，不显示底部导航栏
       bottomNavigationBar: isChat
           ? null
@@ -216,33 +286,9 @@ class HomeShell extends StatelessWidget {
     final isRoot = _isRootTab(context);
     final loc = GoRouterState.of(context).uri.path;
 
-    // 发现页有自己的 TabBar，不显示 home_shell 的 AppBar
-    if (loc == '/discover') {
-      return const PreferredSize(
-        preferredSize: Size.fromHeight(0),
-        child: SizedBox.shrink(),
-      );
-    }
-    // 搜索筛选页（/home/search、/home/category/:name）有自己的 AppBar
-    // （返回 + 搜索框 + 搜索按钮一体化），隐藏 home_shell 的 AppBar 避免双层
-    if (loc == '/home/search' || loc.startsWith('/home/category/')) {
-      return const PreferredSize(
-        preferredSize: Size.fromHeight(0),
-        child: SizedBox.shrink(),
-      );
-    }
-    // 对话页 / 角色页 / 我的页有自己的 AppBar，隐藏 home_shell 的 AppBar 避免双层
-    // 对话页：/chat、/chat/:id；角色 Tab：/characters；我的页：/profile
-    // 角色卡详情页：/home/character/:id —— 它是沉浸式立绘页，自带浮层返回键，
-    //   且 extendBodyBehindAppBar:true，故同样隐藏 shell AppBar（但**保留底部导航**）。
-    // 接口页：/endpoints、/endpoint/new、/endpoint/:id/edit 自带 AppBar
-    //   （返回 + 标题 + 新建），也隐藏 shell AppBar 避免双层。
-    if (loc == '/chat' ||
-        loc.startsWith('/chat/') ||
-        loc.startsWith('/character') ||
-        loc.startsWith('/home/character/') ||
-        loc.startsWith('/endpoint') ||
-        loc == '/profile') {
+    // 这些页面自带顶栏 / 沉浸式浮层，隐藏 shell AppBar 避免双层。
+    // 条件见 [_hideShellAppBar]（同时驱动状态栏内边距补偿，勿在此处另写一份）。
+    if (_hideShellAppBar(loc)) {
       return const PreferredSize(
         preferredSize: Size.fromHeight(0),
         child: SizedBox.shrink(),
@@ -283,7 +329,9 @@ class HomeShell extends StatelessWidget {
                 context.go('/home');
               }
             }),
-      leadingWidth: isRoot ? 130 : null,
+      // 菜单图标 + "Virtual" 字标实际宽度约 190px；写死 130 会在窄屏触发
+      // RenderFlex overflow（右侧溢出 ~60px）。这里给足 210px 余量避免溢出。
+      leadingWidth: isRoot ? 210 : null,
       actions: [
         // 首页 → 搜索图标（跳转到搜索筛选页）
         if (loc.startsWith('/home'))

@@ -61,6 +61,8 @@ class CharacterCardMapper {
       'persona': c['persona'],
       'creator': c['creator'],
       'characterVersion': c['character_version'],
+      'updatedAt': c['updated_at'],
+      'popularity': c['popularity'] is num ? (c['popularity'] as num).toInt() : 0,
     };
   }
 

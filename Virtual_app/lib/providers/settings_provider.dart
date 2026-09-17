@@ -72,8 +72,8 @@ class SettingsProvider extends ChangeNotifier {
   String? _lastSeenVersion;
   String? get lastSeenVersion => _lastSeenVersion;
 
-  // 后端地址（默认本地 Virtual_background）
-  String _backendBaseUrl = 'http://localhost:8080';
+  // 后端地址（默认线上 Virtual_background 服务器）
+  String _backendBaseUrl = 'https://virtual.literature95.com';
   String get backendBaseUrl => _backendBaseUrl;
 
   // 备份
@@ -134,7 +134,7 @@ class SettingsProvider extends ChangeNotifier {
 
     // 后端地址
     _backendBaseUrl =
-        _prefs.getString('backend_base_url') ?? 'http://localhost:8080';
+        _prefs.getString('backend_base_url') ?? 'https://virtual.literature95.com';
   }
 
   ASRPlatform? _parseAsrPlatform(String? value) {
@@ -287,7 +287,7 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   void setBackendBaseUrl(String url) {
-    final trimmed = url.trim().isEmpty ? 'http://localhost:8080' : url.trim();
+    final trimmed = url.trim().isEmpty ? 'https://virtual.literature95.com' : url.trim();
     _backendBaseUrl = trimmed;
     _prefs.setString('backend_base_url', trimmed);
     notifyListeners();
