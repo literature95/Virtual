@@ -33,6 +33,9 @@ void main() {
     expect(find.text('推荐'), findsWidgets);
     expect(find.text('发现'), findsWidgets);
     expect(find.text('关注'), findsWidgets);
+    // 默认选中中间「发现」Tab（角色卡流），而不是「推荐」
+    final tabBar = tester.widget<TabBar>(find.byType(TabBar));
+    expect(tabBar.controller?.index, 1);
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 1));
   });

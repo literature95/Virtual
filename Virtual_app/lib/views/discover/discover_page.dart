@@ -15,7 +15,7 @@ import 'compose_post_dialog.dart';
 /// 数据来源：Virtual_background /api/posts、/api/follows、/api/characters。
 ///
 /// - 推荐 Tab：社区分类 + 动态流
-/// - **发现 Tab**：竖向角色卡流（点赞/收藏/转发 + 点卡进详情）
+/// - **发现 Tab**：竖向角色卡流（点赞/收藏/转发 + 点卡进详情）——**底栏进入时默认落在这里**
 /// - 关注 Tab：已关注创作者动态
 ///
 /// 底栏由 HomeShell 提供，本页三个 Tab 均在 Shell 内（底栏始终可见）。
@@ -44,7 +44,8 @@ class _DiscoverPageState extends State<DiscoverPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    // 底栏点「发现」时，默认停在中间「发现」角色卡流（index=1），不是「推荐」
+    _tabController = TabController(length: 3, vsync: this, initialIndex: 1);
     _settings = context.read<SettingsProvider>();
     _auth = context.read<AuthProvider>();
     _auth.addListener(_onAuthChanged);

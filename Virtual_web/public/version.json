@@ -1,11 +1,10 @@
 {
-  "version": "1.0.10+11",
+  "version": "1.0.11+12",
   "downloadUrl": "https://virtual.literature95.com/app-release.apk",
-  "notes": "品牌清理：设置/关于统一为 Virtual；应用内更新提示",
+  "notes": "底栏进入发现页时默认停在「发现」角色卡流",
   "changes": [
-    "设置-关于改为 Virtual 品牌与真实版本号",
-    "清理 Tavo/Volink 遗留链接与社媒",
-    "发现页角色卡竖滑流",
-    "启动检查新版本并提示下载"
+    "底栏「发现」默认选中中间「发现」Tab",
+    "设置/关于统一 Virtual 品牌",
+    "发现页角色卡竖滑流"
   ]
 }
