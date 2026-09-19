@@ -19,6 +19,41 @@ Virtual 是一个**本地优先、跨模型、隐私向**的 AI 角色聊天全�
 
 项目定位为「自托管工具」：目标是成为隐私敏感用户与技术爱好者在移动端/桌面端可自持的 AI 角色聊天客户端，而非对标云端 SaaS 的巨型产品。
 
+### 当前版本与下载
+
+| 项 | 值 |
+|---|---|
+| **App 版本** | **1.0.6+7**（`Virtual_app/pubspec.yaml`） |
+| **GitHub Release** | [Virtual v1.0.6](https://github.com/literature95/Virtual/releases/tag/v1.0.6)（自本版起对外发版；更早中间包不补历史 Release） |
+| **官网 APK** | https://virtual.literature95.com/app-release.apk |
+| **GitHub 资产** | Release 页附件 `app-release.apk`（与官网应一致） |
+| **PackageName** | `app.bitbear.virtual` |
+| **官网** | https://virtual.literature95.com |
+
+> 历史版本说明：GitHub Releases **从 v1.0.6 起建立**，只保证「当前 Latest」可安装。中间开发包（1.0.3～1.0.5）构建产物已覆盖，不再补挂；代码演进见 `main` 提交历史。回滚需求优先用服务器保留的最近 1 份 APK 备份（见故障排查）。
+
+### 发版流程（每次上线固定做）
+
+1. **升版本**：改 `Virtual_app/pubspec.yaml` 的 `version: x.y.z+build`（Android 覆盖安装必须提高 `build`）。
+2. **测试**：`flutter test`（App）+ `dart test`（后端）+ `flutter analyze` / `dart analyze`。
+3. **构建并同步 APK**（三处一致，勿手拷）：
+   ```bash
+   cd Virtual_app && flutter build apk --release
+   cd .. && bash deploy/deploy_apk.sh
+   ```
+4. **（若有后端/接口变更）部署后端**：`dart_frog build` 后同步服务器 `build/routes`、`build/lib`、`build/bin/server.dart` 并 `systemctl restart virtual-backend`（JIT 冷启动约 30s）。
+5. **（若有 Web 变更）部署静态站**：`cd Virtual_web && npm run build`，再 `bash deploy/push_web_dist.sh`（保留线上 APK）。
+6. **Git + GitHub Release**（自 v1.0.6 起）：
+   ```bash
+   git add -A && git commit -m "release: vX.Y ..."
+   git tag -f vX.Y -m "..."
+   git push https://github.com/literature95/Virtual.git main
+   git push https://github.com/literature95/Virtual.git refs/tags/vX.Y:refs/tags/vX.Y
+   # 需 gh 登录或 GH_TOKEN；脚本会把 app-release.apk 挂到 Release
+   bash deploy/create_github_release.sh   # 按需改脚本内 tag 名
+   ```
+7. **验收**：官网下载 APK 的 SHA1 与本地产物一致；GitHub Release 标为 Latest。
+
 ## 二、技术栈
 
 | 端 | 技术 | 版本 | 职责 |
@@ -382,7 +417,7 @@ App 首次启动后，进入 **设置 → 后端地址**，默认 `http://localh
 | 对话一发送就报 `type 'Utf8Decoder' is not a subtype of type 'StreamTransformer<Uint8List, String>' of 'streamTransformer'` | dio 的 `ResponseBody.stream` 运行时类型是 `Stream<Uint8List>`，在其上调用 `.transform(utf8.decoder)` 会因泛型实参不匹配被运行时检查拒绝（`as Stream<List<int>>` 无法规避，它只改静态类型）。必须用 `utf8.decoder.bind(stream)`；已抽为 `decodeSseLines()` 统一实现，回归见 `test/sse_decode_test.dart`（含反例固化） |
 | 报 `request reached max organization concurrency: N, please try again after X seconds` | 上游账号并发额度占满（同一 API Key 同时只允许 N 个请求）。客户端已按 retry-after 自动重试 3 次；仍失败时说明额度被其它会话/进程占用，等待或换 Key / 换端点 |
 | Web `npm run dev` 启动但 API 404 | 确认后端 8080 端口已启动 |
-| 用户下载到的 App 仍是旧版本 | App 分发包有**三处**（构建产物 / `Virtual_web/public/` / 服务器 `/var/www/virtual/dist/`），必须同步。用 `bash deploy/deploy_apk.sh` 一键同步 + 三层哈希校验，勿手动 `cp` |
+| 用户下载到的 App 仍是旧版本 | App 分发包有**三处**（构建产物 / `Virtual_web/public/` / 服务器 `/var/www/virtual/dist/`），必须同步。用 `bash deploy/deploy_apk.sh` 一键同步 + 三层哈希校验，勿手动 `cp`。对外分发以 **GitHub Release Latest** 与官网 APK 为准 |
 | 服务器磁盘被 APK 备份占满 | 单个 APK 约 49MB。`deploy_apk.sh` 已固化「只保留最近 1 份备份」（`VIRTUAL_KEEP_APK_BACKUPS` 可调），勿手动无限制 `cp` |
 | 改了后端代码但接口行为没变 | `dart_frog build` 后运行时实际加载 `build/routes/**` 与 `build/lib/**` 副本，只改项目根目录可能不生效；需同步两份并 `systemctl restart virtual-backend`（JIT 冷启动约 30s，期间 502 属正常） |
 | 想确认线上某文件是否存在，返回 200 却不对 | 站点是 SPA，nginx 对不存在的路径会回退到 `index.html` 并返回 **200**，状态码不能作为存在性判据；必须比对文件内容哈希 |
