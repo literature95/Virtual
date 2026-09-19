@@ -115,6 +115,9 @@ class CommunityPost {
   /// 当前登录用户是否已关注作者（来自后端 isFollowingAuthor，仅详情接口产出）
   final bool isFollowingAuthor;
 
+  /// 发布位置（高德逆地理，可空）
+  final String? location;
+
   /// 发布时间（相对描述，如 "2小时前"）
   final String timeAgo;
 
@@ -135,6 +138,7 @@ class CommunityPost {
     this.shares = 0,
     this.likedByMe = false,
     this.isFollowingAuthor = false,
+    this.location,
     this.timeAgo = '',
   });
 
@@ -166,6 +170,7 @@ class CommunityPost {
       shares: (j['shares'] as num?)?.toInt() ?? 0,
       likedByMe: j['likedByMe'] as bool? ?? false,
       isFollowingAuthor: j['isFollowingAuthor'] as bool? ?? false,
+      location: j['location']?.toString(),
       timeAgo: timeAgoFrom(DateTime.tryParse(j['createdAt']?.toString() ?? '')),
     );
   }
@@ -188,6 +193,7 @@ class CommunityPost {
         shares: shares,
         likedByMe: liked,
         isFollowingAuthor: isFollowingAuthor,
+        location: location,
         timeAgo: timeAgo,
       );
 

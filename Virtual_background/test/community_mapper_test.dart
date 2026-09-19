@@ -14,6 +14,9 @@ Map<String, dynamic> row({
   Object? tags,
   Object? characterId,
   Object? dialogue,
+  Object? location,
+  Object? locationLat,
+  Object? locationLng,
   DateTime? createdAt,
   Object? authorName = '作者',
   Object? authorAvatar = '/a.png',
@@ -32,6 +35,9 @@ Map<String, dynamic> row({
       'tags': tags,
       'character_id': characterId,
       'dialogue': dialogue,
+      'location': location,
+      'location_lat': locationLat,
+      'location_lng': locationLng,
       'created_at': createdAt ?? DateTime.utc(2026, 1, 1, 12),
       'author_name': authorName,
       'author_avatar': authorAvatar,
@@ -178,8 +184,26 @@ void main() {
           'id', 'type', 'title', 'content', 'community', 'tags',
           'characterId', 'dialogue', 'createdAt', 'author',
           'likes', 'likedByMe', 'comments', 'shares', 'isFollowingAuthor',
+          // 高德发动态定位
+          'location', 'locationLat', 'locationLng',
         ]),
       );
+    });
+
+    test('location 三列透传；空位为 null 不抛异常', () {
+      final j = postJsonFromRow(row(
+        location: '北京市·朝阳区',
+        locationLat: 39.9,
+        locationLng: 116.4,
+      ));
+      expect(j['location'], '北京市·朝阳区');
+      expect(j['locationLat'], 39.9);
+      expect(j['locationLng'], 116.4);
+
+      final empty = postJsonFromRow(row());
+      expect(empty['location'], isNull);
+      expect(empty['locationLat'], isNull);
+      expect(empty['locationLng'], isNull);
     });
 
     test('结果可被 jsonEncode（无不可序列化类型）', () {

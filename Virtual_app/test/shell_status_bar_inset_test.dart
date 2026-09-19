@@ -17,8 +17,10 @@ import 'package:virtual/route/app_router.dart';
 /// 避让、又拿不到内边距。首页因为有真实 AppBar 反而不受影响。
 ///
 /// 这组用例把每个「隐藏 shell AppBar」的路由的顶部坐标钉死：
-///   - 非沉浸式页面：顶部栏必须落在 `状态栏高度 (44)` 处；
-///   - 沉浸式页面（对话窗口 / 角色卡详情）：必须仍然是 0（有意铺到状态栏之后）。
+///   - 非沉浸式页面：shell `_withStatusBarInset` 补偿后，顶部栏落在 `状态栏高度 (44)`；
+///   - 对话页（`/chat*`）：shell 不补（沉浸式名单），页面 `InsetAppBar` 自避让，
+///     AppBar 仍须在 44；设背景时背景层可铺到 0（顶栏避让 + 背景全屏）；
+///   - 角色卡详情：有意铺到状态栏之后（0）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -111,12 +113,22 @@ void main() {
       reason: '角色编辑页自带 AppBar 必须避让状态栏',
     );
 
-    // ── 4. 沉浸式页面：有意铺到状态栏之后，**不得**被补内边距 ──
+    // ── 4. 对话页：页面 InsetAppBar 自避让（shell 不再补），AppBar 仍在状态栏下 ──
     await go('/chat');
     expect(
       topOf(find.byType(AppBar), '/chat AppBar'),
+      statusBar,
+      reason: '对话页 AppBar 必须避让状态栏（InsetAppBar 自避让，与首页一致）',
+    );
+
+    // 角色卡详情仍为沉浸式立绘：有意铺到状态栏之后
+    // （无角色数据时详情页仍会渲染 Scaffold/AppBar 结构，这里用路径探测）
+    await go('/home/character/immersive-probe');
+    final immersiveTop = tester.getTopLeft(find.byType(Scaffold).first).dy;
+    expect(
+      immersiveTop,
       0.0,
-      reason: '对话窗口是沉浸式全屏（用户明确要求），顶部不得被下推',
+      reason: '角色卡详情页保持沉浸式，内容有意铺到状态栏之后',
     );
 
     // ── 5. 设置页：自带 AppBar 且已加入隐藏列表 → 避让状态栏，无双层 AppBar ──

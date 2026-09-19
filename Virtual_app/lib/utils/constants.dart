@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 
 class AppConstants {
   static const String appName = 'Virtual';
-  static const String packageName = 'app.bitbear.tav';
+  static const String packageName = 'app.bitbear.virtual';
+
+  /// 高德地图 Key（与 amap_location_service 保持一致；控制台绑定本包名 + SHA1）
+  static const String amapKey = '59a835b927b9bb78abb1b93a8ee3e3b1';
 
   static const List<Locale> supportedLocales = [
     Locale('zh', 'CN'),

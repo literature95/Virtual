@@ -34,7 +34,8 @@ Future<Response> _onGet(RequestContext context) async {
 
   final rows = await conn.execute(Sql.named('''
 SELECT p.id, p.user_id, p.type, p.title, p.content, p.community, p.tags,
-       p.character_id, p.dialogue, p.created_at,
+       p.character_id, p.dialogue, p.location, p.location_lat, p.location_lng,
+       p.created_at,
        u.nickname AS author_name, u.avatar_url AS author_avatar,
        (SELECT COUNT(*) FROM post_likes l WHERE l.post_id = p.id)::int AS likes,
        (SELECT COUNT(*) FROM post_comments c WHERE c.post_id = p.id)::int AS comments,
@@ -91,6 +92,20 @@ Future<Response> _onPost(RequestContext context) async {
       const <String>[];
   final dialogue = body['dialogue'] is List ? body['dialogue'] : null;
 
+  // 高德定位（发动态打点）：location 可为字符串或 {name,address,lat,lng}
+  String? locationName;
+  double? locationLat;
+  double? locationLng;
+  final loc = body['location'];
+  if (loc is String && loc.trim().isNotEmpty) {
+    locationName = loc.trim();
+  } else if (loc is Map) {
+    locationName = loc['name']?.toString().trim();
+    if (locationName != null && locationName.isEmpty) locationName = null;
+    locationLat = double.tryParse(loc['lat']?.toString() ?? '');
+    locationLng = double.tryParse(loc['lng']?.toString() ?? '');
+  }
+
   final db = AppDatabase.instance;
   if (!db.isAvailable) await db.init();
   if (!db.isAvailable) {
@@ -99,8 +114,14 @@ Future<Response> _onPost(RequestContext context) async {
   final conn = (await db.connection)!;
 
   final rows = await conn.execute(Sql.named('''
-INSERT INTO community_posts (user_id, type, title, content, community, tags, character_id, dialogue)
-VALUES (@u::uuid, @t, @title, @content, @community, @tags::jsonb, @cid, @dialogue::jsonb)
+INSERT INTO community_posts (
+  user_id, type, title, content, community, tags, character_id, dialogue,
+  location, location_lat, location_lng
+)
+VALUES (
+  @u::uuid, @t, @title, @content, @community, @tags::jsonb, @cid, @dialogue::jsonb,
+  @loc, @lat, @lng
+)
 RETURNING id, created_at
 '''), parameters: {
     'u': userId,
@@ -113,6 +134,9 @@ RETURNING id, created_at
         ? null
         : body['characterId'].toString(),
     'dialogue': dialogue == null ? null : jsonEncode(dialogue),
+    'loc': locationName,
+    'lat': locationLat,
+    'lng': locationLng,
   });
   final row = rows.first.toColumnMap();
 

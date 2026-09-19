@@ -28,7 +28,8 @@ Future<Response> onRequest(RequestContext context, String id) async {
   try {
     final rows = await conn.execute(Sql.named('''
 SELECT p.id, p.user_id, p.type, p.title, p.content, p.community, p.tags,
-       p.character_id, p.dialogue, p.created_at,
+       p.character_id, p.dialogue, p.location, p.location_lat, p.location_lng,
+       p.created_at,
        u.nickname AS author_name, u.avatar_url AS author_avatar,
        (SELECT COUNT(*) FROM post_likes l WHERE l.post_id = p.id)::int AS likes,
        (SELECT COUNT(*) FROM post_comments c WHERE c.post_id = p.id)::int AS comments,

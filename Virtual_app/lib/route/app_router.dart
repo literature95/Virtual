@@ -8,6 +8,7 @@ import '../views/character/character_list_page.dart';
 import '../views/character/character_edit_page.dart';
 import '../views/character/character_tab_page.dart';
 import '../views/discover/discover_page.dart';
+import '../views/discover/compose_post_page.dart';
 import '../views/discover/user_profile_page.dart';
 import '../views/discover/post_detail_page.dart';
 import '../views/home/category_characters_page.dart';
@@ -66,6 +67,11 @@ class AppRouter {
           final id = state.pathParameters['id']!;
           return PostDetailPage(postId: id);
         },
+      ),
+      // 发布动态：全页编辑器（底栏「+」/ 发现页入口），独立于 Shell
+      GoRoute(
+        path: '/compose',
+        builder: (context, state) => const ComposePostPage(),
       ),
       ShellRoute(
         builder: (context, state, child) => HomeShell(child: child),

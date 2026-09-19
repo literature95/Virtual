@@ -379,7 +379,13 @@ App 首次启动后，进入 **设置 → 后端地址**，默认 `http://localh
 | 非交互 shell 下 `dart_frog dev` 报 mason `BricksJson.rootDir` 空指针 | 沙箱/CI 环境缺 `APPDATA` 变量，设置 `MASON_CACHE=<任意目录>` 即可；仍异常时改用 `dart_frog build` + `dart build/bin/server.dart` |
 | 后端连接 PostgreSQL 失败 | 正常降级到内存数据，控制台会显示 "degraded to memory" |
 | App 元数据加载失败 | 自动回退 `assets/metadata_default.json`，无网也能跑 |
+| 对话一发送就报 `type 'Utf8Decoder' is not a subtype of type 'StreamTransformer<Uint8List, String>' of 'streamTransformer'` | dio 的 `ResponseBody.stream` 运行时类型是 `Stream<Uint8List>`，在其上调用 `.transform(utf8.decoder)` 会因泛型实参不匹配被运行时检查拒绝（`as Stream<List<int>>` 无法规避，它只改静态类型）。必须用 `utf8.decoder.bind(stream)`；已抽为 `decodeSseLines()` 统一实现，回归见 `test/sse_decode_test.dart`（含反例固化） |
+| 报 `request reached max organization concurrency: N, please try again after X seconds` | 上游账号并发额度占满（同一 API Key 同时只允许 N 个请求）。客户端已按 retry-after 自动重试 3 次；仍失败时说明额度被其它会话/进程占用，等待或换 Key / 换端点 |
 | Web `npm run dev` 启动但 API 404 | 确认后端 8080 端口已启动 |
+| 用户下载到的 App 仍是旧版本 | App 分发包有**三处**（构建产物 / `Virtual_web/public/` / 服务器 `/var/www/virtual/dist/`），必须同步。用 `bash deploy/deploy_apk.sh` 一键同步 + 三层哈希校验，勿手动 `cp` |
+| 服务器磁盘被 APK 备份占满 | 单个 APK 约 49MB。`deploy_apk.sh` 已固化「只保留最近 1 份备份」（`VIRTUAL_KEEP_APK_BACKUPS` 可调），勿手动无限制 `cp` |
+| 改了后端代码但接口行为没变 | `dart_frog build` 后运行时实际加载 `build/routes/**` 与 `build/lib/**` 副本，只改项目根目录可能不生效；需同步两份并 `systemctl restart virtual-backend`（JIT 冷启动约 30s，期间 502 属正常） |
+| 想确认线上某文件是否存在，返回 200 却不对 | 站点是 SPA，nginx 对不存在的路径会回退到 `index.html` 并返回 **200**，状态码不能作为存在性判据；必须比对文件内容哈希 |
 | 真机 App 连不上后端 | 改设置页后端地址为 `http://<电脑局域网IP>:8080` |
 | 重新部署后 App 仍是旧界面 | App 壳文件（`/`）与 `main.dart.js` 必须带 `cache-control: no-cache`。`dart_frog build` 会重新生成 `build/bin/server.dart` 而**冲掉**该补丁，需按 `serve.ps1` 第 2.5 步重打。检查：`curl -sI http://localhost:8080/ \| grep -i cache-control` |
 | `flutter build web` 报 `errno 183`（字体复制冲突） | `pubspec.yaml` 里手动内置的 `fonts/materialicons-regular.otf` 与 Flutter 内置 `MaterialIcons-Regular.otf` **同路径**（Windows 大小写不敏感），构建产物目录中二者争抢同一文件名。清理 `build/web` 后重建即可缓解；根治见「相关文档」的已知问题说明 |

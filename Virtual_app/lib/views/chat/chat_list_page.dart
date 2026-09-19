@@ -7,6 +7,7 @@ import '../../models/conversation.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/character_provider.dart';
 import '../../theme/tavo_brand.dart';
+import '../common/inset_app_bar.dart';
 
 /// 开始一段新聊天：
 /// 1. 若无角色，引导先创建角色；
@@ -81,7 +82,7 @@ class _ChatListPageState extends State<ChatListPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: InsetAppBar(
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
           child: TavoBrand.logo(size: 34),

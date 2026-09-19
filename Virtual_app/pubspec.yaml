@@ -1,7 +1,7 @@
 name: virtual
 description: Virtual - AI Character Chat Client
 publish_to: 'none'
-version: 1.0.1+2
+version: 1.0.6+7
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -90,6 +90,7 @@ dependencies:
   package_info_plus: ^8.0.2
   device_info_plus: ^10.1.2
   connectivity_plus: ^6.0.3
+  geolocator: ^13.0.2
   open_file: ^3.5.3
   sentry_flutter: ^9.0.0
   screenshot: ^3.0.0

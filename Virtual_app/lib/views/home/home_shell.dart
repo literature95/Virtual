@@ -3,23 +3,25 @@ import 'package:go_router/go_router.dart';
 
 import '../../theme/tavo_brand.dart';
 import '../common/cosmos_background.dart';
+import '../discover/compose_post_dialog.dart';
 
-/// 主框架 — 4 Tab 导航：
+/// 主框架 — 底栏 5 位：首页 | 发现 | 发布(＋) | 角色 | 我的
 ///
-/// - 底部导航：首页 | 发现 | 角色 | 我的
-///   （「对话」已并入「角色」Tab：角色 Tab 内分「角色 / 历史 / 收藏」三段，
+/// - 中间「＋」是**动作**不是 Tab：点按进入全页 `/compose` 发布，不切换选中态
+/// - （「对话」已并入「角色」Tab：角色 Tab 内分「角色 / 历史 / 收藏」三段，
 ///    历史段承载会话列表，故底部不再单列对话）
 /// - AppBar 按路由条件渲染：
 ///   - 首页：右上角搜索图标
 ///   - 接口页（/endpoint*）：页面自带 AppBar（返回+标题+新建），隐藏 shell 的
 ///   - 其余页面不显示 "+"（角色 Tab 的 "+" 由其内部 AppBar 自绘）
 /// - 左上角 ☰ 抽屉：复用「我的」的导航内容
-/// - 宽屏：左侧 NavigationRail（同样 4 项）
+/// - 宽屏：左侧 NavigationRail（同样含中间发布按钮）
 class HomeShell extends StatelessWidget {
   final Widget child;
 
   const HomeShell({super.key, required this.child});
 
+  /// 一级 Tab（不含中间发布动作位）
   static const _tabs = [
     (
       path: '/home',
@@ -47,7 +49,10 @@ class HomeShell extends StatelessWidget {
     ),
   ];
 
-  /// 当前选中的 Tab（子页面归到其所属 Tab：endpoints/settings→我的，lorebooks 等→发现）
+  /// 底栏 5 个槽位索引：0 首页 · 1 发现 · 2 发布 · 3 角色 · 4 我的
+  static const int _composeNavIndex = 2;
+
+  /// 当前选中的底栏槽位（发布位永不选中）
   ///
   /// 注意：`/chat` 与 `/chat/:id` 仍保留为独立路由（会话详情从多处入口跳入），
   /// 但导航高亮归属「角色」Tab —— 历史会话就在角色 Tab 的「历史」段里。
@@ -63,11 +68,26 @@ class HomeShell extends StatelessWidget {
         loc.startsWith('/debug')) {
       return 1;
     }
-    if (loc.startsWith('/chat') || loc.startsWith('/character')) return 2;
-    return 3; // /profile、/endpoints、/more、/settings 等归入我的
+    if (loc.startsWith('/chat') || loc.startsWith('/character')) return 3;
+    return 4; // /profile、/endpoints、/more、/settings 等归入我的
   }
 
-  void _onTap(BuildContext context, int index) => context.go(_tabs[index].path);
+  /// 底栏槽位 → 路由；发布位打开对话框
+  /// 底栏槽位 → 路由；发布位打开**全页**发布（非对话框）
+  Future<void> _onNavTap(BuildContext context, int index) async {
+    if (index == _composeNavIndex) {
+      final created = await openComposePage(context);
+      if (created != null && context.mounted) {
+        context.go('/discover');
+      }
+      return;
+    }
+    // 槽位 → _tabs 下标：2 之后要减 1（跳过发布位）
+    final tabIndex = index > _composeNavIndex ? index - 1 : index;
+    if (tabIndex >= 0 && tabIndex < _tabs.length) {
+      context.go(_tabs[tabIndex].path);
+    }
+  }
 
   /// 是否一级 Tab 页面（精确匹配根路径，详情/编辑页不算）
   bool _isRootTab(BuildContext context) {
@@ -111,7 +131,12 @@ class HomeShell extends StatelessWidget {
         loc == '/profile';
   }
 
-  /// 沉浸式页面：内容**有意**铺到状态栏之后，不能补状态栏内边距
+  /// 沉浸式页面：shell **不**补状态栏内边距，由页面自行处理
+  ///
+  /// - `/chat*`：页面用 `InsetAppBar` 自避让——顶栏与首页一致下推状态栏；
+  ///   设了对话背景时背景仍 `Positioned.fill` 铺到状态栏后面（顶栏避让+背景全屏）。
+  ///   若 shell 再补一层 inset，会与页面自避让叠成双倍偏移。
+  /// - `/home/character/`：角色卡详情沉浸式立绘，有意铺到状态栏之后。
   bool _isImmersive(String loc) =>
       loc.startsWith('/chat') || loc.startsWith('/home/character/');
 
@@ -125,6 +150,8 @@ class HomeShell extends StatelessWidget {
   ///
   /// 这里显式补等量内边距，并用 `scaffoldBackgroundColor` 填色，让这条带子与
   /// AppBar 背景同色（与首页观感一致），不出现色差接缝。
+  /// 对话页（`/chat*`）不走这里：见 [_isImmersive]，由 `InsetAppBar` 自避让，
+  /// 以便背景图仍能铺到状态栏后面。
   ///
   /// 注意：**不要**改成「把 shell AppBar 置为 null」来修 —— 那会恢复 body 的
   /// `padding.top`，使页面内层 Scaffold / SafeArea 再各补一次，变成双倍偏移。
@@ -147,12 +174,12 @@ class HomeShell extends StatelessWidget {
     final isWide = screenWidth >= 720;
     final index = _currentIndex(context);
     final loc = GoRouterState.of(context).uri.path;
-    // 对话窗口（/chat*）为沉浸式全屏：不显示底部导航栏 / 左侧导航栏
+    // 对话窗口（/chat*）不显示底部导航栏 / 左侧导航栏（沉浸阅读区）
     final isChat = loc.startsWith('/chat');
 
     // ── 宽屏模式：左侧导航栏 ──
     if (isWide) {
-      // 对话窗口：全屏，无左侧导航栏（沉浸式）
+      // 对话窗口：全屏，无左侧导航栏
       if (isChat) {
         return Scaffold(
           appBar: _buildAppBar(context),
@@ -170,7 +197,7 @@ class HomeShell extends StatelessWidget {
           children: [
             NavigationRail(
               selectedIndex: index,
-              onDestinationSelected: (i) => _onTap(context, i),
+              onDestinationSelected: (i) => _onNavTap(context, i),
               labelType: NavigationRailLabelType.all,
               leading: Column(
                 children: [
@@ -193,12 +220,32 @@ class HomeShell extends StatelessWidget {
                 ],
               ),
               destinations: [
-                for (final t in _tabs)
-                  NavigationRailDestination(
-                    icon: Icon(t.icon),
-                    selectedIcon: Icon(t.activeIcon),
-                    label: Text(t.label),
-                  ),
+                NavigationRailDestination(
+                  icon: Icon(_tabs[0].icon),
+                  selectedIcon: Icon(_tabs[0].activeIcon),
+                  label: Text(_tabs[0].label),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(_tabs[1].icon),
+                  selectedIcon: Icon(_tabs[1].activeIcon),
+                  label: Text(_tabs[1].label),
+                ),
+                // 中间：发动态（动作位，不参与选中高亮）
+                const NavigationRailDestination(
+                  icon: ComposeNavIcon(size: 34),
+                  selectedIcon: ComposeNavIcon(size: 34),
+                  label: Text('发布'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(_tabs[2].icon),
+                  selectedIcon: Icon(_tabs[2].activeIcon),
+                  label: Text(_tabs[2].label),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(_tabs[3].icon),
+                  selectedIcon: Icon(_tabs[3].activeIcon),
+                  label: Text(_tabs[3].label),
+                ),
               ],
             ),
             const VerticalDivider(thickness: 1),
@@ -229,52 +276,66 @@ class HomeShell extends StatelessWidget {
           _centered(child, screenWidth),
         ),
       ),
-      // 对话窗口：沉浸式全屏，不显示底部导航栏
+      // 对话窗口：不显示底部导航栏
       bottomNavigationBar: isChat
           ? null
           : NavigationBar(
               selectedIndex: index,
-              onDestinationSelected: (i) => _onTap(context, i),
+              onDestinationSelected: (i) => _onNavTap(context, i),
               destinations: [
-                for (final t in _tabs)
-                  NavigationDestination(
-                    icon: Icon(t.icon),
-                    selectedIcon: Icon(t.activeIcon),
-                    label: t.label,
-                  ),
+                NavigationDestination(
+                  icon: Icon(_tabs[0].icon),
+                  selectedIcon: Icon(_tabs[0].activeIcon),
+                  label: _tabs[0].label,
+                ),
+                NavigationDestination(
+                  icon: Icon(_tabs[1].icon),
+                  selectedIcon: Icon(_tabs[1].activeIcon),
+                  label: _tabs[1].label,
+                ),
+                // 中间：发动态 —— 黑框白加号，点按弹发布框
+                const NavigationDestination(
+                  icon: ComposeNavIcon(),
+                  selectedIcon: ComposeNavIcon(),
+                  label: '发布',
+                ),
+                NavigationDestination(
+                  icon: Icon(_tabs[2].icon),
+                  selectedIcon: Icon(_tabs[2].activeIcon),
+                  label: _tabs[2].label,
+                ),
+                NavigationDestination(
+                  icon: Icon(_tabs[3].icon),
+                  selectedIcon: Icon(_tabs[3].activeIcon),
+                  label: _tabs[3].label,
+                ),
               ],
             ),
     );
   }
 
-  /// 品牌气泡头像（对话气泡形 + 签名渐变，与 Web 端 mark 统一）
+  /// 品牌 mark：与 Web / 启动图标统一的渐变几何图（透明底）
   Widget _brandAvatar({double size = 62}) {
-    return Container(
+    return Image.asset(
+      'assets/images/app_icon_grad.png',
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        gradient: TavoColors.signGradientDiagonal,
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(size),
-          topRight: Radius.circular(size),
-          bottomLeft: Radius.circular(size),
-          bottomRight: Radius.circular(size * 0.22),
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          gradient: TavoColors.signGradientDiagonal,
+          borderRadius: BorderRadius.circular(size * 0.22),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: TavoColors.violet.withValues(alpha: 0.35),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
+        alignment: Alignment.center,
+        child: Text(
+          'V',
+          style: TextStyle(
+            fontSize: size * 0.45,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
           ),
-        ],
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        'V',
-        style: TextStyle(
-          fontSize: size * 0.45,
-          fontWeight: FontWeight.w700,
-          color: const Color(0xFF141414),
         ),
       ),
     );

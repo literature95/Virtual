@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/community_api_service.dart';
 import '../../theme/tavo_brand.dart';
+import 'compose_post_dialog.dart';
 
 /// 发现页 —— 社区聚合入口（真实数据，对接后端 PostgreSQL）
 ///
@@ -185,89 +186,11 @@ class _DiscoverPageState extends State<DiscoverPage>
     });
   }
 
-  /// 发布动态（写回后端 community_posts 表）
+  /// 发布动态：跳转全页 `/compose`，返回后插入推荐流顶部
   Future<void> _showComposeDialog() async {
-    final token = _auth.token;
-    if (token == null) {
-      _requireLogin();
-      return;
-    }
-    final titleC = TextEditingController();
-    final contentC = TextEditingController();
-    String community = '综合';
-    await showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSt) => AlertDialog(
-          title: const Text('发布动态'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: titleC,
-                  decoration: const InputDecoration(
-                    labelText: '标题',
-                    hintText: '一句话概括',
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: contentC,
-                  decoration: const InputDecoration(labelText: '内容'),
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 8),
-                DropdownButton<String>(
-                  value: community,
-                  isExpanded: true,
-                  items: communityCategories
-                      .map((c) => DropdownMenuItem(
-                            value: c.name,
-                            child: Text(c.name),
-                          ))
-                      .toList(),
-                  onChanged: (v) => setSt(() => community = v ?? '综合'),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () async {
-                final title = titleC.text.trim();
-                if (title.isEmpty) {
-                  _snack('标题不能为空');
-                  return;
-                }
-                Navigator.pop(ctx);
-                try {
-                  final p = await _api.createPost(
-                    _settings.backendBaseUrl,
-                    token,
-                    title: title,
-                    content: contentC.text.trim(),
-                    community: community,
-                  );
-                  if (!mounted) return;
-                  setState(() => _recommendPosts = [p, ..._recommendPosts]);
-                  _snack('已发布到社区');
-                } catch (e) {
-                  _snack(e.toString());
-                }
-              },
-              child: const Text('发布'),
-            ),
-          ],
-        ),
-      ),
-    );
-    titleC.dispose();
-    contentC.dispose();
+    final p = await openComposePage(context);
+    if (p == null || !mounted) return;
+    setState(() => _recommendPosts = [p, ..._recommendPosts]);
   }
 
   @override
@@ -734,7 +657,10 @@ class _AnnouncementCard extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                post.timeAgo,
+                [
+                  post.timeAgo,
+                  if ((post.location ?? '').isNotEmpty) post.location!,
+                ].where((e) => e.isNotEmpty).join(' · '),
                 style: TextStyle(
                   fontSize: 12,
                   color: scheme.onSurfaceVariant,
@@ -1240,7 +1166,10 @@ class _AuthorRow extends StatelessWidget {
                 ),
               ),
               Text(
-                post.timeAgo,
+                [
+                  post.timeAgo,
+                  if ((post.location ?? '').isNotEmpty) post.location!,
+                ].where((e) => e.isNotEmpty).join(' · '),
                 style: TextStyle(
                   fontSize: 11.5,
                   color: scheme.onSurfaceVariant,

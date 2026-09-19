@@ -205,9 +205,23 @@ class AppDatabase {
         tags JSONB DEFAULT '[]',
         character_id TEXT,
         dialogue JSONB,
+        location TEXT,
+        location_lat DOUBLE PRECISION,
+        location_lng DOUBLE PRECISION,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     ''');
+    // 幂等增量：旧库补 location 列（高德发动态定位）
+    for (final col in [
+      'location TEXT',
+      'location_lat DOUBLE PRECISION',
+      'location_lng DOUBLE PRECISION',
+    ]) {
+      try {
+        await conn.execute(
+            'ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS $col');
+      } catch (_) {}
+    }
     await conn.execute('''
       CREATE TABLE IF NOT EXISTS post_likes (
         post_id UUID NOT NULL,

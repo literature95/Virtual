@@ -483,22 +483,39 @@ class ChatProvider extends ChangeNotifier {
     }
 
     try {
-      // 采样参数约束可能逐个暴露（先 temperature 后 top_p…），循环钳制最多 4 轮
+      // 两类可自愈错误，各自独立计数重试：
+      //   ① 上游并发/速率限流（如 "reached max organization concurrency: 1,
+      //      please try again after 1 seconds"）→ 按其 retry-after 等待后原样重发；
+      //   ② 采样参数被逐项拒绝（先 temperature 后 top_p…）→ 钳制到允许值后重发。
+      // 仅在尚未产出任何内容时重试，避免半截文本被重复拼接。
       var attemptSettings = chatSettings;
-      for (var attempt = 0;; attempt++) {
+      var clampRetries = 0;
+      var throttleRetries = 0;
+      while (true) {
         try {
           await consume(attemptSettings);
           break;
         } catch (e) {
-          final clamped = accumulatedContent.isEmpty
-              ? _clampedSamplingSettings(attemptSettings, e.toString())
-              : null;
-          if (clamped == null || attempt >= 3) rethrow;
-          attemptSettings = clamped;
-          accumulatedContent = '';
-          accumulatedReasoning = '';
-          promptTokens = 0;
-          completionTokens = 0;
+          final err = e.toString();
+          if (accumulatedContent.isEmpty) {
+            final wait = _retryAfterSeconds(err);
+            if (wait != null && throttleRetries < _maxThrottleRetries) {
+              throttleRetries++;
+              await Future<void>.delayed(Duration(seconds: wait));
+              continue;
+            }
+            final clamped = _clampedSamplingSettings(attemptSettings, err);
+            if (clamped != null && clampRetries < 3) {
+              clampRetries++;
+              attemptSettings = clamped;
+              accumulatedContent = '';
+              accumulatedReasoning = '';
+              promptTokens = 0;
+              completionTokens = 0;
+              continue;
+            }
+          }
+          rethrow;
         }
       }
 
@@ -683,20 +700,33 @@ class ChatProvider extends ChangeNotifier {
     }
 
     try {
-      // 采样参数约束循环钳制（同发送路径，最多 4 轮）
+      // 限流等待重试 + 采样参数钳制（与发送路径同构，各自独立计数）
       var attemptSettings = chatSettings;
-      for (var attempt = 0;; attempt++) {
+      var clampRetries = 0;
+      var throttleRetries = 0;
+      while (true) {
         try {
           await consume(attemptSettings);
           break;
         } catch (e) {
-          final clamped = accumulatedContent.isEmpty
-              ? _clampedSamplingSettings(attemptSettings, e.toString())
-              : null;
-          if (clamped == null || attempt >= 3) rethrow;
-          attemptSettings = clamped;
-          accumulatedContent = '';
-          accumulatedReasoning = '';
+          final err = e.toString();
+          if (accumulatedContent.isEmpty) {
+            final wait = _retryAfterSeconds(err);
+            if (wait != null && throttleRetries < _maxThrottleRetries) {
+              throttleRetries++;
+              await Future<void>.delayed(Duration(seconds: wait));
+              continue;
+            }
+            final clamped = _clampedSamplingSettings(attemptSettings, err);
+            if (clamped != null && clampRetries < 3) {
+              clampRetries++;
+              attemptSettings = clamped;
+              accumulatedContent = '';
+              accumulatedReasoning = '';
+              continue;
+            }
+          }
+          rethrow;
         }
       }
 
@@ -859,8 +889,41 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 以错误状态结束生成中的消息
-  /// 采样参数被模型拒绝时,从错误信息解析服务端允许值并钳制设置。
+  /// 上游限流的最大自动重试次数（超出后把错误暴露给用户）
+  static const int _maxThrottleRetries = 3;
+
+  /// 从错误信息解析上游限流的等待秒数；非限流类错误返回 null。
+  ///
+  /// 例："Your account org-547cfebf... request reached max organization
+  ///      concurrency: 1, please try again after 1 seconds" → 1
+  /// 同时兼容 "try again in 20ms"、"429 Too Many Requests"、"rate limit" 等表述。
+  /// 返回上限 30s，避免异常长的等待把界面卡死。
+  int? _retryAfterSeconds(String err) {
+    final lower = err.toLowerCase();
+    final isThrottled = lower.contains('concurrency') ||
+        lower.contains('rate limit') ||
+        lower.contains('ratelimit') ||
+        lower.contains('too many requests') ||
+        lower.contains('429');
+    if (!isThrottled) return null;
+
+    // 毫秒表述优先，避免被 "20ms" 里的数字误当作秒
+    final ms =
+        RegExp(r'try again (?:after|in)\s+(\d+)\s*ms').firstMatch(lower);
+    if (ms != null) {
+      final v = int.tryParse(ms.group(1)!);
+      if (v != null) return (v / 1000).ceil().clamp(1, 30);
+    }
+    final sec = RegExp(r'try again (?:after|in)\s+([\d.]+)\s*s(?:ec(?:onds)?)?')
+        .firstMatch(lower);
+    if (sec != null) {
+      final v = double.tryParse(sec.group(1)!);
+      if (v != null) return v.ceil().clamp(1, 30);
+    }
+    return 2; // 已确认是限流但服务端未给建议时长：保守等 2 秒
+  }
+
+  /// 采样参数被模型拒绝时，从错误信息解析服务端允许值并钳制设置。
   /// 例："invalid temperature: only 1 is allowed for this model"
   /// 　→ temperature=1；"invalid top_p: only 0.95 is allowed" → topP=0.95。
   /// 非此类错误、或设置已是允许值（避免死循环）时返回 null。
@@ -892,9 +955,16 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  /// 错误信息展示格式化：去掉 "Exception: " 前缀,保留可读正文
+  /// 错误信息展示格式化：去掉 "Exception: " 前缀,保留可读正文。
+  /// 限流类错误额外给出中文处置建议，并保留原始信息便于核对上游返回。
   String _formatError(Object e) {
-    return e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+    final raw = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+    if (_retryAfterSeconds(raw) != null) {
+      return '上游限流：当前账号可同时处理的请求数已满，自动重试 '
+          '$_maxThrottleRetries 次后仍未成功。\n'
+          '请稍等几秒后重新发送，或换用其它模型 / API 端点。\n\n原始信息：$raw';
+    }
+    return raw;
   }
 
   void _finishWithError(String messageId, String error) {

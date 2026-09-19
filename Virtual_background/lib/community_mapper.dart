@@ -36,6 +36,9 @@ Map<String, dynamic> postJsonFromRow(
     'characterId': r['character_id']?.toString(),
     'dialogue':
         CharacterCardMapper.decodeJson<List<dynamic>>(r['dialogue'], const []),
+    'location': r['location']?.toString(),
+    'locationLat': r['location_lat'],
+    'locationLng': r['location_lng'],
     'createdAt': (r['created_at'] as DateTime).toIso8601String(),
     'author': {
       'id': r['user_id'].toString(),

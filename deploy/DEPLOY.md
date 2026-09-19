@@ -1,25 +1,25 @@
 # Virtual 服务器部署指南（后端 + Web）
 
-> 适用场景：单台 Linux 服务器，已安装 PostgreSQL（`postgres` / `1234`，监听 `127.0.0.1:5432`）。
-> 对外仅暴露 **443**，后端 8080 与 PG 5432 全部仅在服务器内网回环，靠防火墙封死公网。
+> 适用场景：单台 Linux 服务器，已安装 PostgreSQL（`postgres` / `1234`，监听 `127.0.0.1:5433`）。
+> 对外仅暴露 **443**，后端 8080 与 PG 5433 全部仅在服务器内网回环，靠防火墙封死公网。
 
 ## 端口总览（最终落地）
 
 | 进程 | 监听地址 | 对外公网 | 说明 |
 |---|---|---|---|
-| **nginx** | `0.0.0.0:443` + `:80`(跳转) | ✅ 唯一公网入口 | 托管 `dist/` 静态站 + 反代 `/api` |
+| **nginx** | `0.0.0.0:443` + `:80`(跳转) | ✅ 唯一公网入口 | 托管 `/var/www/virtual/dist` 静态站 + 反代 `/api` |
 | **Virtual_background** | `127.0.0.1:8080` | ❌ | 仅被本机 nginx 调用 |
-| **PostgreSQL** | `127.0.0.1:5432` | ❌ | 仅被本机后端调用 |
+| **PostgreSQL** | `127.0.0.1:5433` | ❌ | 仅被本机后端调用 |
 
 > 静态网站（Virtual_web 的 `dist/`）**没有独立端口**，它由 nginx 在 443 上直接读文件发出。
 
 ## 一、准备数据库
 
-服务器 PG 已就绪，凭据 `postgres` / `1234`。后端按 `DB_*` 环境变量连接。
+服务器 PG 已就绪，凭据 `postgres` / `1234`，**端口 5433**（非默认 5432）。后端按 `DB_*` 环境变量连接。
 
 ```bash
 # 建库（若不存在）
-psql -U postgres -h 127.0.0.1 -c "CREATE DATABASE virtual;"
+psql -U postgres -h 127.0.0.1 -p 5433 -c "CREATE DATABASE virtual;"
 # 确认监听回环（postgresql.conf）
 # listen_addresses = 'localhost'   # 默认即 127.0.0.1，切勿改 '0.0.0.0'
 ```
@@ -55,12 +55,44 @@ dart build/bin/server.dart
 cd Virtual_web
 npm ci
 npm run build                        # 产物在 dist/
-sudo mkdir -p /var/www/virtual
-sudo cp -r dist /var/www/virtual/   # 与 nginx.conf 中 root 对应
+sudo mkdir -p /var/www/virtual/dist
+sudo cp -r dist/* /var/www/virtual/dist/
 ```
 
 > 生产构建**不含** `vite.config.js` 里的 `/api` dev 代理，靠 nginx 反代 `/api` 解决，
 > 因此构建时**不需要**设 `VITE_API_BASE`。
+
+## 三之二、部署 App 的 release APK（用脚本，别手动）
+
+App 分发包存在于**三处**，必须保持同步，否则用户下载到的仍是旧版本：
+
+| 位置 | 角色 |
+|---|---|
+| `Virtual_app/build/app/outputs/flutter-apk/app-release.apk` | 构建产物（**唯一真源**，附 `.sha1`） |
+| `Virtual_web/public/app-release.apk` | Vite 源，`npm run build` 时进入 `dist/` |
+| `/var/www/virtual/dist/app-release.apk` | nginx 实际对外提供的文件 |
+
+**一键同步（推荐）**：
+
+```bash
+cd Virtual_app && flutter build apk --release
+cd .. && bash deploy/deploy_apk.sh
+```
+
+脚本会依次完成：本地 `.sha1` 自检 → 同步 Web 源 → 上传到服务器 `.new` → 服务器端哈希比对 →
+**备份轮转** → 原子替换 → 下载线上文件比对哈希。任一步失败即中止，不会留下半成品。
+
+- `--no-web`：只更新线上，跳过 Web 源同步。
+- 环境变量 `VIRTUAL_KEEP_APK_BACKUPS`（默认 `1`）：保留最近几个备份，`0` 表示不留。
+
+> 🔴 **备份必须轮转**：单个 APK 约 49MB，每次部署留一份备份会快速累积占满磁盘。
+> 脚本已固化「只留最近 1 份」，请勿手动 `cp` 出无限制的备份。
+
+> 🔴 **验证要用哈希，不能用状态码**：站点是 SPA，nginx 对不存在的路径会
+> `try_files` 回退到 `index.html` 并返回 **200**。因此「URL 返回 200」**不能**证明
+> 文件存在（曾据此误判"备份没删掉"）。判据必须是下载内容与本地构建的 sha1 一致。
+> 注意 Git Bash 下不要用 `mktemp`/`-o` 临时文件路径（会被路径转换破坏），
+> 直接用管道 `curl ... | sha1sum`。
 
 ## 四、配置并启动 nginx
 
@@ -96,7 +128,7 @@ sudo ufw allow 22/tcp        # SSH，别锁死自己
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 sudo ufw deny 8080/tcp       # 后端仅内网
-sudo ufw deny 5432/tcp       # 数据库仅内网
+sudo ufw deny 5433/tcp       # 数据库仅内网
 sudo ufw enable
 ```
 
@@ -113,7 +145,7 @@ sudo ufw enable
 cd Virtual_background
 docker build -t virtual-backend .
 docker run -d --network host \
-  -e DB_HOST=127.0.0.1 -e DB_PORT=5432 -e DB_NAME=virtual \
+  -e DB_HOST=127.0.0.1 -e DB_PORT=5433 -e DB_NAME=virtual \
   -e DB_USER=postgres -e DB_PASSWORD=1234 \
   -e JWT_SECRET=<64位随机串> \
   --name virtual-backend virtual-backend

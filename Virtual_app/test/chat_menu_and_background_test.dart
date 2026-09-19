@@ -219,7 +219,13 @@ void main() {
 
   // ── 2b. 接线验证：设置后聊天页真的会渲染背景层 ──────────────────────
 
-  testWidgets('设过背景的对话，聊天页会渲染 ChatBackgroundLayer', (tester) async {
+  testWidgets('设过背景：顶栏避开状态栏，背景层铺到状态栏后面', (tester) async {
+    // 模拟状态栏 44 逻辑像素；shell 不补 inset，页面 InsetAppBar 自避让
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.padding = const FakeViewPadding(top: 132); // 44 logical
+    addTearDown(tester.view.reset);
+
     final (prefs, db) = await setup();
     await seedConversation(db);
     await ChatProvider(db).saveConversationBackground(
@@ -245,6 +251,18 @@ void main() {
 
     expect(find.byType(ChatBackgroundLayer), findsOneWidget,
         reason: '设过背景的对话，聊天页必须渲染背景层');
+
+    const statusBar = 44.0;
+    expect(
+      tester.getTopLeft(find.byType(AppBar).first).dy,
+      statusBar,
+      reason: '对话页 AppBar 必须下推状态栏（顶栏避让）',
+    );
+    expect(
+      tester.getTopLeft(find.byType(ChatBackgroundLayer).first).dy,
+      0.0,
+      reason: '对话背景必须铺到状态栏后面（背景全屏）',
+    );
 
     await tester.pump(const Duration(seconds: 30));
   });
@@ -273,7 +291,7 @@ void main() {
 
   // ── 2. 对话窗口沉浸式：窄屏不显示底部导航栏 ───────────────────────
 
-  GoRouter _chatShellRouter({required String initial}) => GoRouter(
+  GoRouter chatShellRouter({required String initial}) => GoRouter(
         // 用 initialLocation 直接加载，避免路由切换过渡导致新旧页短暂共存
         initialLocation: initial,
         routes: [
@@ -303,7 +321,7 @@ void main() {
         prefs: prefs,
         database: db,
         child: MaterialApp.router(
-          routerConfig: _chatShellRouter(initial: '/chat/conv-1'),
+          routerConfig: chatShellRouter(initial: '/chat/conv-1'),
         ),
       ),
     );
@@ -327,7 +345,7 @@ void main() {
         prefs: prefs,
         database: db,
         child: MaterialApp.router(
-          routerConfig: _chatShellRouter(initial: '/'),
+          routerConfig: chatShellRouter(initial: '/'),
         ),
       ),
     );

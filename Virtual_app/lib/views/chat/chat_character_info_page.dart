@@ -6,6 +6,7 @@ import '../../models/character.dart';
 import '../../providers/character_provider.dart';
 import '../../theme/design_tokens.dart';
 import '../common/character_cover_card.dart' show resolveAvatarImage;
+import '../common/inset_app_bar.dart';
 
 /// 「角色信息」只读页
 ///
@@ -28,7 +29,7 @@ class ChatCharacterInfoPage extends StatelessWidget {
         final character = provider.getCharacter(characterId);
         if (character == null) {
           return Scaffold(
-            appBar: AppBar(title: const Text('角色信息')),
+            appBar: const InsetAppBar(title: Text('角色信息')),
             body: Center(
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.xl),
@@ -70,7 +71,7 @@ class _CharacterInfoBody extends StatelessWidget {
     final avatar = resolveAvatarImage(character.avatarPath);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: InsetAppBar(
         title: Text(character.name),
         actions: [
           IconButton(

@@ -94,9 +94,8 @@ class GeminiAdapter implements LLMAdapter {
       final stream = response.data.stream as Stream<List<int>>;
       String? buffer;
 
-      await for (final line in stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())) {
+      // 解码走共享实现（内含 utf8.decoder.bind 的强制约束，见 llm_adapter.dart）
+      await for (final line in decodeSseLines(stream)) {
         final trimmed = line.trim();
         if (trimmed.isEmpty) continue;
 

@@ -77,6 +77,7 @@ class CommunityApiService {
     String type = 'text',
     String? characterId,
     List<Map<String, dynamic>>? dialogue,
+    Map<String, dynamic>? location,
   }) async {
     try {
       final r = await _dio.post(
@@ -90,6 +91,8 @@ class CommunityApiService {
           if (characterId != null && characterId.isNotEmpty)
             'characterId': characterId,
           if (dialogue != null) 'dialogue': dialogue,
+          if (location != null && (location['name'] ?? '').toString().isNotEmpty)
+            'location': location,
         },
         options: _auth(token),
       );
@@ -104,6 +107,7 @@ class CommunityApiService {
         content: content,
         tags: tags,
         community: community,
+        location: location?['name']?.toString(),
         timeAgo: timeAgoFrom(DateTime.tryParse(createdAt ?? '')),
       );
     } on DioException catch (e) {

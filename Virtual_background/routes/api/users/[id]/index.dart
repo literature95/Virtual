@@ -57,7 +57,8 @@ SELECT 1 FROM follows
 
     final pRows = await conn.execute(Sql.named('''
 SELECT p.id, p.user_id, p.type, p.title, p.content, p.community, p.tags,
-       p.character_id, p.dialogue, p.created_at,
+       p.character_id, p.dialogue, p.location, p.location_lat, p.location_lng,
+       p.created_at,
        (SELECT COUNT(*) FROM post_likes l WHERE l.post_id = p.id)::int AS likes,
        (SELECT COUNT(*) FROM post_comments cc WHERE cc.post_id = p.id)::int AS comments,
        COALESCE(EXISTS(SELECT 1 FROM post_likes l

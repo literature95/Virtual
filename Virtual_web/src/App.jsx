@@ -1,25 +1,24 @@
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import Home from './pages/Home';
 import Characters from './pages/Characters';
+import appIcon from './assets/app_icon_grad.png';
 import './App.css';
 
-/** 品牌 mark：对话气泡 + 渐变 + V 字 */
+/// 品牌 mark 统一资源：签名渐变透明底图标（导航/页脚/图标/favicon 同源）
+export { default as brandMarkUrl } from './assets/app_icon_grad.png';
+
+/** 品牌 mark：与「畅所欲言」同款签名渐变，透明底 */
 export function BrandMark({ size = 30 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
-      <defs>
-        <linearGradient id="bm-g" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#7E4DF1" />
-          <stop offset=".86" stopColor="#E3756E" />
-          <stop offset="1" stopColor="#E58029" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M32 4C16.5 4 4 15.2 4 29c0 7.9 4.1 15 10.6 19.6-.4 3.4-1.8 7.6-5 10.4-.8.7-.4 2 .6 2.1 5.9.5 10.9-1.6 14.3-3.9 2.4.6 4.9.9 7.5.9 15.5 0 28-11.2 28-25S47.5 4 32 4z"
-        fill="url(#bm-g)"
-      />
-      <path d="M24 20l8 24 8-24h-7l-1.6 6.2L30 20h-6z" fill="#141414" />
-    </svg>
+    <img
+      className="brand-mark-img"
+      src={appIcon}
+      width={size}
+      height={size}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+    />
   );
 }
 

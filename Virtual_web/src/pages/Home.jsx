@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import { BrandMark } from '../App';
 
 /* 漂浮玻璃胶囊 —— 顶部悬浮的玻璃质感技能标签 */
 const CAPSULES = [
@@ -38,7 +37,7 @@ export default function Home() {
     api.appInfo().then(setAppInfo).catch(() => {});
     api.health().then(() => setLive(true)).catch(() => setLive(false));
     api.characters()
-      .then((list) => setChars((list.value ?? list).slice(0, 3)))
+      .then((list) => setChars((list.value ?? list).slice(0, 4)))
       .catch(() => {});
   }, []);
 
@@ -180,7 +179,6 @@ export default function Home() {
 
       {/* ============ DOWNLOAD BAND ============ */}
       <section className="band">
-        <BrandMark size={44} />
         <h2>现在，开启你的故事</h2>
         <p>{appInfo?.description ?? '本地优先 · 角色扮演 · 跨模型接入的 AI 角色聊天客户端'}</p>
         <a className="btn-grad big" href="/app-release.apk" download="Virtual-Android.apk">

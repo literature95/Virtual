@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../models/chat_theme.dart';
 import '../../providers/chat_provider.dart';
 import '../../theme/design_tokens.dart';
+import '../common/inset_app_bar.dart';
 import 'chat_background.dart';
 
 /// 「对话背景」设置页
@@ -121,7 +122,7 @@ class _ChatBackgroundPageState extends State<ChatBackgroundPage> {
     final hasBackground = _image != null && _image!.trim().isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: InsetAppBar(
         title: const Text('对话背景'),
         actions: [
           IconButton(

@@ -15,6 +15,7 @@ import '../../providers/character_provider.dart';
 import '../../providers/endpoint_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../common/character_cover_card.dart' show resolveAvatarImage;
+import '../common/inset_app_bar.dart';
 import 'chat_background.dart';
 
 /// 聊天页面
@@ -453,14 +454,16 @@ class _ChatPageState extends State<ChatPage> {
         ? context.read<ChatProvider>().conversationBackground(widget.conversationId)
         : null;
 
-    // 背景要铺满整个对话界面（含顶部 AppBar 与底部输入栏），故放在 body 的
-    // Stack 最底层；同时让 AppBar 延伸并透明，使背景透到顶栏之后。
-    final topInset =
-        hasBg ? MediaQuery.of(context).padding.top + kToolbarHeight : 0.0;
+    // 「顶栏避让 + 背景全屏」：用 InsetAppBar 把工具栏下推状态栏；
+    // 设了背景时 AppBar 区透明，背景 Positioned.fill 铺到状态栏后面。
+    // viewPadding 不受 shell 零高 AppBar 的 removeTopPadding 影响。
+    final viewTop = InsetAppBar.statusBarTop(context);
+    final topInset = hasBg ? viewTop + kToolbarHeight : 0.0;
 
     return Scaffold(
       extendBodyBehindAppBar: hasBg,
-      appBar: AppBar(
+      appBar: InsetAppBar(
+        transparent: hasBg,
         // 左上角返回图标：对话页经 ShellRoute 进入，home_shell 的 AppBar 对其隐藏，
         // 故对话页必须自带返回键。用显式 leading 保证「无论 go 还是 push 进入都显示」，
         // 点按优先 pop 回上一页（push 进入时回到来源页），无可 pop 时回角色 Tab 根。
@@ -473,9 +476,6 @@ class _ChatPageState extends State<ChatPage> {
             }
           },
         ),
-        backgroundColor: hasBg ? Colors.transparent : null,
-        elevation: hasBg ? 0 : null,
-        scrolledUnderElevation: hasBg ? 0 : null,
         title: Consumer2<ChatProvider, CharacterProvider>(
           builder: (context, chatProvider, charProvider, _) {
             final conv = chatProvider.currentConversation;

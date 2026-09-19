@@ -95,28 +95,27 @@ class TavoBrand {
     );
   }
 
-  /// 圆角 "T" Logo（品牌渐变底）
+  /// 品牌 mark：与 Web 端统一的渐变几何图标（透明底 PNG）
   static Widget logo({double size = 40, double radiusFactor = 0.3}) {
-    return Container(
+    return Image.asset(
+      'assets/images/app_icon_grad.png',
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        gradient: TavoColors.brandGradient,
-        borderRadius: BorderRadius.circular(size * radiusFactor),
-        boxShadow: [
-          BoxShadow(
-            color: TavoColors.brandPurple.withValues(alpha: 0.35),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Center(
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
+      errorBuilder: (_, __, ___) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          gradient: TavoColors.signGradientDiagonal,
+          borderRadius: BorderRadius.circular(size * 0.22),
+        ),
+        alignment: Alignment.center,
         child: Text(
-          'T',
+          'V',
           style: TextStyle(
             color: Colors.white,
-            fontSize: size * 0.6,
+            fontSize: size * 0.45,
             fontWeight: FontWeight.bold,
             height: 1,
           ),

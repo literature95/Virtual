@@ -43,3 +43,13 @@ generated-images/
 
 # ── 卡片解析派生缓存（10 万+ JSON，不入库）──
 cards-js/
+
+# ── 调试残留（排查时重定向到仓库根的临时输出，不入库）──
+# 例如 ccv2_extracted.json / chars_out.txt / detail*.txt
+ccv2_extracted.json
+chars_out.txt
+detail*.txt
+*_err.txt
+
+# ── APK 部署验证临时文件 ──
+.apk-verify.*.bin
