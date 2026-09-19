@@ -202,26 +202,52 @@ class _PrivacyDialog extends StatelessWidget {
 // 版本更新弹窗 — 对应截图 #5（火箭图 + 更新日志列表）
 // ════════════════════════════════════════════════════════════════════
 
+/// 版本弹窗：changelog=升级后日志；available=发现远端新包可下载
+enum UpdateDialogMode { changelog, available }
+
 Future<void> showUpdateDialog(
   BuildContext context, {
   required String version,
   List<String> changes = const [],
+  String? currentVersion,
+  String? downloadUrl,
+  UpdateDialogMode mode = UpdateDialogMode.changelog,
 }) async {
   await showDialog<void>(
     context: context,
     barrierDismissible: true,
-    builder: (ctx) => _UpdateDialog(version: version, changes: changes),
+    builder: (ctx) => _UpdateDialog(
+      version: version,
+      changes: changes,
+      currentVersion: currentVersion,
+      downloadUrl: downloadUrl,
+      mode: mode,
+    ),
   );
 }
 
 class _UpdateDialog extends StatelessWidget {
   final String version;
   final List<String> changes;
+  final String? currentVersion;
+  final String? downloadUrl;
+  final UpdateDialogMode mode;
 
-  const _UpdateDialog({required this.version, this.changes = const []});
+  const _UpdateDialog({
+    required this.version,
+    this.changes = const [],
+    this.currentVersion,
+    this.downloadUrl,
+    this.mode = UpdateDialogMode.changelog,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final isAvailable = mode == UpdateDialogMode.available;
+    final url = downloadUrl?.trim().isNotEmpty == true
+        ? downloadUrl!.trim()
+        : 'https://virtual.literature95.com/app-release.apk';
+
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 28),
@@ -246,7 +272,6 @@ class _UpdateDialog extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  // 火箭图标（用 Icon 替代，assets 无火箭图）
                   Container(
                     width: 80,
                     height: 80,
@@ -261,10 +286,9 @@ class _UpdateDialog extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  // 标题
-                  const Text(
-                    '新版本升级',
-                    style: TextStyle(
+                  Text(
+                    isAvailable ? '发现新版本' : '新版本升级',
+                    style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
                       color: Color(0xFF1A1A2E),
@@ -278,7 +302,9 @@ class _UpdateDialog extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 12),
               child: Text(
-                'v$version',
+                isAvailable && currentVersion != null
+                    ? 'v$currentVersion  →  v$version'
+                    : 'v$version',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
@@ -298,11 +324,9 @@ class _UpdateDialog extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
-                        '- 优化非高级渲染下的长聊天性能\n'
-                        '- 新增 聊天设置 - 性能 - 流式渲染质量\n'
-                        '- 调整 generation:prepare 全管线限时为 55s\n'
-                        '- 修复会话同步偶发失败的问题\n'
-                        '- 修复 MCP Schema 缺失',
+                        isAvailable
+                            ? '检测到服务器上有更新的安装包，建议尽快升级。'
+                            : '- 问题修复与稳定性提升',
                         style: TextStyle(
                             fontSize: 13,
                             height: 1.65,
@@ -336,7 +360,7 @@ class _UpdateDialog extends StatelessWidget {
               child: GestureDetector(
                 onTap: () => Navigator.pop(context),
                 child: Text(
-                  '跳过此版本',
+                  isAvailable ? '稍后再说' : '跳过此版本',
                   style: TextStyle(
                     fontSize: 13.5,
                     color: Colors.grey[500],
@@ -353,7 +377,6 @@ class _UpdateDialog extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
               child: Row(
                 children: [
-                  // 关闭
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => Navigator.pop(context),
@@ -369,12 +392,11 @@ class _UpdateDialog extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 14),
-                  // 立即更新
                   Expanded(
                     child: FilledButton(
                       onPressed: () async {
                         Navigator.pop(context);
-                        final uri = Uri.parse('https://tavo.cc/download');
+                        final uri = Uri.parse(url);
                         if (await canLaunchUrl(uri)) {
                           await launchUrl(uri,
                               mode: LaunchMode.externalApplication);
@@ -388,9 +410,9 @@ class _UpdateDialog extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(vertical: 13),
                         elevation: 0,
                       ),
-                      child: const Text(
-                        '立即更新',
-                        style: TextStyle(
+                      child: Text(
+                        isAvailable ? '立即下载' : '查看下载',
+                        style: const TextStyle(
                             fontSize: 15, fontWeight: FontWeight.w600),
                       ),
                     ),

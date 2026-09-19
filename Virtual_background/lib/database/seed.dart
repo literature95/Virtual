@@ -584,15 +584,17 @@ class SeedData {
   static final Map<String, dynamic> appInfo = {
     'id': 'app-001',
     'name': 'Virtual',
-    'version': '1.0.0',
-    'description': 'Virtual 是一个支持本地优先、角色扮演、跨模型接入的 AI 角色聊天客户端。',
+    'version': '1.0.8+9',
+    'description':
+        'Virtual 是一个支持本地优先、角色扮演、跨模型接入的 AI 角色聊天客户端。',
     'features': [
       {'title': '多模型接入', 'desc': '支持 OpenAI / Anthropic / Gemini / DeepSeek 等'},
       {'title': '角色卡系统', 'desc': '导入、创建、分享你的专属 AI 角色'},
       {'title': '本地优先', 'desc': '数据保存在本地，隐私可控，离线可用'},
       {'title': '流式对话', 'desc': '打字机效果实时输出，更自然的聊天体验'},
+      {'title': '社区发动态', 'desc': '全页发布 + 高德定位'},
     ],
-    'download_url': 'https://virtual.dev/download/virtual-latest.apk',
+    'download_url': 'https://virtual.literature95.com/app-release.apk',
   };
 
   /// 写入 DB（启动时调用）

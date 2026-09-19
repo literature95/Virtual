@@ -1,0 +1,12 @@
+{
+  "version": "1.0.8+9",
+  "downloadUrl": "https://virtual.literature95.com/app-release.apk",
+  "notes": "发动态支持定位；全页发布；品牌图标统一；应用内更新提示",
+  "changes": [
+    "发动态支持定位（高德 Web服务 Key）",
+    "底栏「+」全页发布动态",
+    "品牌图标与 Web 端统一",
+    "应用内检查新版本并提示下载",
+    "对话页状态栏避让 + 背景全屏"
+  ]
+}
