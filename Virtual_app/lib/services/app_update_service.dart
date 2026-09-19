@@ -102,6 +102,9 @@ class AppUpdateService {
   }
 
   /// 语义化版本比较：`1.0.8+9` > `1.0.7+8`；主版本相同再比 build。
+  ///
+  /// [localFull] 应传 `PackageInfo.version + '+' + buildNumber`，
+  /// 否则本地只显示 `1.0.11` 而远端 `1.0.11+12` 会被误判为更新。
   static bool isNewerVersion(String remote, String local) {
     int core(String v) {
       final main = v.split('+').first.trim();
@@ -122,5 +125,33 @@ class AppUpdateService {
     final lm = core(local);
     if (rm != lm) return rm > lm;
     return build(remote) > build(local);
+  }
+
+  /// 手动「检查更新」：返回远端信息；[localFull] 用于比较。
+  Future<({RemoteAppInfo? remote, bool hasUpdate, String message})> checkNow({
+    required String backendBase,
+    required String localFull,
+  }) async {
+    RemoteAppInfo? remote;
+    try {
+      remote = await fetchLatest(backendBase);
+    } catch (_) {
+      remote = null;
+    }
+    if (remote == null) {
+      return (
+        remote: null,
+        hasUpdate: false,
+        message: '无法连接更新服务器，请检查网络或后端地址',
+      );
+    }
+    final newer = isNewerVersion(remote.version, localFull);
+    return (
+      remote: remote,
+      hasUpdate: newer,
+      message: newer
+          ? '发现新版本 v${remote.version}（当前 v$localFull）'
+          : '已是最新版本 v$localFull',
+    );
   }
 }

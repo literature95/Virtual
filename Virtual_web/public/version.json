@@ -1,10 +1,10 @@
 {
-  "version": "1.0.11+12",
+  "version": "1.0.12+13",
   "downloadUrl": "https://virtual.literature95.com/app-release.apk",
-  "notes": "底栏进入发现页时默认停在「发现」角色卡流",
+  "notes": "完善应用内更新检查；设置可手动检查",
   "changes": [
-    "底栏「发现」默认选中中间「发现」Tab",
-    "设置/关于统一 Virtual 品牌",
-    "发现页角色卡竖滑流"
+    "启动更新检查使用完整 version+build",
+    "设置-关于「检查更新」真正对比远端版本",
+    "本地=线上时不弹窗（正确行为）"
   ]
 }

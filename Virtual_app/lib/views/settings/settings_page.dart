@@ -6,9 +6,40 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/metadata_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/app_update_service.dart';
+import '../common/app_dialogs.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
+
+  Future<void> _checkUpdate(BuildContext context) async {
+    final settings = context.read<SettingsProvider>();
+    final info = await PackageInfo.fromPlatform();
+    final localFull = '${info.version}+${info.buildNumber}';
+    final service = AppUpdateService();
+    final result = await service.checkNow(
+      backendBase: settings.backendBaseUrl,
+      localFull: localFull,
+    );
+    if (!context.mounted) return;
+    if (result.hasUpdate && result.remote != null) {
+      await showUpdateDialog(
+        context,
+        version: result.remote!.version,
+        currentVersion: localFull,
+        changes: result.remote!.changes.isEmpty
+            ? const ['请前往官网或 GitHub 下载最新 APK']
+            : result.remote!.changes,
+        downloadUrl:
+            result.remote!.downloadUrl ?? AppUpdateService.fallbackDownloadUrl,
+        mode: UpdateDialogMode.available,
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message)),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -235,9 +266,9 @@ class SettingsPage extends StatelessWidget {
                     ListTile(
                       leading: const Icon(Icons.system_update_alt_outlined),
                       title: const Text('检查更新'),
-                      subtitle: const Text(VirtualBrand.downloadApk),
-                      trailing: const Icon(Icons.open_in_new),
-                      onTap: () => _openUrl(VirtualBrand.downloadApk),
+                      subtitle: Text('当前 $ver · 对比 ${VirtualBrand.homepage}'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _checkUpdate(context),
                     ),
                     for (final entry in context
                         .watch<MetadataProvider>()
