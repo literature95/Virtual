@@ -7,15 +7,18 @@ import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/community_api_service.dart';
 import '../../theme/tavo_brand.dart';
+import 'character_discover_feed.dart';
 import 'compose_post_dialog.dart';
 
 /// 发现页 —— 社区聚合入口（真实数据，对接后端 PostgreSQL）
 ///
-/// 数据来源：Virtual_background /api/posts、/api/follows，与登录账号通过
-/// JWT Bearer token 联动，不再使用任何本地 Mock 假数据。
+/// 数据来源：Virtual_background /api/posts、/api/follows、/api/characters。
 ///
-/// - 关注 Tab：横向关注列表（/api/follows 真实创作者）+ 关注作者的动态（/api/posts?following=1）
-/// - 推荐 Tab：社区分类过滤（/api/posts?community=）+ 全部动态；可按社区筛选、点赞、发布
+/// - 推荐 Tab：社区分类 + 动态流
+/// - **发现 Tab**：竖向角色卡流（点赞/收藏/转发 + 点卡进详情）
+/// - 关注 Tab：已关注创作者动态
+///
+/// 底栏由 HomeShell 提供，本页三个 Tab 均在 Shell 内（底栏始终可见）。
 class DiscoverPage extends StatefulWidget {
   const DiscoverPage({super.key});
 
@@ -41,7 +44,7 @@ class _DiscoverPageState extends State<DiscoverPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _settings = context.read<SettingsProvider>();
     _auth = context.read<AuthProvider>();
     _auth.addListener(_onAuthChanged);
@@ -212,36 +215,44 @@ class _DiscoverPageState extends State<DiscoverPage>
           indicatorSize: TabBarIndicatorSize.label,
           indicatorWeight: 3,
           tabs: const [
-            Tab(text: '关注'),
             Tab(text: '推荐'),
+            Tab(text: '发现'),
+            Tab(text: '关注'),
           ],
         ),
         Expanded(
-          child: showError
-              ? _ErrorState(message: _errorMsg!, onRetry: _load)
-              : TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _FollowingTab(
-                      posts: _followPosts,
-                      following: _following,
-                      loggedIn: loggedIn,
-                      loading: _loading,
-                      onToggleFollow: _onToggleFollow,
-                      onToggleLike: _onToggleLike,
-                      onOpenLogin: _requireLogin,
-                    ),
-                    _RecommendTab(
-                      posts: _recommendPosts,
-                      activeCommunity: _activeCommunity,
-                      loggedIn: loggedIn,
-                      loading: _loading,
-                      onSelectCommunity: _selectCommunity,
-                      onToggleLike: _onToggleLike,
-                      onCompose: _showComposeDialog,
-                    ),
-                  ],
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              // 推荐：社区 API 失败时仅本 Tab 显示错误，不挡「发现」角色卡流
+              if (showError)
+                _ErrorState(message: _errorMsg!, onRetry: _load)
+              else
+                _RecommendTab(
+                  posts: _recommendPosts,
+                  activeCommunity: _activeCommunity,
+                  loggedIn: loggedIn,
+                  loading: _loading,
+                  onSelectCommunity: _selectCommunity,
+                  onToggleLike: _onToggleLike,
+                  onCompose: _showComposeDialog,
                 ),
+              // 中间 Tab：角色卡竖滑流（底栏保留；走 /api/characters）
+              const CharacterDiscoverFeed(),
+              if (showError)
+                _ErrorState(message: _errorMsg!, onRetry: _load)
+              else
+                _FollowingTab(
+                  posts: _followPosts,
+                  following: _following,
+                  loggedIn: loggedIn,
+                  loading: _loading,
+                  onToggleFollow: _onToggleFollow,
+                  onToggleLike: _onToggleLike,
+                  onOpenLogin: _requireLogin,
+                ),
+            ],
+          ),
         ),
       ],
     );
