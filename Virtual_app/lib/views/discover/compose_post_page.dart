@@ -92,6 +92,15 @@ class _ComposePostPageState extends State<ComposePostPage> {
       final place = await AmapLocationService.locate();
       if (!mounted) return;
       setState(() => _place = place);
+      if (place != null && place.isCoordsOnly && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '已获取坐标。若需街道地址，请在高德控制台新建「Web服务」Key 并配置到 App',
+            ),
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

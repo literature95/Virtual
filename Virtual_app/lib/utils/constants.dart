@@ -4,8 +4,11 @@ class AppConstants {
   static const String appName = 'Virtual';
   static const String packageName = 'app.bitbear.virtual';
 
-  /// 高德地图 Key（与 amap_location_service 保持一致；控制台绑定本包名 + SHA1）
+  /// 高德地图：Android 平台 Key（绑包名 + SHA1；勿用于 Web REST）
   static const String amapKey = '59a835b927b9bb78abb1b93a8ee3e3b1';
+
+  /// 高德地图：Web服务 Key（逆地理 REST）
+  static const String amapWebKey = '05c6d2fd7304e5253554d3149c565211';
 
   static const List<Locale> supportedLocales = [
     Locale('zh', 'CN'),

@@ -115,10 +115,14 @@ void main() {
   });
 
   group('高德 Key 与隐私', () {
-    test('Key 与包名约定一致', () {
-      expect(AmapLocationService.amapKey,
+    test('Android Key 与 Web服务 Key 分离（USERKEY_PLAT_NOMATCH 根因）', () {
+      expect(AmapLocationService.amapAndroidKey,
           '59a835b927b9bb78abb1b93a8ee3e3b1');
-      expect(AmapLocationService.amapKey, isNotEmpty);
+      expect(AmapLocationService.amapWebKey,
+          '05c6d2fd7304e5253554d3149c565211');
+      expect(AmapLocationService.amapWebKey,
+          isNot(AmapLocationService.amapAndroidKey));
+      expect(AmapLocationService.amapKey, AmapLocationService.amapAndroidKey);
     });
 
     test('隐私同意可写入并读回', () async {

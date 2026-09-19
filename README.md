@@ -23,8 +23,8 @@ Virtual 是一个**本地优先、跨模型、隐私向**的 AI 角色聊天全�
 
 | 项 | 值 |
 |---|---|
-| **App 版本** | **1.0.6+7**（`Virtual_app/pubspec.yaml`） |
-| **GitHub Release** | [Virtual v1.0.6](https://github.com/literature95/Virtual/releases/tag/v1.0.6)（自本版起对外发版；更早中间包不补历史 Release） |
+| **App 版本** | **1.0.7+8**（`Virtual_app/pubspec.yaml`） |
+| **GitHub Release** | [Virtual v1.0.7](https://github.com/literature95/Virtual/releases/tag/v1.0.7)（自 v1.0.6 起对外发版） |
 | **官网 APK** | https://virtual.literature95.com/app-release.apk |
 | **GitHub 资产** | Release 页附件 `app-release.apk`（与官网应一致） |
 | **PackageName** | `app.bitbear.virtual` |
