@@ -113,7 +113,8 @@ class _PrivacyDialog extends StatelessWidget {
                   Center(
                     child: GestureDetector(
                       onTap: () async {
-                        final uri = Uri.parse('https://tavo.cc/privacy');
+                        final uri = Uri.parse(
+                            'https://virtual.literature95.com/#privacy');
                         if (await canLaunchUrl(uri)) {
                           await launchUrl(uri,
                               mode: LaunchMode.externalApplication);

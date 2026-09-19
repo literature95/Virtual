@@ -1,11 +1,11 @@
 {
-  "version": "1.0.9+10",
+  "version": "1.0.10+11",
   "downloadUrl": "https://virtual.literature95.com/app-release.apk",
-  "notes": "发现页新增角色卡竖滑流；底栏保留",
+  "notes": "品牌清理：设置/关于统一为 Virtual；应用内更新提示",
   "changes": [
-    "发现 Tab：竖向角色卡流（点赞/收藏/转发）",
-    "点角色卡进入在线详情",
-    "底栏菜单始终保留",
-    "发动态高德定位、全页发布"
+    "设置-关于改为 Virtual 品牌与真实版本号",
+    "清理 Tavo/Volink 遗留链接与社媒",
+    "发现页角色卡竖滑流",
+    "启动检查新版本并提示下载"
   ]
 }

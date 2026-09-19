@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -170,64 +171,85 @@ class SettingsPage extends StatelessWidget {
             ),
           ]),
           _buildSection(context, '关于', [
-            Consumer<MetadataProvider>(
-              builder: (context, metadata, _) {
-                final uris = metadata.uris;
+            FutureBuilder<PackageInfo>(
+              future: PackageInfo.fromPlatform(),
+              builder: (context, snap) {
+                final ver = snap.hasData
+                    ? '${snap.data!.version}+${snap.data!.buildNumber}'
+                    : '1.0.0';
+                // 强制 Virtual 品牌，不读远程 Tavo 元数据
+                final uris = context.watch<MetadataProvider>().uris;
                 return Column(
                   children: [
+                    const ListTile(
+                      title: Text('应用名称'),
+                      trailing: Text('Virtual'),
+                    ),
                     ListTile(
                       title: const Text('版本'),
-                      trailing: const Text('1.0.0'),
+                      trailing: Text(ver),
                     ),
-                    if (uris != null) ...[
+                    ListTile(
+                      leading: const Icon(Icons.home_outlined),
+                      title: const Text('官方网站'),
+                      subtitle: const Text(VirtualBrand.homepage),
+                      trailing: const Icon(Icons.open_in_new),
+                      onTap: () => _openUrl(uris.homepage),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.help_outline),
+                      title: const Text('帮助文档'),
+                      subtitle: Text(uris.help),
+                      trailing: const Icon(Icons.open_in_new),
+                      onTap: () => _openUrl(uris.help),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.privacy_tip_outlined),
+                      title: const Text('隐私政策'),
+                      subtitle: Text(uris.privacyPolicy),
+                      trailing: const Icon(Icons.open_in_new),
+                      onTap: () => _openUrl(uris.privacyPolicy),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.description_outlined),
+                      title: const Text('服务条款'),
+                      subtitle: Text(uris.termsOfService),
+                      trailing: const Icon(Icons.open_in_new),
+                      onTap: () => _openUrl(uris.termsOfService),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.mail_outline),
+                      title: const Text('联系客服'),
+                      subtitle: Text(uris.customerServiceEmail),
+                      trailing: const Icon(Icons.open_in_new),
+                      onTap: () async {
+                        final email = Uri(
+                          scheme: 'mailto',
+                          path: uris.customerServiceEmail,
+                        );
+                        if (await canLaunchUrl(email)) {
+                          await launchUrl(email);
+                        }
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.system_update_alt_outlined),
+                      title: const Text('检查更新'),
+                      subtitle: const Text(VirtualBrand.downloadApk),
+                      trailing: const Icon(Icons.open_in_new),
+                      onTap: () => _openUrl(VirtualBrand.downloadApk),
+                    ),
+                    for (final entry in context
+                        .watch<MetadataProvider>()
+                        .socials
+                        .entries)
                       ListTile(
-                        leading: const Icon(Icons.home_outlined),
-                        title: const Text('官方网站'),
+                        leading: const Icon(Icons.link),
+                        title: Text(_socialTitle(entry.key)),
+                        subtitle: Text(entry.value.url),
                         trailing: const Icon(Icons.open_in_new),
-                        onTap: () => _openUrl(uris.homepage),
+                        onTap: () => _openUrl(entry.value.url),
                       ),
-                      ListTile(
-                        leading: const Icon(Icons.help_outline),
-                        title: const Text('帮助文档'),
-                        trailing: const Icon(Icons.open_in_new),
-                        onTap: () => _openUrl(uris.help),
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.privacy_tip_outlined),
-                        title: const Text('隐私政策'),
-                        trailing: const Icon(Icons.open_in_new),
-                        onTap: () => _openUrl(uris.privacyPolicy),
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.description_outlined),
-                        title: const Text('服务条款'),
-                        trailing: const Icon(Icons.open_in_new),
-                        onTap: () => _openUrl(uris.termsOfService),
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.mail_outline),
-                        title: const Text('联系客服'),
-                        subtitle: Text(uris.customerServiceEmail),
-                        trailing: const Icon(Icons.open_in_new),
-                        onTap: () async {
-                          final email = Uri(
-                            scheme: 'mailto',
-                            path: uris.customerServiceEmail,
-                          );
-                          if (await canLaunchUrl(email)) {
-                            await launchUrl(email);
-                          }
-                        },
-                      ),
-                      for (final entry in metadata.socials.entries)
-                        ListTile(
-                          leading: const Icon(Icons.link),
-                          title: Text(_socialTitle(entry.key)),
-                          subtitle: Text(entry.value.url),
-                          trailing: const Icon(Icons.open_in_new),
-                          onTap: () => _openUrl(entry.value.url),
-                        ),
-                    ],
                   ],
                 );
               },
