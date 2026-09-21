@@ -1,7 +1,7 @@
 name: virtual
 description: Virtual - AI Character Chat Client
 publish_to: 'none'
-version: 1.0.12+13
+version: 1.0.14+15
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -116,6 +116,7 @@ flutter:
     - assets/images/
     - assets/lotties/
     - assets/registry/
+    - assets/legal/
     - assets/metadata_default.json
     - assets/dist/
     - assets/dist/css/

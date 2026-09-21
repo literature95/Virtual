@@ -7,8 +7,9 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../theme/tavo_brand.dart';
+import 'legal_docs.dart';
 
-/// 注册页 —— 邮箱 + 验证码 + 密码（验证码走后端邮箱发送）
+/// 注册页 —— 邮箱 + 验证码 + 密码 + **协议勾选**（验证码走后端邮箱发送）
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
 
@@ -23,6 +24,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final _nicknameCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
+  bool _agreed = false;
   Timer? _cooldownTimer;
   int _cooldown = 0;
   String? _error;
@@ -67,6 +69,10 @@ class _RegisterPageState extends State<RegisterPage> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (!_agreed) {
+      setState(() => _error = '请先阅读并勾选同意用户协议、隐私政策、产品服务协议');
+      return;
+    }
     setState(() => _error = null);
     final backend = context.read<SettingsProvider>().backendBaseUrl;
     try {
@@ -193,9 +199,26 @@ class _RegisterPageState extends State<RegisterPage> {
                       style: TextStyle(color: scheme.error, fontSize: 12.5),
                     ),
                   ],
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 14),
+                  LegalAgreementRow(
+                    value: _agreed,
+                    onChanged: (v) => setState(() {
+                      _agreed = v ?? false;
+                      if (_agreed) _error = null;
+                    }),
+                  ),
+                  const SizedBox(height: 16),
                   TavoBrand.gradientButton(
-                    onPressed: busy ? null : _submit,
+                    onPressed: busy
+                        ? null
+                        : () {
+                            if (!_agreed) {
+                              setState(() =>
+                                  _error = '请先阅读并勾选同意用户协议、隐私政策、产品服务协议');
+                              return;
+                            }
+                            _submit();
+                          },
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     child: busy
                         ? const SizedBox(

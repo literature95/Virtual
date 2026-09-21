@@ -6,12 +6,15 @@ import '../../providers/settings_provider.dart';
 import '../../services/app_update_service.dart';
 import 'app_dialogs.dart';
 
-/// 启动后检测更新并弹窗。
+/// **每次冷启动**都做版本校验（用户要求）。
 ///
-/// 1. **发现新版本**（远端 > 本地）：询问是否下载 APK —— 这是用户要的「软件里弹更新提示」。
-/// 2. **升级后首启**（本地 version ≠ lastSeenVersion）：展示本版更新日志。
+/// 行为：
+/// 1. 启动约 1.5s 后请求 `{backend}/version.json`（失败则 `/api/app-info`）
+/// 2. 若远端 **严格高于** 本机 `version+build` → 弹「发现新版本」可下载
+/// 3. 远端 ≤ 本机 → 静默（不打断）；升级后首启可看本版日志
+/// 4. **不再永久屏蔽**同一远端版本：每次启动都会重新校验，过期未升级会再提示
 ///
-/// 远端版本来源：`/version.json` → 回退 `/api/app-info`。
+/// 注意：≤1.0.7 的安装包没有本逻辑，需先手动装一次 ≥1.0.8。
 class UpdateChecker extends StatefulWidget {
   final Widget child;
 
@@ -22,25 +25,24 @@ class UpdateChecker extends StatefulWidget {
 }
 
 class _UpdateCheckerState extends State<UpdateChecker> {
-  bool _checked = false;
+  bool _checking = false;
   final _service = AppUpdateService();
 
   @override
   void initState() {
     super.initState();
-    // 稍延迟，避免抢首帧/登录弹窗
+    // 每次启动（State 创建即冷启动）都校验
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future<void>.delayed(const Duration(seconds: 2), _check);
+      Future<void>.delayed(const Duration(milliseconds: 1500), _check);
     });
   }
 
   Future<void> _check() async {
-    if (_checked || !mounted) return;
-    _checked = true;
+    if (_checking || !mounted) return;
+    _checking = true;
 
     final settings = context.read<SettingsProvider>();
     final info = await PackageInfo.fromPlatform();
-    // 必须带上 buildNumber：pubspec 的 x.y.z+build，version 字段只是 x.y.z
     final current = '${info.version}+${info.buildNumber}';
     final last = settings.lastSeenVersion;
 
@@ -51,8 +53,7 @@ class _UpdateCheckerState extends State<UpdateChecker> {
       remote = null;
     }
 
-    // ── 1. 远端**严格更新** → 弹「发现新版本」 ──
-    // 本地已等于线上时（例如均为 1.0.11+12）**不弹**，这是预期行为。
+    // ── 远端更新：每次启动校验，只要仍落后就提示 ──
     if (remote != null &&
         AppUpdateService.isNewerVersion(remote.version, current) &&
         mounted) {
@@ -62,44 +63,46 @@ class _UpdateCheckerState extends State<UpdateChecker> {
         currentVersion: current,
         changes: remote.changes.isEmpty
             ? const [
-                '修复发动态定位（高德 Web服务 Key）',
-                '全页发布动态',
-                '品牌图标与 Web 端统一',
-                '对话页状态栏避让',
+                '请升级到最新版 Virtual',
+                '可前往官网或 GitHub Releases 下载',
               ]
             : remote.changes,
         downloadUrl: remote.downloadUrl ?? AppUpdateService.fallbackDownloadUrl,
         mode: UpdateDialogMode.available,
       );
+      // 记录「见过该远端版本」仅用于升级日志；**不阻止**下次启动再校验/再提示
       settings.setLastSeenVersion('seen-remote:${remote.version}');
+      if (mounted) setState(() => _checking = false);
       return;
     }
 
-    // ── 2. 本机刚升级：展示更新日志 ──
-    // last 存的可能是 x.y.z（旧逻辑）或 x.y.z+build，比较时只看主版本号变化
+    // ── 本机主版本号变化：展示升级日志（仅一次）──
     final lastCore = last?.split('+').first;
     final curCore = current.split('+').first;
     if (last != null &&
         last != current &&
         lastCore != curCore &&
-        !last.startsWith('seen-remote:') &&
+        !(last.startsWith('seen-remote:') &&
+            last.contains(curCore)) &&
         mounted) {
       await showUpdateDialog(
         context,
         version: info.version,
         currentVersion: current,
         changes: const [
-          '底栏「发现」默认进入角色卡流',
-          '设置/关于统一 Virtual 品牌',
-          '发动态定位与全页发布',
-          '问题修复与稳定性提升',
+          '发现页角色卡流与 Virtual 品牌统一',
+          '发动态定位 / 全页发布',
+          '应用内每次启动检查更新',
         ],
         downloadUrl: AppUpdateService.fallbackDownloadUrl,
         mode: UpdateDialogMode.changelog,
       );
     }
 
-    if (mounted) settings.setLastSeenVersion(current);
+    if (mounted) {
+      settings.setLastSeenVersion(current);
+      setState(() => _checking = false);
+    }
   }
 
   @override

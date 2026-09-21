@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="theme-color" content="#0e0e0e"/>
+<title>Virtual · 版本校验</title>
+<style>
+  :root{
+    --bg:#0e0e0e;--elev:#161519;--text:#e8e8e8;--dim:#a3a3a3;--line:rgba(255,255,255,.08);
+    --violet:#7e4df1;--coral:#e3756e;--amber:#e58029;
+    --grad:linear-gradient(100deg,#7e4df1 0%,#e3756e 78%,#e58029 100%);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+    background:#000;color:var(--text);
+    display:flex;align-items:center;justify-content:center;
+    min-height:100dvh;
+  }
+  .app{
+    width:100%;max-width:390px;height:100dvh;max-height:844px;
+    background:var(--bg);display:flex;flex-direction:column;
+    position:relative;overflow:hidden;
+    border:1px solid #222;
+  }
+  .status{
+    height:env(safe-area-inset-top,20px);min-height:20px;
+  }
+  .top{
+    padding:8px 16px 12px;display:flex;align-items:center;gap:10px;
+  }
+  .mark{width:28px;height:28px;flex:0 0 28px}
+  .title{font-size:17px;font-weight:700}
+  .body{flex:1;padding:8px 20px 20px;display:flex;flex-direction:column;gap:16px}
+  .card{
+    background:var(--elev);border:1px solid var(--line);border-radius:16px;padding:16px;
+  }
+  .label{font-size:12px;color:var(--dim);margin-bottom:6px}
+  .val{font-size:15px;font-weight:600}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:none}
+  .log{
+    font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+    font-size:11.5px;color:#9ad0ff;background:#121212;
+    border-radius:10px;padding:12px;max-height:160px;overflow:auto;
+    line-height:1.55;white-space:pre-wrap;
+  }
+  .btn{
+    border:none;border-radius:14px;padding:14px;width:100%;
+    font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;
+    color:#fff;background:var(--grad);
+  }
+  .btn.ghost{
+    background:transparent;border:1px solid var(--line);color:var(--text);font-weight:600;
+  }
+  .nav{
+    display:flex;border-top:1px solid var(--line);
+    padding:8px 4px calc(8px + env(safe-area-inset-bottom,0px));
+    background:rgba(14,14,14,.96);
+  }
+  .nav button{
+    flex:1;background:none;border:none;color:var(--dim);
+    font-size:10px;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px;
+    padding:6px 0;cursor:pointer;
+  }
+  .nav button.on{color:#fff}
+  .nav svg{width:22px;height:22px}
+  .plus{width:40px;height:40px;border-radius:12px;background:#141414;border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;color:#fff}
+
+  /* update modal */
+  .mask{
+    position:absolute;inset:0;background:rgba(0,0,0,.55);
+    display:none;align-items:center;justify-content:center;padding:24px;z-index:20;
+  }
+  .mask.open{display:flex}
+  .modal{
+    width:100%;max-width:300px;background:#fff;color:#1a1a2e;border-radius:20px;overflow:hidden;
+  }
+  .modal-top{
+    background:linear-gradient(180deg,#e3f0fd,#f0e8ff);padding:28px 20px 18px;text-align:center;
+  }
+  .modal-top .ico{
+    width:72px;height:72px;border-radius:50%;background:rgba(255,255,255,.55);
+    display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:32px;
+  }
+  .modal-top h3{font-size:17px;font-weight:700;margin-bottom:4px}
+  .modal-top p{font-size:13px;color:#666}
+  .modal-body{padding:14px 20px 8px;font-size:12.5px;color:#444;line-height:1.6}
+  .modal-acts{display:flex;gap:10px;padding:8px 16px 18px}
+  .modal-acts button{
+    flex:1;border-radius:999px;padding:12px;font-size:14px;font-family:inherit;font-weight:600;cursor:pointer;border:none;
+  }
+  .modal-acts .no{background:#f3f3f3;color:#666}
+  .modal-acts .yes{background:#7f77dd;color:#fff}
+  .toast{
+    position:absolute;left:20px;right:20px;bottom:78px;z-index:30;
+    background:#222;color:#eee;font-size:13px;border-radius:12px;padding:12px 14px;
+    text-align:center;opacity:0;transform:translateY(8px);transition:.25s;pointer-events:none;
+  }
+  .toast.show{opacity:1;transform:translateY(0)}
+  .hint{font-size:11px;color:var(--dim);line-height:1.5;text-align:center;padding:0 8px}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="status"></div>
+  <div class="top">
+    <img class="mark" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpolygon points='28,8 52,8 36,30 12,30' fill='%237E4DF1'/%3E%3Cpolygon points='24,36 40,36 34,46 18,46' fill='%23E3756E'/%3E%3Cpolygon points='28,42 48,42 40,56 20,56' fill='%23E58029'/%3E%3C/svg%3E"/>
+    <div class="title">Virtual</div>
+  </div>
+  <div class="body">
+    <div class="card">
+      <div class="row">
+        <div><div class="label">本机版本（手机）</div><div class="val" id="localVer">1.0.10+11</div></div>
+        <div style="text-align:right"><div class="label">线上最新</div><div class="val" id="remoteVer">…</div></div>
+      </div>
+      <div class="row">
+        <div class="label" style="margin:0">校验策略</div>
+        <div class="val" style="font-size:13px;font-weight:500">每次启动都检查</div>
+      </div>
+      <div class="row">
+        <div class="label" style="margin:0">版本源</div>
+        <div class="val" style="font-size:12px;font-weight:500;color:var(--dim)" id="src">…</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">校验日志</div>
+      <div class="log" id="log">准备检查…</div>
+    </div>
+
+    <button class="btn" id="btnCheck">立即检查更新</button>
+    <button class="btn ghost" id="btnOpen">打开下载页</button>
+    <p class="hint">说明：手机上若仍是 ≤1.0.7，需先手动安装一次新包；从 1.0.8 起每次启动会自动校验。本页可把「本机版本」改成你手机上的版本做模拟。</p>
+  </div>
+
+  <div class="mask" id="mask">
+    <div class="modal">
+      <div class="modal-top">
+        <div class="ico">🚀</div>
+        <h3>发现新版本</h3>
+        <p id="modalVer">v1.0.10+11 → v…</p>
+      </div>
+      <div class="modal-body" id="modalChanges">检测到服务器上有更新的安装包</div>
+      <div class="modal-acts">
+        <button class="no" id="btnLater">稍后再说</button>
+        <button class="yes" id="btnDl">立即下载</button>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <div class="nav">
+    <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 11l8-7 8 7v9H4z"/></svg>首页</button>
+    <button class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M14.5 9.5l-1.2 3.8-3.8 1.2 1.2-3.8z"/></svg>发现</button>
+    <button><span class="plus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></span></button>
+    <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="9" r="3.5"/><path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5"/></svg>角色</button>
+    <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4.5 20c1.8-3.8 4.5-5.5 7.5-5.5S17.7 16.2 19.5 20"/></svg>我的</button>
+  </div>
+</div>
+
+<script>
+const VERSION_APIS = [
+  'https://virtual.literature95.com/version.json',
+  'https://virtual.literature95.com/api/app-info',
+];
+const FALLBACK_DL = 'https://virtual.literature95.com/app-release.apk';
+
+const el = (id) => document.getElementById(id);
+const logEl = el('log');
+const toastEl = el('toast');
+
+function log(msg) {
+  const t = new Date().toLocaleTimeString();
+  logEl.textContent = `[${t}] ${msg}\n` + logEl.textContent;
+}
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+function parseVer(v) {
+  const [core, b] = String(v).split('+');
+  const p = core.split('.').map((x) => parseInt(x, 10) || 0);
+  while (p.length < 3) p.push(0);
+  return { core: p[0] * 1e6 + p[1] * 1e3 + p[2], build: parseInt(b || '0', 10) || 0 };
+}
+function isNewer(remote, local) {
+  const r = parseVer(remote), l = parseVer(local);
+  if (r.core !== l.core) return r.core > l.core;
+  return r.build > l.build;
+}
+
+async function fetchRemote() {
+  for (const url of VERSION_APIS) {
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const version = data.version || '';
+      if (!version) throw new Error('无 version 字段');
+      const downloadUrl = data.downloadUrl || data.download_url || FALLBACK_DL;
+      const changes = Array.isArray(data.changes) ? data.changes : [];
+      return { version, downloadUrl, changes, url };
+    } catch (e) {
+      log(`✗ ${url} → ${e.message || e}`);
+    }
+  }
+  return null;
+}
+
+async function checkUpdate({ silentOk = false } = {}) {
+  const local = el('localVer').textContent.trim();
+  el('btnCheck').disabled = true;
+  log(`启动校验：本机 ${local}（每次打开软件都会执行）`);
+  log('请求 version.json …');
+  const remote = await fetchRemote();
+  el('btnCheck').disabled = false;
+
+  if (!remote) {
+    el('remoteVer').textContent = '获取失败';
+    el('src').textContent = '网络错误';
+    toast('无法连接更新服务器');
+    return;
+  }
+
+  el('remoteVer').textContent = remote.version;
+  el('src').textContent = remote.url.replace('https://', '');
+  log(`线上最新 ${remote.version}`);
+
+  const newer = isNewer(remote.version, local);
+  if (newer) {
+    log(`✓ 远端更高 → 弹「发现新版本」`);
+    el('modalVer').textContent = `v${local} → v${remote.version}`;
+    el('modalChanges').innerHTML =
+      (remote.changes.length
+        ? remote.changes.map((c) => '· ' + c).join('<br/>')
+        : '检测到服务器上有更新的安装包，建议尽快升级。') +
+      `<br/><br/><span style="color:#888">下载：${remote.downloadUrl}</span>`;
+    el('mask').classList.add('open');
+  } else {
+    log(`✓ 本机已是最新，不弹窗`);
+    if (!silentOk) toast(`已是最新版本 v${local}`);
+  }
+}
+
+el('btnCheck').onclick = () => checkUpdate();
+el('btnOpen').onclick = () => window.open(FALLBACK_DL, '_blank');
+el('btnLater').onclick = () => { el('mask').classList.remove('open'); log('用户选择「稍后再说」（下次启动仍会校验）'); };
+el('btnDl').onclick = () => { window.open(FALLBACK_DL, '_blank'); log('打开下载页'); };
+
+// 模拟：点击本机版本可在 1.0.10+11 / 1.0.12+13 间切换
+const versions = ['1.0.10+11', '1.0.12+13', '1.0.13+14'];
+let vi = 0;
+el('localVer').onclick = () => {
+  vi = (vi + 1) % versions.length;
+  el('localVer').textContent = versions[vi];
+  log(`（模拟）本机版本 → ${versions[vi]}`);
+};
+
+// 打开 App 即自动校验
+setTimeout(() => checkUpdate({ silentOk: true }), 600);
+</script>
+</body>
+</html>
