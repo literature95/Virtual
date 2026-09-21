@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-/// 「更多」设置中心页 — 对应官方截图 #10 的完整分组列表
+import '../common/inset_app_bar.dart';
+
+/// 「更多」设置中心页 — 返回与标题在同一顶栏（避免 shell 双层栏）
 class MorePage extends StatelessWidget {
   const MorePage({super.key});
 
@@ -9,9 +11,19 @@ class MorePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
+      appBar: InsetAppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/profile');
+            }
+          },
+        ),
         title: const Text('更多'),
-        elevation: 0,
+        centerTitle: true,
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),

@@ -8,6 +8,7 @@ import '../../providers/metadata_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/app_update_service.dart';
 import '../common/app_dialogs.dart';
+// VirtualBrand 定义于 metadata_provider.dart（已 import）
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -292,11 +293,8 @@ class SettingsPage extends StatelessWidget {
   }
 
   Future<void> _openUrl(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    // 与更新弹窗同一策略：不依赖 canLaunchUrl
+    await openExternalUrl(url);
   }
 
   String _socialTitle(String key) {

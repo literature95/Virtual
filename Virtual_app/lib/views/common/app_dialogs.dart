@@ -3,6 +3,33 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../theme/tavo_brand.dart';
 
+/// 用系统浏览器/下载管理器打开链接。
+///
+/// Android 上 `canLaunchUrl` 常因 package visibility 返回 false，
+/// 导致「立即更新」点了没反应 —— 这里**不再用 canLaunchUrl 作前置门槛**，
+/// 直接 launchUrl，并在失败时回退其它 mode。
+Future<bool> openExternalUrl(String raw) async {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return false;
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null || !uri.hasScheme) return false;
+
+  const modes = <LaunchMode>[
+    LaunchMode.externalApplication,
+    LaunchMode.platformDefault,
+    LaunchMode.inAppBrowserView,
+  ];
+  for (final mode in modes) {
+    try {
+      final ok = await launchUrl(uri, mode: mode);
+      if (ok) return true;
+    } catch (_) {
+      // 尝试下一 mode
+    }
+  }
+  return false;
+}
+
 // ════════════════════════════════════════════════════════════════════
 // 隐私弹窗 — 对应截图 #4（盾牌图标 + 数据隐私说明）
 // ════════════════════════════════════════════════════════════════════
@@ -396,11 +423,14 @@ class _UpdateDialog extends StatelessWidget {
                   Expanded(
                     child: FilledButton(
                       onPressed: () async {
-                        Navigator.pop(context);
-                        final uri = Uri.parse(url);
-                        if (await canLaunchUrl(uri)) {
-                          await launchUrl(uri,
-                              mode: LaunchMode.externalApplication);
+                        final messenger = ScaffoldMessenger.maybeOf(context);
+                        final nav = Navigator.of(context, rootNavigator: true);
+                        nav.pop();
+                        final ok = await openExternalUrl(url);
+                        if (!ok && messenger != null) {
+                          messenger.showSnackBar(
+                            SnackBar(content: Text('无法打开下载页：$url')),
+                          );
                         }
                       },
                       style: FilledButton.styleFrom(

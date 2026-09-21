@@ -120,6 +120,7 @@ class HomeShell extends StatelessWidget {
     // 搜索筛选页 / 分类页：自带「返回 + 搜索框 + 搜索」一体化 AppBar
     if (loc == '/home/search' || loc.startsWith('/home/category/')) return true;
     // 对话页：/chat、/chat/:id；角色 Tab：/characters；我的页：/profile
+    // **更多 /more**：页面自带顶栏（返回+标题同一行），shell 必须隐藏，否则双层栏
     // 角色卡详情：/home/character/:id（沉浸式立绘，extendBodyBehindAppBar）
     // 接口页：/endpoints、/endpoint/new、/endpoint/:id/edit
     return loc == '/chat' ||
@@ -128,6 +129,8 @@ class HomeShell extends StatelessWidget {
         loc.startsWith('/home/character/') ||
         loc.startsWith('/endpoint') ||
         loc.startsWith('/settings') ||
+        loc == '/more' ||
+        loc.startsWith('/more/') ||
         loc == '/profile';
   }
 
