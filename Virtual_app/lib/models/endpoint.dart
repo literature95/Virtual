@@ -8,6 +8,30 @@ enum EndpointKind {
   webSearch, // 网页搜索
 }
 
+/// 端点接入方式
+/// - [access]：接入——走云端 API（OpenAI/Anthropic/Gemini 兼容服务）
+/// - [deploy]：部署——走本机本地模型（nobodywho，仅移动端/桌面端，web 不支持）
+enum EndpointMode {
+  access, // 接入（云端 API）
+  deploy; // 部署（本地模型）
+
+  String get displayName => switch (this) {
+        EndpointMode.access => '接入',
+        EndpointMode.deploy => '部署',
+      };
+
+  String get description => switch (this) {
+        EndpointMode.access => '云端 API，填 Base URL / API Key',
+        EndpointMode.deploy => '本机运行本地模型（GGUF），无需联网',
+      };
+
+  static EndpointMode fromJson(String? value) =>
+      EndpointMode.values.firstWhere(
+        (m) => m.name == value,
+        orElse: () => EndpointMode.access, // 旧数据无该字段时按接入处理
+      );
+}
+
 /// 端点参数值类型
 enum EndpointParamValueType {
   string,
@@ -54,6 +78,29 @@ class LlmEndpoint {
   final DateTime updatedAt;
   final Map<String, String> customParams;
 
+  // ===== 部署（本地模型）相关：仅 mode == EndpointMode.deploy 时生效 =====
+  /// 接入方式（云端 API / 本地模型）。旧 JSON 缺省时按 [EndpointMode.access]
+  final EndpointMode mode;
+  /// 本地 GGUF 模型文件绝对路径（暂不支持下载/校验，需手动放置后填写）
+  final String localModelPath;
+  /// 本地推理上下文长度（token）
+  final int contextSize;
+  /// 是否把模型层 offload 到 GPU（设备不支持时引擎自动回退 CPU）
+  final bool useGpu;
+  /// 推理线程数，0 = 引擎按 CPU 核数自动
+  final int threadCount;
+  /// 采样温度（0~2，越低越确定）
+  final double temperature;
+  /// 核采样 top-p（0~1）
+  final double topP;
+  /// 单次生成最大 token 数
+  final int maxTokens;
+
+  static const int kDefaultContextSize = 4096;
+  static const int kDefaultMaxTokens = 1024;
+  static const double kDefaultTemperature = 0.7;
+  static const double kDefaultTopP = 0.9;
+
   LlmEndpoint({
     required this.id,
     required this.name,
@@ -68,7 +115,19 @@ class LlmEndpoint {
     required this.createdAt,
     required this.updatedAt,
     this.customParams = const {},
-  });
+    this.mode = EndpointMode.access,
+    this.localModelPath = '',
+    int contextSize = kDefaultContextSize,
+    this.useGpu = true,
+    int threadCount = 0,
+    double temperature = kDefaultTemperature,
+    double topP = kDefaultTopP,
+    int maxTokens = kDefaultMaxTokens,
+  })  : contextSize = contextSize.clamp(512, 131072).toInt(),
+        threadCount = threadCount.clamp(0, 64).toInt(),
+        temperature = temperature.clamp(0.0, 2.0).toDouble(),
+        topP = topP.clamp(0.0, 1.0).toDouble(),
+        maxTokens = maxTokens.clamp(1, 32768).toInt();
 
   LlmEndpoint copyWith({
     String? id,
@@ -84,6 +143,14 @@ class LlmEndpoint {
     DateTime? createdAt,
     DateTime? updatedAt,
     Map<String, String>? customParams,
+    EndpointMode? mode,
+    String? localModelPath,
+    int? contextSize,
+    bool? useGpu,
+    int? threadCount,
+    double? temperature,
+    double? topP,
+    int? maxTokens,
   }) {
     return LlmEndpoint(
       id: id ?? this.id,
@@ -99,6 +166,14 @@ class LlmEndpoint {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
       customParams: customParams ?? this.customParams,
+      mode: mode ?? this.mode,
+      localModelPath: localModelPath ?? this.localModelPath,
+      contextSize: contextSize ?? this.contextSize,
+      useGpu: useGpu ?? this.useGpu,
+      threadCount: threadCount ?? this.threadCount,
+      temperature: temperature ?? this.temperature,
+      topP: topP ?? this.topP,
+      maxTokens: maxTokens ?? this.maxTokens,
     );
   }
 
@@ -116,6 +191,14 @@ class LlmEndpoint {
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
         'customParams': customParams,
+        'mode': mode.name,
+        'localModelPath': localModelPath,
+        'contextSize': contextSize,
+        'useGpu': useGpu,
+        'threadCount': threadCount,
+        'temperature': temperature,
+        'topP': topP,
+        'maxTokens': maxTokens,
       };
 
   factory LlmEndpoint.fromJson(Map<String, dynamic> json) => LlmEndpoint(
@@ -135,6 +218,15 @@ class LlmEndpoint {
         createdAt: DateTime.parse(json['createdAt']),
         updatedAt: DateTime.parse(json['updatedAt']),
         customParams: Map<String, String>.from(json['customParams'] ?? {}),
+        mode: EndpointMode.fromJson(json['mode'] as String?),
+        localModelPath: json['localModelPath'] ?? '',
+        contextSize: (json['contextSize'] as num?)?.toInt() ?? kDefaultContextSize,
+        useGpu: json['useGpu'] as bool? ?? true,
+        threadCount: (json['threadCount'] as num?)?.toInt() ?? 0,
+        temperature:
+            (json['temperature'] as num?)?.toDouble() ?? kDefaultTemperature,
+        topP: (json['topP'] as num?)?.toDouble() ?? kDefaultTopP,
+        maxTokens: (json['maxTokens'] as num?)?.toInt() ?? kDefaultMaxTokens,
       );
 
   /// 生效模型：默认模型仍存在时用它，否则回落列表第一个

@@ -42,6 +42,28 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
   bool _testingConnection = false;
   Map<String, String> _customParams = {};
 
+  // ===== 部署型（本地模型）字段 =====
+  EndpointMode _mode = EndpointMode.access;
+  final _localModelPathController = TextEditingController();
+  final _contextSizeController = TextEditingController();
+  final _maxTokensController = TextEditingController();
+  final _temperatureController = TextEditingController();
+  final _topPController = TextEditingController();
+  int _contextSize = LlmEndpoint.kDefaultContextSize;
+  bool _useGpu = true;
+  int _threadCount = 0;
+  double _temperature = LlmEndpoint.kDefaultTemperature;
+  double _topP = LlmEndpoint.kDefaultTopP;
+  int _maxTokens = LlmEndpoint.kDefaultMaxTokens;
+
+  /// 同步部署型数值字段到 controller（仅初始化/加载时调用）
+  void _syncDeployControllers() {
+    _contextSizeController.text = '$_contextSize';
+    _maxTokensController.text = '$_maxTokens';
+    _temperatureController.text = _temperature.toStringAsFixed(2);
+    _topPController.text = _topP.toStringAsFixed(2);
+  }
+
   static const List<Map<String, String>> _platforms = [
     {'key': 'openai', 'name': 'OpenAI 兼容', 'url': 'https://api.openai.com/v1'},
     {
@@ -126,7 +148,16 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
       _selectedModels = List.from(endpoint.models);
       _defaultModelId = endpoint.defaultModelId;
       _customParams = Map.from(endpoint.customParams);
+      _mode = endpoint.mode;
+      _localModelPathController.text = endpoint.localModelPath;
+      _contextSize = endpoint.contextSize;
+      _useGpu = endpoint.useGpu;
+      _threadCount = endpoint.threadCount;
+      _temperature = endpoint.temperature;
+      _topP = endpoint.topP;
+      _maxTokens = endpoint.maxTokens;
     }
+    _syncDeployControllers();
 
     if (mounted) {
       setState(() => _isLoading = false);
@@ -141,6 +172,11 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
     _modelSearchController.dispose();
     _customModelIdController.dispose();
     _customModelNameController.dispose();
+    _localModelPathController.dispose();
+    _contextSizeController.dispose();
+    _maxTokensController.dispose();
+    _temperatureController.dispose();
+    _topPController.dispose();
     super.dispose();
   }
 
@@ -359,17 +395,37 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
       );
       return;
     }
-    if (baseUrl.isEmpty) {
+    if (_mode == EndpointMode.access) {
+      if (baseUrl.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请输入 Base URL')),
+        );
+        return;
+      }
+      if (apiKey.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请输入 API Key')),
+        );
+        return;
+      }
+    } else if (_localModelPathController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入 Base URL')),
+        const SnackBar(content: Text('请填写本地模型 GGUF 文件路径')),
       );
       return;
     }
-    if (apiKey.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入 API Key')),
-      );
-      return;
+
+    // 部署型端点没有远端模型列表：注入一个占位本地模型，
+    // 避免对话页「未选择模型」校验拦截（模型选择对本地推理无实际影响）。
+    if (_mode == EndpointMode.deploy && _selectedModels.isEmpty) {
+      _selectedModels = [
+        LlmModelDescriptor(
+          id: 'local',
+          name: '本地模型',
+          contextLength: _contextSize,
+        ),
+      ];
+      _defaultModelId = 'local';
     }
 
     final provider = context.read<EndpointProvider>();
@@ -390,6 +446,14 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
         isDefault: _isDefault,
         enabled: _enabled,
         customParams: _customParams,
+        mode: _mode,
+        localModelPath: _localModelPathController.text.trim(),
+        contextSize: _contextSize,
+        useGpu: _useGpu,
+        threadCount: _threadCount,
+        temperature: _temperature,
+        topP: _topP,
+        maxTokens: _maxTokens,
         updatedAt: now,
       );
       await provider.saveLlmEndpoint(updated);
@@ -405,6 +469,14 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
         isDefault: _isDefault,
         enabled: _enabled,
         customParams: _customParams,
+        mode: _mode,
+        localModelPath: _localModelPathController.text.trim(),
+        contextSize: _contextSize,
+        useGpu: _useGpu,
+        threadCount: _threadCount,
+        temperature: _temperature,
+        topP: _topP,
+        maxTokens: _maxTokens,
         createdAt: now,
         updatedAt: now,
       );
@@ -680,26 +752,63 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 平台选择
-          const Text('平台类型', style: TextStyle(fontWeight: FontWeight.w500)),
+          // 端点类型：接入（云端 API）/ 部署（本地模型）
+          const Text('端点类型', style: TextStyle(fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            initialValue: _platforms.any((p) => p['key'] == _selectedPlatform)
-                ? _selectedPlatform
-                : 'custom',
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          SegmentedButton<EndpointMode>(
+            segments: [
+              ButtonSegment(
+                value: EndpointMode.access,
+                label: const Text('接入'),
+                icon: const Icon(Icons.cloud_outlined, size: 18),
+              ),
+              ButtonSegment(
+                value: EndpointMode.deploy,
+                label: const Text('部署'),
+                icon: const Icon(Icons.memory, size: 18),
+              ),
+            ],
+            selected: {_mode},
+            showSelectedIcon: false,
+            onSelectionChanged: (selection) =>
+                setState(() => _mode = selection.first),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              _mode.description,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.outline,
+              ),
             ),
-            items: _platforms.map((p) {
-              return DropdownMenuItem<String>(
-                value: p['key'],
-                child: Text(p['name'] ?? p['key']!),
-              );
-            }).toList(),
-            onChanged: _onPlatformChanged,
           ),
           const SizedBox(height: 20),
+
+          // 平台类型（仅接入型需要选择云端协议）
+          if (_mode == EndpointMode.access) ...[
+            const Text('平台类型',
+                style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: _platforms.any((p) => p['key'] == _selectedPlatform)
+                  ? _selectedPlatform
+                  : 'custom',
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+              items: _platforms.map((p) {
+                return DropdownMenuItem<String>(
+                  value: p['key'],
+                  child: Text(p['name'] ?? p['key']!),
+                );
+              }).toList(),
+              onChanged: _onPlatformChanged,
+            ),
+            const SizedBox(height: 20),
+          ],
 
           // 名称
           TextField(
@@ -713,40 +822,169 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
           ),
           const SizedBox(height: 16),
 
-          // Base URL
-          TextField(
-            controller: _baseUrlController,
-            decoration: const InputDecoration(
-              labelText: 'Base URL',
-              border: OutlineInputBorder(),
-              hintText: 'https://api.example.com/v1',
-              prefixIcon: Icon(Icons.link),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // API Key
-          TextField(
-            controller: _apiKeyController,
-            obscureText: _obscureApiKey,
-            decoration: InputDecoration(
-              labelText: 'API Key',
-              border: const OutlineInputBorder(),
-              hintText: 'sk-...',
-              prefixIcon: const Icon(Icons.key),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscureApiKey ? Icons.visibility_off : Icons.visibility,
-                ),
-                onPressed: () {
-                  setState(() => _obscureApiKey = !_obscureApiKey);
-                },
+          // Base URL / API Key（仅接入型显示）
+          if (_mode == EndpointMode.access) ...[
+            const Text('Base URL',
+                style: TextStyle(fontWeight: FontWeight.w500)),
+            TextField(
+              controller: _baseUrlController,
+              decoration: const InputDecoration(
+                labelText: 'Base URL',
+                border: OutlineInputBorder(),
+                hintText: 'https://api.example.com/v1',
+                prefixIcon: Icon(Icons.link),
               ),
             ),
-          ),
-          const SizedBox(height: 24),
+            const SizedBox(height: 16),
 
-          // 模型管理区域
+            // API Key
+            TextField(
+              controller: _apiKeyController,
+              obscureText: _obscureApiKey,
+              decoration: InputDecoration(
+                labelText: 'API Key',
+                border: const OutlineInputBorder(),
+                hintText: 'sk-...',
+                prefixIcon: const Icon(Icons.key),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureApiKey ? Icons.visibility_off : Icons.visibility,
+                  ),
+                  onPressed: () {
+                    setState(() => _obscureApiKey = !_obscureApiKey);
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+
+          // 部署型：本地模型路径与推理参数
+          if (_mode == EndpointMode.deploy) ...[
+            const Text('本地模型',
+                style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _localModelPathController,
+              decoration: const InputDecoration(
+                labelText: 'GGUF 模型文件路径',
+                border: OutlineInputBorder(),
+                hintText: '/storage/emulated/0/Download/model-Q4_K_M.gguf',
+                prefixIcon: Icon(Icons.folder_outlined),
+                helperText: '模型文件需自行下载放到设备上，暂不支持应用内下载/校验',
+                helperMaxLines: 2,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _contextSizeController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '上下文长度',
+                      border: OutlineInputBorder(),
+                      hintText: '512~131072',
+                      helperText: '默认 4096',
+                    ),
+                    onChanged: (v) {
+                      final n = int.tryParse(v.trim());
+                      if (n != null) _contextSize = n;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _maxTokensController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '最大生成',
+                      border: OutlineInputBorder(),
+                      hintText: '1~32768',
+                      helperText: '默认 1024',
+                    ),
+                    onChanged: (v) {
+                      final n = int.tryParse(v.trim());
+                      if (n != null) _maxTokens = n;
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _temperatureController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: '温度',
+                      border: OutlineInputBorder(),
+                      hintText: '0~2',
+                      helperText: '默认 0.7',
+                    ),
+                    onChanged: (v) {
+                      final d = double.tryParse(v.trim());
+                      if (d != null) _temperature = d;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _topPController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Top-P',
+                      border: OutlineInputBorder(),
+                      hintText: '0~1',
+                      helperText: '默认 0.9',
+                    ),
+                    onChanged: (v) {
+                      final d = double.tryParse(v.trim());
+                      if (d != null) _topP = d;
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('GPU 加速'),
+              subtitle: Text(_useGpu ? '把模型层放到 GPU（不支持时自动回退 CPU）' : '仅用 CPU 推理'),
+              value: _useGpu,
+              onChanged: (v) => setState(() => _useGpu = v),
+            ),
+
+            Row(
+              children: [
+                const Text('线程数', style: TextStyle(fontSize: 14)),
+                const SizedBox(width: 16),
+                for (final t in const [0, 2, 4, 8])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(t == 0 ? '自动' : '$t'),
+                      selected: _threadCount == t,
+                      onSelected: (_) => setState(() => _threadCount = t),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 24),
+          ],
+
+          // 模型管理区域（仅接入型显示；部署型保存时自动注入占位本地模型）
+          if (_mode == EndpointMode.access) ...[
           Row(
             children: [
               const Text(
@@ -939,6 +1177,7 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
                 },
               ),
             ),
+          ],
           const SizedBox(height: 24),
 
           // 高级设置折叠
@@ -1074,21 +1313,22 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
 
           const SizedBox(height: 24),
 
-          // 连接测试按钮
-          OutlinedButton.icon(
-            onPressed: _testingConnection ? null : _testConnection,
-            icon: _testingConnection
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.bolt),
-            label: Text(_testingConnection ? '测试中…' : '测试连接'),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 48),
+          // 连接测试按钮（仅接入型；本地模型不走 HTTP）
+          if (_mode == EndpointMode.access)
+            OutlinedButton.icon(
+              onPressed: _testingConnection ? null : _testConnection,
+              icon: _testingConnection
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.bolt),
+              label: Text(_testingConnection ? '测试中…' : '测试连接'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 48),
+              ),
             ),
-          ),
 
           const SizedBox(height: 12),
 

@@ -73,13 +73,15 @@ Virtual 是一个**本地优先、跨模型、隐私向**的 AI 角色聊天全�
 | 数据库（可选） | PostgreSQL（`postgres` 驱动，未安装自动降级到内存种子） |
 | 鉴权 | bcrypt（口令哈希）+ dart_jsonwebtoken（会话 JWT）+ mailer（邮箱验证码） |
 | UI 组件 | flutter_markdown、cached_network_image、image_picker、lottie 等 |
+| 本地模型 | nobodywho ^6.0.0（Rust/llama.cpp 封装，部署型端点用；**仅 Android/iOS/桌面，无 web 实现**，web 由条件导入 stub 隔离） |
+| 代码生成 | freezed / freezed_annotation ^3.1.0（2026-11-03 从 2.x 升级以对齐 nobodywho 依赖；项目当前无 `@freezed`/`@JsonSerializable` 使用，无生成物受影响） |
 | 设计系统 | `design_tokens.dart` 单一来源（颜色/间距/圆角/字号） |
 | 测试 | flutter_test（App）、test（后端）、oxlint（Web） |
 
 架构原则：
 
 1. **除模型调用外**，App 所有外部服务走 `Virtual_background` 本地后端
-2. **模型调用**保持 App 直连厂商 API（OpenAI 兼容 / Anthropic / Gemini 三适配器，均 SSE 流式）
+2. **模型调用**保持 App 直连厂商 API（OpenAI 兼容 / Anthropic / Gemini 三适配器，均 SSE 流式）；端点为「**部署**」类型时改走本机 nobodywho 本地模型（见下方「端点接入/部署」）
 3. **PostgreSQL 可选**：未安装时后端自动降级到内存种子数据
 
 ```
@@ -103,8 +105,8 @@ d:\Documents\Desktop\Virtual\
 │   │   ├── main.dart            # 入口，MultiProvider 装配
 │   │   ├── providers/           # 6 个 ChangeNotifier：auth/settings/metadata/endpoint/character/chat
 │   │   ├── services/            # 业务服务层
-│   │   │   ├── adapters/        #   LLM 适配器：openai/anthropic/gemini/llm_adapter
-│   │   │   ├── api_service.dart #   模型调用分发（按 platform 路由到适配器）
+│   │   │   ├── adapters/        #   LLM 适配器：openai/anthropic/gemini/llm_adapter/nobodywho（+ web stub）
+│   │   │   ├── api_service.dart #   模型调用分发（按端点类型 接入/部署 路由，接入型再按 platform 路由）
 │   │   │   ├── asr/tts/image_generation/web_search_service.dart  # 已直连实现，未收敛后端
 │   │   │   ├── online_character_service.dart   # 在线角色卡（后端 /api/characters）
 │   │   │   ├── community_api_service.dart      # 社区：帖子/点赞/评论/关注/用户主页
@@ -173,12 +175,35 @@ d:\Documents\Desktop\Virtual\
 | 角色 | 顶栏**单行**「**角色 / 历史 / 收藏**」三分段 + ☁️（上传到后端）+ ➕ 创建角色卡（**三选一**：新建角色（从头开始）/ 从文件导入角色卡（JSON 或 PNG，自动识别）/ 从 URL 导入角色卡（社区角色站文件直链，自动识别）——三者都只进**本地角色库，不上传**）。**角色**=角色库（3 列网格，卡面为立绘 + 名称 + 最近一条对话预览，**点卡片正文 = 直接进入对话**（有历史会话则续聊，否则新建）；长按菜单：查看角色卡详情、开始/继续对话、移出角色库；**新建/导入的角色自动进角色库**（幂等），首页在线卡不自动收录、需详情页点「加入角色库」）；**历史**=会话列表（长按置顶/删除，与对话页共用同一列表组件）；**收藏**=已收藏角色。角色卡导出 —— **唯一格式为 PNG**（内嵌 CCv3 全字段与 `character_book` 世界书），Web/桌面/移动共用一条字节流路径，浏览器端亦可导出下载 |
 | 社区 | 发现页社区信息流：帖子列表（分类 chips + 搜索）、点赞、评论（**正序分页** + 乐观插入并失败回滚）、关注/取关、点作者头像进**用户主页**、点卡片进**帖子详情**、点角色卡直达角色详情 |
 | 世界书 | **Lorebook 管理 —— 唯一格式为 JSON**：导入自动识别 SillyTavern World Info（`entries` 为对象）/ CCv3 `character_book`（`entries` 为数组）/ 本 App 导出格式；导出为 SillyTavern 形态，便于跨前端交换 |
-| 模型接入 | OpenAI 兼容（20+ 平台）/ Anthropic / Gemini 三适配器，均 SSE 流式，已解析思维链字段 |
+| 模型接入 | **端点分两型**：`接入`（OpenAI 兼容 20+ 平台 / Anthropic / Gemini 三适配器，均 SSE 流式，已解析思维链字段）与 `部署`（本机 GGUF 本地模型，nobodywho，见下） |
 | 多模态 | 图片输入（≤4 张，预览条可删除），转 OpenAI 视觉格式（data URL）。**上传策略（2026-09-14）**：只有**最新一条用户消息**的图片随请求上传；历史消息中的图片一律降级为 `[图片]` 文本占位，不重复上传（未来图片生成走「最新对话文本 + 图片」同一口径） |
 | 发现 | 扩展内容聚合：世界书/预设/正则/插件/主题/调试；上区为社区信息流（见「社区」行） |
 | 我的 | 头像/昵称/ID + 我的角色卡计数 + API 接入/主题外观/插件/更多；**资料编辑**（昵称/简介/头像）与**修改密码** |
 | 设置 | 后端地址配置、语言切换（跟随系统/简中/English/日本語）、数据迁移（JSON 导出导入） |
 | 设计系统 | `design_tokens.dart` 单一来源 + 浅/深双主题 + 星空背景/玻璃拟态，与 Web 端统一 |
+
+**端点接入/部署（项目级约定，2026-11-03）**：`LlmEndpoint.mode` 区分两型 —— `接入`
+（云端 API，原三适配器逻辑不变）与 `部署`（本机 GGUF，nobodywho 6.0.0 适配器）。
+序列化向后兼容：旧 JSON 无 `mode` 字段按 `接入` 处理；端点列表按类型打标签，
+排序与默认端点逻辑不变。部署型专属字段（均有默认值，构造时 clamp 到合法范围）：
+
+| 字段 | 默认 | 范围 | 含义 |
+|---|---|---|---|
+| `localModelPath` | `''`（必填） | — | GGUF 模型文件绝对路径，**需手动放置到设备后手填**（应用内下载/校验/删除未做，留待下阶段） |
+| `contextSize` | 4096 | 512~131072 | 推理上下文长度（token） |
+| `useGpu` | true | — | 模型层 offload 到 GPU，设备不支持时引擎自动回退 CPU |
+| `threadCount` | 0 | 0~64 | 推理线程数，0 = 按 CPU 核数自动 |
+| `temperature` | 0.7 | 0~2 | 采样温度 |
+| `topP` | 0.9 | 0~1 | 核采样 top-p |
+| `maxTokens` | 1024 | 1~32768 | 单次生成最大 token 数 |
+
+**平台限制**：nobodywho 仅 android/ios/linux/macos/windows 有实现，**无 web**。
+web 端通过条件导入 `nobodywho_adapter_stub.dart`（默认）/ `nobodywho_adapter.dart`
+（`dart.library.io`）隔离，部署型端点在 web 上返回明确错误流「当前平台（Web）不支持
+本地模型部署」，保证 `flutter build web` 可编译。部署型保存时自动注入占位模型
+`local`（本地模型），否则对话页会因「未选择模型」拦截。
+freezed 升级到 3.x 仅为消除 nobodywho（flutter_rust_bridge 链）与旧版
+`freezed_annotation ^2.4.1` 的依赖冲突，项目无 codegen 目标，`build_runner` 生成物为空集。
 
 **格式约定（项目级，非可选）：角色卡用 PNG，世界书用 JSON。**
 

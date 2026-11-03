@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../providers/endpoint_provider.dart';
+import '../../models/endpoint.dart';
 import '../../theme/tavo_brand.dart';
 
 class EndpointListPage extends StatelessWidget {
@@ -50,6 +51,33 @@ class EndpointListPage extends StatelessWidget {
                   title: Row(
                     children: [
                       Text(ep.name),
+                      const SizedBox(width: 8),
+                      // 类型标签：接入（云端）/ 部署（本地模型）
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: ep.mode == EndpointMode.deploy
+                              ? Theme.of(context).colorScheme.tertiaryContainer
+                              : Theme.of(context).colorScheme.secondaryContainer,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          ep.mode.displayName,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: ep.mode == EndpointMode.deploy
+                                ? Theme.of(context)
+                                    .colorScheme
+                                    .onTertiaryContainer
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .onSecondaryContainer,
+                          ),
+                        ),
+                      ),
                       if (ep.isDefault) ...[
                         const SizedBox(width: 8),
                         Container(

@@ -4,6 +4,10 @@ import 'adapters/llm_adapter.dart';
 import 'adapters/openai_adapter.dart';
 import 'adapters/anthropic_adapter.dart';
 import 'adapters/gemini_adapter.dart';
+// 本地模型适配器：nobodywho 仅 io 平台（Android/iOS/桌面）有实现，
+// web 默认选 stub，保证 `flutter build web` 可编译（其无 web 实现）。
+import 'adapters/nobodywho_adapter_stub.dart'
+    if (dart.library.io) 'adapters/nobodywho_adapter.dart';
 
 class StreamChatChunk {
   final String content;
@@ -114,6 +118,12 @@ class GeminiApiAdapter extends _LLMAdapterWrapper {
   GeminiApiAdapter(LlmEndpoint endpoint) : super(GeminiAdapter(endpoint));
 }
 
+/// 部署型（本地模型）端点 → nobodywho 适配器（web 下为 stub）
+class NobodyWhoApiAdapter extends _LLMAdapterWrapper {
+  NobodyWhoApiAdapter(LlmEndpoint endpoint)
+      : super(NobodyWhoAdapter(endpoint));
+}
+
 class ApiService {
   final Map<String, LlmApiAdapter> _adapterCache = {};
 
@@ -129,6 +139,10 @@ class ApiService {
   }
 
   LlmApiAdapter _createAdapter(LlmEndpoint endpoint) {
+    // 部署型端点：本地模型，独立于 platform 字段分发（保持接入型三适配器不动）
+    if (endpoint.mode == EndpointMode.deploy) {
+      return NobodyWhoApiAdapter(endpoint);
+    }
     switch (endpoint.platform.toLowerCase()) {
       case 'openai':
       case 'deepseek':
