@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -6,7 +8,11 @@ import '../../providers/endpoint_provider.dart';
 import '../../models/endpoint.dart';
 import '../../models/conversation.dart';
 import '../../services/api_service.dart';
+import '../../services/builtin_model_service.dart';
 import '../../services/model_registry_service.dart';
+
+/// 「自定义路径」下拉值（与内置模型 id 区分）
+const String _kCustomModelValue = '__custom__';
 
 /// 端点编辑/新建页面
 class EndpointEditPage extends StatefulWidget {
@@ -44,6 +50,11 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
 
   // ===== 部署型（本地模型）字段 =====
   EndpointMode _mode = EndpointMode.access;
+
+  /// 选中的内置模型；null 表示「自定义路径」（兼容用户此前手填的路径）
+  BuiltInModel? _selectedBuiltIn;
+  String? _installedPath;
+  bool _checkingInstalled = false;
   final _localModelPathController = TextEditingController();
   final _contextSizeController = TextEditingController();
   final _maxTokensController = TextEditingController();
@@ -159,9 +170,35 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
     }
     _syncDeployControllers();
 
+    // 决定「内置模型 / 自定义路径」：旧配置里手填过的路径若恰好是内置模型
+    // 文件名，仍按内置模型处理（复制后自动修正为真实绝对路径）。
+    if (_localModelPathController.text.trim().isEmpty) {
+      _selectedBuiltIn = kBuiltInModels.isEmpty ? null : kBuiltInModels.first;
+    } else {
+      _selectedBuiltIn =
+          builtInModelForPath(_localModelPathController.text.trim());
+    }
+
     if (mounted) {
       setState(() => _isLoading = false);
     }
+    _refreshInstalledStatus();
+  }
+
+  /// 查询内置模型当前是否已复制到设备（决定显示「已就绪」还是「保存时复制」）
+  Future<void> _refreshInstalledStatus() async {
+    final model = _selectedBuiltIn;
+    if (model == null) {
+      if (mounted) setState(() => _installedPath = null);
+      return;
+    }
+    if (mounted) setState(() => _checkingInstalled = true);
+    final path = await BuiltInModelService.installedPath(model);
+    if (!mounted) return;
+    setState(() {
+      _installedPath = path;
+      _checkingInstalled = false;
+    });
   }
 
   @override
@@ -384,6 +421,137 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
     );
   }
 
+  /// 内置模型的就绪状态卡片（已复制 / 待复制）
+  Widget _buildBuiltInStatusCard(BuildContext context, BuiltInModel model) {
+    final theme = Theme.of(context);
+    final installed = _installedPath;
+    final ready = installed != null && installed.isNotEmpty;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ready
+            ? theme.colorScheme.secondaryContainer
+            : theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                ready ? Icons.check_circle_outline : Icons.download_outlined,
+                size: 18,
+                color: ready
+                    ? theme.colorScheme.onSecondaryContainer
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _checkingInstalled
+                    ? '正在检查…'
+                    : (ready
+                        ? '已就绪（${model.sizeMb}MB 已复制到设备）'
+                        : '尚未复制：保存时自动复制，约 ${model.sizeMb}MB'),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: ready
+                      ? theme.colorScheme.onSecondaryContainer
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          if (ready) ...[
+            const SizedBox(height: 6),
+            SelectableText(
+              installed,
+              style: TextStyle(
+                fontSize: 11,
+                color: theme.colorScheme.onSecondaryContainer
+                    .withValues(alpha: 0.8),
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 6),
+            Text(
+              '首次复制需要约 ${model.sizeMb}MB 存储空间（建议剩余 ≥1.3GB），'
+              '复制期间请勿退出或锁屏。',
+              style: TextStyle(
+                fontSize: 11,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 确保内置模型已复制到设备，返回设备上的绝对路径；失败时已提示并返回 null。
+  /// 已就绪则完全不弹窗（幂等快路径）。
+  Future<String?> _installBuiltInModel(BuiltInModel model) async {
+    final cached = _installedPath;
+    if (cached != null && cached.isNotEmpty) return cached;
+
+    final progress = ValueNotifier<double>(0);
+    final nav = Navigator.of(context, rootNavigator: true);
+    var dialogShown = false;
+    dialogShown = true;
+    unawaited(showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('正在准备本地模型'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('首次使用需把内置模型（约 ${model.sizeMb}MB）复制到设备存储，'
+                '请勿退出或锁屏。'),
+            const SizedBox(height: 16),
+            ValueListenableBuilder<double>(
+              valueListenable: progress,
+              builder: (_, v, __) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LinearProgressIndicator(value: v > 0 ? v : null),
+                  const SizedBox(height: 8),
+                  Text('${(v * 100).toStringAsFixed(0)}%',
+                      style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ));
+
+    try {
+      final path = await BuiltInModelService.ensureInstalled(
+        model,
+        onProgress: (p) => progress.value = p,
+      );
+      if (mounted) {
+        setState(() => _installedPath = path);
+      }
+      return path;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('本地模型准备失败：$e')),
+        );
+      }
+      return null;
+    } finally {
+      if (dialogShown && nav.canPop()) nav.pop();
+      progress.dispose();
+    }
+  }
+
   Future<void> _saveEndpoint() async {    final name = _nameController.text.trim();
     final baseUrl =
         _baseUrlController.text.trim().replaceAll(RegExp(r'/$'), '');
@@ -408,11 +576,20 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
         );
         return;
       }
-    } else if (_localModelPathController.text.trim().isEmpty) {
+    } else if (_selectedBuiltIn == null &&
+        _localModelPathController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请填写本地模型 GGUF 文件路径')),
       );
       return;
+    }
+
+    // 部署型：内置模型首次使用时把 assets 里的 GGUF 复制到设备私有目录，
+    // 复制完成后写回真实绝对路径（幂等：已存在且大小正确则跳过）。
+    if (_mode == EndpointMode.deploy && _selectedBuiltIn != null) {
+      final resolved = await _installBuiltInModel(_selectedBuiltIn!);
+      if (resolved == null) return; // 复制失败/用户取消，已提示
+      _localModelPathController.text = resolved;
     }
 
     // 部署型端点没有远端模型列表：注入一个占位本地模型，
@@ -770,8 +947,16 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
             ],
             selected: {_mode},
             showSelectedIcon: false,
-            onSelectionChanged: (selection) =>
-                setState(() => _mode = selection.first),
+            onSelectionChanged: (selection) {
+              setState(() => _mode = selection.first);
+              // 切到部署型时补一次内置模型就绪检查（下拉状态依赖它）
+              if (_mode == EndpointMode.deploy) {
+                if (_selectedBuiltIn == null && kBuiltInModels.isNotEmpty) {
+                  _selectedBuiltIn = kBuiltInModels.first;
+                }
+                _refreshInstalledStatus();
+              }
+            },
           ),
           Padding(
             padding: const EdgeInsets.only(top: 6),
@@ -864,17 +1049,57 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
             const Text('本地模型',
                 style: TextStyle(fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
-            TextField(
-              controller: _localModelPathController,
+
+            // 内置模型选择（默认）：APK 已自带 GGUF，首次保存时自动复制到设备
+            DropdownButtonFormField<String>(
+              initialValue: _selectedBuiltIn?.id ?? _kCustomModelValue,
               decoration: const InputDecoration(
-                labelText: 'GGUF 模型文件路径',
+                labelText: '模型来源',
                 border: OutlineInputBorder(),
-                hintText: '/storage/emulated/0/Download/model-Q4_K_M.gguf',
-                prefixIcon: Icon(Icons.folder_outlined),
-                helperText: '模型文件需自行下载放到设备上，暂不支持应用内下载/校验',
-                helperMaxLines: 2,
+                prefixIcon: Icon(Icons.memory),
               ),
+              items: [
+                for (final m in kBuiltInModels)
+                  DropdownMenuItem(
+                    value: m.id,
+                    child: Text('${m.displayName} · ${m.sizeMb}MB（内置）'),
+                  ),
+                const DropdownMenuItem(
+                  value: _kCustomModelValue,
+                  child: Text('自定义路径（需自行放置 GGUF）'),
+                ),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() {
+                  _selectedBuiltIn = v == _kCustomModelValue
+                      ? null
+                      : builtInModelById(v);
+                  _installedPath = null;
+                  if (_selectedBuiltIn != null) {
+                    // 内置模型：清空手填路径，保存时会写入真实绝对路径
+                    _localModelPathController.text = '';
+                  }
+                });
+                _refreshInstalledStatus();
+              },
             ),
+            const SizedBox(height: 8),
+
+            if (_selectedBuiltIn != null)
+              _buildBuiltInStatusCard(context, _selectedBuiltIn!)
+            else
+              TextField(
+                controller: _localModelPathController,
+                decoration: const InputDecoration(
+                  labelText: 'GGUF 模型文件路径',
+                  border: OutlineInputBorder(),
+                  hintText: '/storage/emulated/0/Download/model-Q4_K_M.gguf',
+                  prefixIcon: Icon(Icons.folder_outlined),
+                  helperText: '自定义路径：模型文件需自行放到设备上，暂不支持应用内下载',
+                  helperMaxLines: 2,
+                ),
+              ),
             const SizedBox(height: 16),
 
             Row(

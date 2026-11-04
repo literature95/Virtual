@@ -53,3 +53,8 @@ detail*.txt
 
 # ── APK 部署验证临时文件 ──
 .apk-verify.*.bin
+
+# ── 内置本地模型权重（单文件约 508MB，绝不入库）──
+# 打包时需要该文件存在，但由开发者本地放置/下载，不入库（否则仓库膨胀 500MB+）
+Virtual_app/android/app/src/main/assets/models/*.gguf
+*.gguf

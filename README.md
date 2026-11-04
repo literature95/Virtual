@@ -38,9 +38,13 @@ Virtual 是一个**本地优先、跨模型、隐私向**的 AI 角色聊天全�
 2. **测试**：`flutter test`（App）+ `dart test`（后端）+ `flutter analyze` / `dart analyze`。
 3. **构建并同步 APK**（三处一致，勿手拷）：
    ```bash
-   cd Virtual_app && flutter build apk --release
+   cd Virtual_app && flutter build apk --release --target-platform android-arm64
    cd .. && bash deploy/deploy_apk.sh
    ```
+
+   > 内置模型版**必须带 `--target-platform android-arm64`**（只出 arm64 单 ABI），
+   > 否则会多打包 x86_64 的 nobodywho 原生库（约 +120MB）。当前产物约 568MB，
+   > 仓库里 `android/app/src/main/assets/models/` 的 508MB GGUF 也会参与构建。
 4. **（若有后端/接口变更）部署后端**：`dart_frog build` 后同步服务器 `build/routes`、`build/lib`、`build/bin/server.dart` 并 `systemctl restart virtual-backend`（JIT 冷启动约 30s）。
 5. **（若有 Web 变更）部署静态站**：`cd Virtual_web && npm run build`，再 `bash deploy/push_web_dist.sh`（保留线上 APK）。
 6. **Git + GitHub Release**（自 v1.0.6 起）：
@@ -107,6 +111,7 @@ d:\Documents\Desktop\Virtual\
 │   │   ├── services/            # 业务服务层
 │   │   │   ├── adapters/        #   LLM 适配器：openai/anthropic/gemini/llm_adapter/nobodywho（+ web stub）
 │   │   │   ├── api_service.dart #   模型调用分发（按端点类型 接入/部署 路由，接入型再按 platform 路由）
+│   │   │   ├── builtin_model_service.dart  # 内置 GGUF 清单 + 原生通道封装（首次复制/就绪查询）
 │   │   │   ├── asr/tts/image_generation/web_search_service.dart  # 已直连实现，未收敛后端
 │   │   │   ├── online_character_service.dart   # 在线角色卡（后端 /api/characters）
 │   │   │   ├── community_api_service.dart      # 社区：帖子/点赞/评论/关注/用户主页
@@ -123,6 +128,8 @@ d:\Documents\Desktop\Virtual\
 │   │   ├── theme/               # design_tokens（唯一来源）+ app_theme（浅/深双主题）+ tavo_brand
 │   │   ├── data/                # app_database.dart（SharedPreferences 持久化）
 │   │   └── utils/               # image_data 等工具类
+│   ├── android/app/src/main/assets/models/  # 内置 GGUF（508MB，以 stored 方式入 APK）
+│   ├── android/app/src/main/kotlin/MainActivity.kt  # 内置模型安装桥（流式复制 + 进度）
 │   └── test/                    # 15 个测试（145 例：角色卡/PNG/世界书/角色库/社区/设置/Provider 注册/对话菜单与背景）
 │
 ├── Virtual_background/          # Dart Frog 后端（端口 8080）
@@ -189,7 +196,7 @@ d:\Documents\Desktop\Virtual\
 
 | 字段 | 默认 | 范围 | 含义 |
 |---|---|---|---|
-| `localModelPath` | `''`（必填） | — | GGUF 模型文件绝对路径，**需手动放置到设备后手填**（应用内下载/校验/删除未做，留待下阶段） |
+| `localModelPath` | `''`（必填） | — | GGUF 模型绝对路径。**自用版改为内置打包**：新建部署型端点时从「内置模型」下拉选择，保存时自动复制并回填真实绝对路径；仍保留「自定义路径」供手动放置的模型 |
 | `contextSize` | 4096 | 512~131072 | 推理上下文长度（token） |
 | `useGpu` | true | — | 模型层 offload 到 GPU，设备不支持时引擎自动回退 CPU |
 | `threadCount` | 0 | 0~64 | 推理线程数，0 = 按 CPU 核数自动 |
@@ -204,6 +211,29 @@ web 端通过条件导入 `nobodywho_adapter_stub.dart`（默认）/ `nobodywho_
 `local`（本地模型），否则对话页会因「未选择模型」拦截。
 freezed 升级到 3.x 仅为消除 nobodywho（flutter_rust_bridge 链）与旧版
 `freezed_annotation ^2.4.1` 的依赖冲突，项目无 codegen 目标，`build_runner` 生成物为空集。
+
+**本地模型内置打包（自用版，2026-11-04）**：为免去「自己下模型、自己找路径」，
+把 `Qwen3.5-0.8B-Q4_K_M.gguf`（532,517,120 字节，SHA-256 前缀 `bd258782e35f`）
+直接打进 APK：
+
+- **位置**：`Virtual_app/android/app/src/main/assets/models/`（原生 assets，不走
+  Flutter asset bundle —— 单文件 508MB，`rootBundle.load()` 会整份进 Dart 堆，移动端易 OOM）
+- **不压缩**：`androidResources.noCompress 'gguf'`，以 stored 方式入包（量化 GGUF 本身
+  几乎不可压缩，压缩只会拖慢构建并在首次运行多一次解压拷贝）
+- **首次复制**：`MainActivity` 的 MethodChannel `app.bitbear.virtual/model_asset`
+  （`ensureInstalled` / `getInstalledPath`）用 256KB 缓冲流式复制到
+  `getExternalFilesDir(null)/models/`（即 `Android/data/app.bitbear.virtual/files/models/`，
+  App 专属目录、免权限），**幂等**：已存在且字节数相等即跳过；复制前校验剩余空间
+  （需求 ×1.3，不足直接报错）；先写 `.partial` 再 rename，中断不会留下半截文件被误用
+- **UI**：部署型端点的模型字段改为「内置模型」下拉（显示名 + 大小 + 是否已就绪），
+  选中后保存时自动复制并回填绝对路径；旧的手填路径若文件名匹配内置模型仍按内置处理，
+  其余识别为「自定义路径」
+- **代价**：APK 约 **568MB**（模型 508MB 占绝大部分），装机另需约 **1.3GB** 空闲空间
+  （安装期解包 + 首次复制），首次启动首次保存端点时有一次性复制耗时（真机待测）
+- **限制**：只为 `arm64-v8a` 出包（`--target-platform android-arm64` +
+  `packagingOptions.jniLibs.excludes` 剔除插件 AAR 自带的 x86_64/armeabi-v7a 原生库，
+  否则白胖 120MB+）。**不能上架应用商店**（体积与内置模型的授权/分发均不适配），
+  仅限自用分发
 
 **格式约定（项目级，非可选）：角色卡用 PNG，世界书用 JSON。**
 
