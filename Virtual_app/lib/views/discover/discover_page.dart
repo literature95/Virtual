@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../models/community_post.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/app_image_cache.dart';
 import '../../services/community_api_service.dart';
 import '../../theme/tavo_brand.dart';
 import 'character_discover_feed.dart';
@@ -15,7 +16,7 @@ import 'compose_post_dialog.dart';
 /// 数据来源：Virtual_background /api/posts、/api/follows、/api/characters。
 ///
 /// - 推荐 Tab：社区分类 + 动态流
-/// - **发现 Tab**：竖向角色卡流（点赞/收藏/转发 + 点卡进详情）——**底栏进入时默认落在这里**
+/// - **发现 Tab**：竖向角色卡流（点赞/转发 + 点卡进详情）——**底栏进入时默认落在这里**
 /// - 关注 Tab：已关注创作者动态
 ///
 /// 底栏由 HomeShell 提供，本页三个 Tab 均在 Shell 内（底栏始终可见）。
@@ -34,9 +35,17 @@ class _DiscoverPageState extends State<DiscoverPage>
   List<Creator> _following = [];
   List<CommunityPost> _followPosts = [];
   List<CommunityPost> _recommendPosts = [];
-  bool _loading = true;
+  bool _loading = false;
   String? _errorMsg;
   String? _activeCommunity;
+
+  /// 「推荐 / 关注」两个 Tab 的数据是否已加载。
+  ///
+  /// 进入发现页默认停在「发现」角色卡流，此时只发 `/api/characters` 一个请求；
+  /// 社区数据（posts ×2 + follows）等到用户真正切到对应 Tab 再拉，
+  /// 避免首屏 4 个请求同时抢带宽、拖慢首张立绘。
+  bool _communityLoaded = false;
+  bool _communityLoading = false;
 
   late final AuthProvider _auth;
   late final SettingsProvider _settings;
@@ -46,25 +55,36 @@ class _DiscoverPageState extends State<DiscoverPage>
     super.initState();
     // 底栏点「发现」时，默认停在中间「发现」角色卡流（index=1），不是「推荐」
     _tabController = TabController(length: 3, vsync: this, initialIndex: 1);
+    _tabController.addListener(_onTabChanged);
     _settings = context.read<SettingsProvider>();
     _auth = context.read<AuthProvider>();
     _auth.addListener(_onAuthChanged);
-    _load();
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _auth.removeListener(_onAuthChanged);
     _tabController.dispose();
     super.dispose();
   }
 
-  /// 登录态变化 → 重新拉取关注相关内容（关注列表 / 关注流）
-  void _onAuthChanged() => _load();
+  /// 切到「推荐 / 关注」时才懒加载社区数据（只加载一次）
+  void _onTabChanged() {
+    if (_tabController.index == 1) return;
+    if (_communityLoaded || _communityLoading) return;
+    _load();
+  }
+
+  /// 登录态变化 → 重新拉取关注相关内容（仅在社区数据已加载过时）
+  void _onAuthChanged() {
+    if (_communityLoaded) _load();
+  }
 
   Future<void> _load() async {
-    if (!mounted) return;
+    if (!mounted || _communityLoading) return;
     setState(() {
+      _communityLoading = true;
       _loading = true;
       _errorMsg = null;
     });
@@ -82,12 +102,16 @@ class _DiscoverPageState extends State<DiscoverPage>
         _following = results[1] as List<Creator>;
         _followPosts = results[2] as List<CommunityPost>;
         _loading = false;
+        _communityLoading = false;
+        _communityLoaded = true;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _errorMsg = e.toString();
         _loading = false;
+        _communityLoading = false;
+        _communityLoaded = false;
       });
     }
   }
@@ -373,6 +397,7 @@ class _FollowingBar extends StatelessWidget {
             );
           }
           final c = following[i];
+          final avatar = AppImageCache.providerFor(c.avatarUrl, decodeWidth: 180);
           return GestureDetector(
             onTap: () => context.push('/user/${c.id}'),
             child: Column(
@@ -390,9 +415,9 @@ class _FollowingBar extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: scheme.surfaceContainerLow,
-                      image: c.avatarUrl != null
+                      image: avatar != null
                           ? DecorationImage(
-                              image: NetworkImage(c.avatarUrl!),
+                              image: avatar,
                               fit: BoxFit.cover,
                             )
                           : null,

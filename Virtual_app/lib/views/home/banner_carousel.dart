@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/banner_item.dart';
 import '../../theme/tavo_brand.dart';
+import '../common/cached_app_image.dart';
 
 /// 首页轮播图
 ///
@@ -136,14 +136,10 @@ class _BannerSlide extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             if (hasImage)
-              CachedNetworkImage(
-                imageUrl: item.imageUrl!,
+              CachedAppImage(
+                path: item.imageUrl,
                 fit: BoxFit.cover,
-                // 按显示宽解码（≤560 逻辑宽 × 2 dpr），不整张解 1368×768 原图
-                memCacheWidth: 1120,
-                fadeInDuration: const Duration(milliseconds: 120),
-                placeholder: (_, __) => const SizedBox.shrink(),
-                errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                placeholderColor: TavoColors.cosmosElev,
               )
             else
               const DecoratedBox(

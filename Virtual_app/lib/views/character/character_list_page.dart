@@ -6,10 +6,10 @@ import '../../data/app_database.dart';
 import '../../providers/character_provider.dart';
 import '../../models/character.dart';
 import '../../models/lorebook.dart';
+import '../../services/app_image_cache.dart';
 import '../../services/character_export_service.dart';
 import '../../theme/tavo_brand.dart';
 import '../../utils/file_saver.dart';
-import '../common/character_cover_card.dart' show resolveAvatarImage;
 import 'character_import_flow.dart';
 
 /// 角色列表页：搜索 + 管理（长按菜单：编辑/复制/导出/删除）
@@ -29,6 +29,7 @@ class _CharacterListPageState extends State<CharacterListPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        centerTitle: true,
         title: _searchVisible
             ? TextField(
                 controller: _searchCtrl,
@@ -143,7 +144,8 @@ class _CharacterTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final avatar = resolveAvatarImage(character.avatarPath);
+    final avatar = AppImageCache.providerFor(character.avatarPath,
+        decodeWidth: 160);
     return ListTile(
       leading: CircleAvatar(
         backgroundImage: avatar,

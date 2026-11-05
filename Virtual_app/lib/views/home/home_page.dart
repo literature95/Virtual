@@ -4,9 +4,11 @@ import 'package:provider/provider.dart';
 
 import '../../models/banner_item.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/app_image_cache.dart';
 import '../../services/banner_service.dart';
 import '../../services/online_character_service.dart';
 import '../../theme/tavo_brand.dart';
+import '../common/cached_app_image.dart';
 import '../common/character_cover_card.dart';
 import 'banner_carousel.dart';
 
@@ -103,6 +105,29 @@ class _HomePageState extends State<HomePage> {
   /// 竖版封面卡列数：宽屏（内容限宽 560）3 列，否则 2 列
   int get _gridColumns => MediaQuery.of(context).size.width >= 720 ? 3 : 2;
 
+  /// 封面卡缩略图解码宽度：卡片实际显示宽 × DPR（避免整张原图解码）。
+  ///
+  /// 网格左右各 16 内边距、列间 12 间距；卡片照片铺满整卡，故显示宽即卡宽。
+  int? _cardDecodeWidth(int columns) {
+    final screen = MediaQuery.sizeOf(context).width;
+    final cardWidth = (screen - 32 - 12 * (columns - 1)) / columns;
+    return AppImageCache.decodeWidthFor(
+      cardWidth,
+      MediaQuery.devicePixelRatioOf(context),
+    );
+  }
+
+  /// 网格滚动时预取「即将进入视口」的少量封面（并发上限由 AppImagePreloader 控制）。
+  void _preloadAround(List<OnlineCharacter> items, int index, int columns) {
+    if (!mounted || items.isEmpty) return;
+    final indices = lookaheadIndices(index, items.length, lookahead: 2);
+    AppImagePreloader.preload(
+      context,
+      [for (final i in indices) items[i].avatarUrl],
+      decodeWidth: _cardDecodeWidth(columns),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -186,7 +211,11 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 首页分类区块：每个主分类一个标题行 + 竖向 2 列网格（一排两个、取 4 张）+ 「更多」入口
+  /// 首页分类区块：每个主分类一个标题行 + 竖向 2 列网格 + 「更多」入口
+  ///
+  /// 注意：这里**不再截断**每类卡片数量。之前 `take(4)` 只渲染每类前 4 张，
+  /// 第 5 张起在首页完全看不到（用户反馈的「角色卡展示不全」即此根因），
+  /// 现在改为整类全量展示；「更多」仍保留，用于进入带筛选/搜索的分类页。
   List<Widget> _categorySections(ColorScheme scheme) {
     final map = _categoryMap;
     if (map.isEmpty) {
@@ -197,7 +226,7 @@ class _HomePageState extends State<HomePage> {
     var i = 0;
     for (final entry in map.entries) {
       final category = entry.key;
-      final items = entry.value.take(4).toList();
+      final items = entry.value;
       if (items.isEmpty) continue;
 
       sections.add(
@@ -223,7 +252,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const Spacer(),
                 GestureDetector(
-                  onTap: () => context.go(
+                  onTap: () => context.push(
                     '/home/category/${Uri.encodeComponent(category)}',
                   ),
                   child: Row(
@@ -256,7 +285,7 @@ class _HomePageState extends State<HomePage> {
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           sliver: SliverGrid(
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              // 竖向 2 列网格：一排两个竖版封面卡，take(4) 即 2 行。
+              // 竖向 2 列网格：一排两个竖版封面卡；总数不做截断，分类内全部展示。
               // 比例 0.62 与全局网格一致，卡片不随屏宽拉伸失真。
               crossAxisCount: 2,
               crossAxisSpacing: 12,
@@ -266,6 +295,7 @@ class _HomePageState extends State<HomePage> {
             delegate: SliverChildBuilderDelegate(
               (context, index) {
                 final c = items[index];
+                _preloadAround(items, index, 2);
                 return CharacterCoverCard(
                   name: c.name,
                   description: c.description,
@@ -303,6 +333,7 @@ class _HomePageState extends State<HomePage> {
         delegate: SliverChildBuilderDelegate(
           (context, i) {
             final c = items[i];
+            _preloadAround(items, i, _gridColumns);
             return CharacterCoverCard(
               name: c.name,
               description: c.description,

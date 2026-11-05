@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../models/community_post.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/app_image_cache.dart';
 import '../../services/community_api_service.dart';
 import '../../theme/tavo_brand.dart';
 
@@ -338,9 +339,10 @@ class _PostDetailCard extends StatelessWidget {
                 CircleAvatar(
                   radius: 18,
                   backgroundColor: scheme.surfaceContainerHighest,
-                  backgroundImage: post.author.avatarUrl != null
-                      ? NetworkImage(post.author.avatarUrl!)
-                      : null,
+                  backgroundImage: AppImageCache.providerFor(
+                    post.author.avatarUrl,
+                    decodeWidth: 96,
+                  ),
                   child: post.author.avatarUrl == null
                       ? Text(
                           post.author.name.isNotEmpty
@@ -609,8 +611,7 @@ class _CommentTile extends StatelessWidget {
             CircleAvatar(
               radius: 18,
               backgroundColor: scheme.surfaceContainerHighest,
-              backgroundImage:
-                  avatar != null ? NetworkImage(avatar) : null,
+              backgroundImage: AppImageCache.providerFor(avatar, decodeWidth: 96),
               child: avatar == null
                   ? Text(
                       comment.author.name.isNotEmpty

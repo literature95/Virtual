@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/auth_api_service.dart';
 import '../../theme/tavo_brand.dart';
+import '../common/cached_app_image.dart';
 
 /// 个人信息编辑（点击「我的」页头像 / 昵称进入）
 ///
@@ -83,7 +84,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 
     if (!auth.isLoggedIn) {
       return Scaffold(
-        appBar: AppBar(title: const Text('个人信息')),
+        appBar: AppBar(title: const Text('个人信息'), centerTitle: true),
         body: _loginPrompt(context, scheme),
       );
     }
@@ -91,6 +92,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('个人信息'),
+        centerTitle: true,
         actions: [
           TextButton(
             onPressed: _saving ? null : _save,
@@ -206,12 +208,12 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                   color: Color(0xFF141414),
                 ),
               )
-            : Image.network(
-                url,
-                width: 92,
-                height: 92,
+            : CachedAppImage(
+                path: url,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Text(
+                decodeWidth: 280,
+                placeholderColor: const Color(0xFF2A2438),
+                fallback: Text(
                   letter,
                   style: const TextStyle(
                     fontSize: 38,

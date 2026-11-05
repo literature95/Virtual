@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../models/community_post.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/app_image_cache.dart';
 import '../../services/community_api_service.dart';
 
 /// 用户主页（点击头像进入，数据来自 /api/users/[id]）
@@ -189,7 +190,8 @@ class _ProfileHeader extends StatelessWidget {
           CircleAvatar(
             radius: 40,
             backgroundColor: scheme.surfaceContainerHighest,
-            backgroundImage: avatar != null ? NetworkImage(avatar) : null,
+            backgroundImage:
+                AppImageCache.providerFor(avatar, decodeWidth: 200),
             child: avatar == null
                 ? Text(
                     profile.name.isNotEmpty ? profile.name[0] : '?',

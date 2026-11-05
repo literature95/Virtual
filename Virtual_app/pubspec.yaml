@@ -1,7 +1,7 @@
 name: virtual
 description: Virtual - AI Character Chat Client
 publish_to: 'none'
-version: 1.0.17+18
+version: 1.0.27+28
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -36,6 +36,8 @@ dependencies:
   flutter_svg: ^2.0.10+1
   lottie: ^3.1.2
   cached_network_image: ^3.3.1
+  # 与 cached_network_image 配套的磁盘缓存；显式声明以便自定义容量/过期策略
+  flutter_cache_manager: ^3.4.2
   image_picker: ^1.1.2
   image_cropper: ^8.0.2
   wechat_assets_picker: ^9.2.1

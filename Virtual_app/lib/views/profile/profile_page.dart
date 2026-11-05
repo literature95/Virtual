@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/character_provider.dart';
 import '../../providers/endpoint_provider.dart';
 import '../../theme/tavo_brand.dart';
+import '../common/cached_app_image.dart';
 
 /// 我的 —— 用户区块 + 本地资产概览 + 导航入口
 /// （API接入 / 更多 在此页面内点击进入）
@@ -124,7 +125,7 @@ class ProfilePage extends StatelessWidget {
                 iconColor: TavoColors.coral,
                 title: '我的 API',
                 desc: '$endpointCount 个接入端点',
-                onTap: () => context.go('/endpoints'),
+                onTap: () => context.push('/endpoints'),
               ),
               Divider(
                   height: 1,
@@ -136,7 +137,7 @@ class ProfilePage extends StatelessWidget {
                 iconColor: TavoColors.amber,
                 title: '主题外观',
                 desc: '深空 / 亮色主题',
-                onTap: () => context.go('/theme'),
+                onTap: () => context.push('/theme'),
               ),
               Divider(
                   height: 1,
@@ -148,7 +149,7 @@ class ProfilePage extends StatelessWidget {
                 iconColor: TavoColors.cosmosGreen,
                 title: '插件',
                 desc: '扩展能力中心',
-                onTap: () => context.go('/plugins'),
+                onTap: () => context.push('/plugins'),
               ),
             ],
           ),
@@ -164,7 +165,7 @@ class ProfilePage extends StatelessWidget {
             iconColor: scheme.onSurfaceVariant,
             title: '更多',
             desc: '设置 · 备份 · 帮助',
-            onTap: () => context.go('/more'),
+            onTap: () => context.push('/more'),
           ),
         ),
       ],
@@ -228,12 +229,12 @@ class ProfilePage extends StatelessWidget {
       alignment: Alignment.center,
       child: url.isEmpty
           ? _avatarLetter(letter, 27)
-          : Image.network(
-              url,
-              width: 62,
-              height: 62,
+          : CachedAppImage(
+              path: url,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _avatarLetter(letter, 27),
+              decodeWidth: 200,
+              placeholderColor: const Color(0xFF2A2438),
+              fallback: _avatarLetter(letter, 27),
             ),
     );
   }

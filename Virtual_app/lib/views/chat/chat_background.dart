@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../models/chat_theme.dart';
+import '../common/cached_app_image.dart';
 
 /// 对话背景的**唯一渲染入口**
 ///
@@ -74,10 +75,11 @@ class ChatBackgroundLayer extends StatelessWidget {
         ),
       );
     } else if (raw.startsWith('http://') || raw.startsWith('https://')) {
-      layer = Image.network(
-        raw,
+      // 走统一磁盘缓存 + 按屏宽降采样，重进聊天不再重新拉取/解码原图
+      layer = CachedAppImage(
+        path: raw,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        fallback: const SizedBox.shrink(),
       );
     } else if (kIsWeb) {
       // Web 端拿不到本地文件字节，直接降级为空背景（不抛异常、不显示破图）
