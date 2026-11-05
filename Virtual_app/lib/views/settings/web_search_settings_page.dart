@@ -38,6 +38,7 @@ class _WebSearchSettingsPageState extends State<WebSearchSettingsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('网络搜索设置'),
+        centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.save),

@@ -14,6 +14,7 @@ import '../views/discover/post_detail_page.dart';
 import '../views/home/category_characters_page.dart';
 import '../views/home/character_detail_page.dart';
 import '../views/home/home_page.dart';
+import '../views/home/tag_filter_page.dart';
 import '../views/lorebook/lorebook_list_page.dart';
 import '../views/lorebook/lorebook_edit_page.dart';
 import '../views/profile/profile_page.dart';
@@ -39,6 +40,18 @@ import '../views/debug/debug_page.dart';
 import '../views/auth/login_page.dart';
 import '../views/auth/register_page.dart';
 
+/// 应用路由表。
+///
+/// 布局约定（2026-11-04）：
+/// - **一级 Tab**（`/home`、`/discover`、`/characters`、`/profile`）与少数
+///   需要保留底部导航的页面（角色卡详情 `_home/character/:id`、分类/搜索页、
+///   对话列表/对话页）放在 [ShellRoute] 内；
+/// - **二级页面**（设置、插件、世界书、正则、预设、端点、主题、角色编辑、
+///   账号相关、对话背景/角色信息等）一律注册为**根 Navigator 的独立路由**。
+///   进入后不再显示底部导航栏；返回键由 `SecondaryAppBar` 的 leading 与
+///   系统返回键共同保证「回到上一级」，只有根页面才允许退出 App。
+///   注意：二级页面入口统一使用 `context.push`（而非 `go`），否则会丢失
+///   返回栈，系统返回键会直接退出应用。
 class AppRouter {
   static final GoRouter router = GoRouter(
     initialLocation: '/home',
@@ -73,6 +86,174 @@ class AppRouter {
         path: '/compose',
         builder: (context, state) => const ComposePostPage(),
       ),
+
+      // ─────────────────────────────────────────────────────────────
+      // 二级页面：根 Navigator 独立路由（无底部导航栏）
+      // ─────────────────────────────────────────────────────────────
+
+      // 账号相关
+      GoRoute(
+        path: '/profile/edit',
+        builder: (context, state) => const ProfileEditPage(),
+      ),
+      GoRoute(
+        path: '/profile/password',
+        builder: (context, state) => const ChangePasswordPage(),
+      ),
+
+      // 端点（API 接入）
+      GoRoute(
+        path: '/endpoints',
+        builder: (context, state) => const EndpointListPage(),
+      ),
+      GoRoute(
+        path: '/endpoint/new',
+        builder: (context, state) => const EndpointEditPage(),
+      ),
+      GoRoute(
+        path: '/endpoint/:id/edit',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return EndpointEditPage(endpointId: id);
+        },
+      ),
+
+      // 世界书
+      GoRoute(
+        path: '/lorebooks',
+        builder: (context, state) => const LorebookListPage(),
+      ),
+      GoRoute(
+        path: '/lorebook/:id/edit',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return LorebookEditPage(lorebookId: id);
+        },
+      ),
+
+      // 正则
+      GoRoute(
+        path: '/regex',
+        builder: (context, state) => const RegexListPage(),
+      ),
+      GoRoute(
+        path: '/regex/new',
+        builder: (context, state) => const RegexEditPage(),
+      ),
+      GoRoute(
+        path: '/regex/:id/edit',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return RegexEditPage(regexId: id);
+        },
+      ),
+
+      // 预设
+      GoRoute(
+        path: '/presets',
+        builder: (context, state) => const PresetListPage(),
+      ),
+      GoRoute(
+        path: '/preset/new',
+        builder: (context, state) => const PresetEditPage(presetId: ''),
+      ),
+      GoRoute(
+        path: '/preset/:id/edit',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return PresetEditPage(presetId: id);
+        },
+      ),
+
+      // 主题
+      GoRoute(
+        path: '/theme',
+        builder: (context, state) => const ThemeListPage(),
+      ),
+
+      // 设置及其子页
+      GoRoute(
+        path: '/settings',
+        builder: (context, state) => const SettingsPage(),
+      ),
+      GoRoute(
+        path: '/settings/backup',
+        builder: (context, state) => const BackupPage(),
+      ),
+      GoRoute(
+        path: '/settings/tts',
+        builder: (context, state) => const TtsSettingsPage(),
+      ),
+      GoRoute(
+        path: '/settings/asr',
+        builder: (context, state) => const AsrSettingsPage(),
+      ),
+      GoRoute(
+        path: '/settings/web-search',
+        builder: (context, state) => const WebSearchSettingsPage(),
+      ),
+      GoRoute(
+        path: '/settings/image-gen',
+        builder: (context, state) => const ImageGenSettingsPage(),
+      ),
+
+      // 插件 / 更多 / 调试
+      GoRoute(
+        path: '/plugins',
+        builder: (context, state) => const PluginListPage(),
+      ),
+      GoRoute(
+        path: '/more',
+        builder: (context, state) => const MorePage(),
+      ),
+      GoRoute(
+        path: '/debug',
+        builder: (context, state) => const DebugPage(),
+      ),
+
+      // 角色卡管理 / 编辑（角色 Tab 进入的二级页面）
+      GoRoute(
+        path: '/character/manage',
+        builder: (context, state) => const CharacterListPage(),
+      ),
+      GoRoute(
+        path: '/character/new',
+        builder: (context, state) => const CharacterEditPage(),
+      ),
+      GoRoute(
+        path: '/character/:id/edit',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return CharacterEditPage(characterId: id);
+        },
+      ),
+
+      // 对话相关二级页（角色信息 / 对话背景）
+      GoRoute(
+        path: '/chat/info/:characterId',
+        builder: (context, state) {
+          final raw = state.pathParameters['characterId'] ?? '';
+          // 角色 id 可能含中文（slugify 有意保留 CJK），需安全解码
+          String id;
+          try {
+            id = Uri.decodeComponent(raw);
+          } catch (_) {
+            id = raw;
+          }
+          return ChatCharacterInfoPage(characterId: id);
+        },
+      ),
+      GoRoute(
+        path: '/chat/background/:conversationId',
+        builder: (context, state) {
+          final id = state.pathParameters['conversationId']!;
+          return ChatBackgroundPage(conversationId: id);
+        },
+      ),
+
+      // ─────────────────────────────────────────────────────────────
+      // 一级 Tab 与需要保留底部导航栏的页面
+      // ─────────────────────────────────────────────────────────────
       ShellRoute(
         builder: (context, state, child) => HomeShell(child: child),
         routes: [
@@ -107,6 +288,12 @@ class AppRouter {
             path: '/home/search',
             builder: (context, state) => const CategoryCharactersPage(),
           ),
+          // 标签筛选页（首页顶栏「分类」按钮 push 进入；ShellRoute 内保留底栏，
+          // 页面自带返回箭头，系统返回回到首页而不是退出 App）
+          GoRoute(
+            path: '/home/tags',
+            builder: (context, state) => const TagFilterPage(),
+          ),
           GoRoute(
             path: '/discover',
             builder: (context, state) => const DiscoverPage(),
@@ -115,43 +302,9 @@ class AppRouter {
             path: '/profile',
             builder: (context, state) => const ProfilePage(),
           ),
-          // 个人信息编辑（点击「我的」页头像 / 昵称进入）
-          GoRoute(
-            path: '/profile/edit',
-            builder: (context, state) => const ProfileEditPage(),
-          ),
-          GoRoute(
-            path: '/profile/password',
-            builder: (context, state) => const ChangePasswordPage(),
-          ),
           GoRoute(
             path: '/chat',
             builder: (context, state) => const ChatListPage(),
-          ),
-          // 对话页 → 右上角菜单「角色信息」：只读展示本地角色档案
-          // 注意：必须排在 `/chat/:id` 之前，且 `/chat/:id` 只吃单段路径，
-          // 所以 `/chat/info/xxx` 不会被它抢先匹配。
-          GoRoute(
-            path: '/chat/info/:characterId',
-            builder: (context, state) {
-              final raw = state.pathParameters['characterId'] ?? '';
-              // 角色 id 可能含中文（slugify 有意保留 CJK），需安全解码
-              String id;
-              try {
-                id = Uri.decodeComponent(raw);
-              } catch (_) {
-                id = raw;
-              }
-              return ChatCharacterInfoPage(characterId: id);
-            },
-          ),
-          // 对话页 → 右上角菜单「对话背景」：按对话维度设置背景
-          GoRoute(
-            path: '/chat/background/:conversationId',
-            builder: (context, state) {
-              final id = state.pathParameters['conversationId']!;
-              return ChatBackgroundPage(conversationId: id);
-            },
           ),
           GoRoute(
             path: '/chat/:id',
@@ -163,118 +316,6 @@ class AppRouter {
           GoRoute(
             path: '/characters',
             builder: (context, state) => const CharacterTabPage(),
-          ),
-          // 角色卡管理列表（书架之外的「全部角色」管理入口，由角色 Tab 内入口跳入）
-          GoRoute(
-            path: '/character/manage',
-            builder: (context, state) => const CharacterListPage(),
-          ),
-          GoRoute(
-            path: '/character/new',
-            builder: (context, state) => const CharacterEditPage(),
-          ),
-          GoRoute(
-            path: '/character/:id/edit',
-            builder: (context, state) {
-              final id = state.pathParameters['id']!;
-              return CharacterEditPage(characterId: id);
-            },
-          ),
-          GoRoute(
-            path: '/endpoints',
-            builder: (context, state) => const EndpointListPage(),
-          ),
-          GoRoute(
-            path: '/endpoint/new',
-            builder: (context, state) => const EndpointEditPage(),
-          ),
-          GoRoute(
-            path: '/endpoint/:id/edit',
-            builder: (context, state) {
-              final id = state.pathParameters['id']!;
-              return EndpointEditPage(endpointId: id);
-            },
-          ),
-          GoRoute(
-            path: '/lorebooks',
-            builder: (context, state) => const LorebookListPage(),
-          ),
-          GoRoute(
-            path: '/lorebook/:id/edit',
-            builder: (context, state) {
-              final id = state.pathParameters['id']!;
-              return LorebookEditPage(lorebookId: id);
-            },
-          ),
-          GoRoute(
-            path: '/regex',
-            builder: (context, state) => const RegexListPage(),
-          ),
-          GoRoute(
-            path: '/regex/new',
-            builder: (context, state) => const RegexEditPage(),
-          ),
-          GoRoute(
-            path: '/regex/:id/edit',
-            builder: (context, state) {
-              final id = state.pathParameters['id']!;
-              return RegexEditPage(regexId: id);
-            },
-          ),
-          GoRoute(
-            path: '/presets',
-            builder: (context, state) => const PresetListPage(),
-          ),
-          GoRoute(
-            path: '/preset/new',
-            builder: (context, state) => const PresetEditPage(presetId: ''),
-          ),
-          GoRoute(
-            path: '/preset/:id/edit',
-            builder: (context, state) {
-              final id = state.pathParameters['id']!;
-              return PresetEditPage(presetId: id);
-            },
-          ),
-          GoRoute(
-            path: '/theme',
-            builder: (context, state) => const ThemeListPage(),
-          ),
-          GoRoute(
-            path: '/settings',
-            builder: (context, state) => const SettingsPage(),
-          ),
-          GoRoute(
-            path: '/settings/backup',
-            builder: (context, state) => const BackupPage(),
-          ),
-          GoRoute(
-            path: '/settings/tts',
-            builder: (context, state) => const TtsSettingsPage(),
-          ),
-          GoRoute(
-            path: '/settings/asr',
-            builder: (context, state) => const AsrSettingsPage(),
-          ),
-          GoRoute(
-            path: '/settings/web-search',
-            builder: (context, state) => const WebSearchSettingsPage(),
-          ),
-          GoRoute(
-            path: '/settings/image-gen',
-            builder: (context, state) => const ImageGenSettingsPage(),
-          ),
-          GoRoute(
-            path: '/plugins',
-            builder: (context, state) => const PluginListPage(),
-          ),
-          GoRoute(
-            path: '/more',
-            builder: (context, state) => const MorePage(),
-          ),
-          GoRoute(
-            path: '/debug',
-            builder: (context, state) => const DebugPage(),
           ),
         ],
       ),

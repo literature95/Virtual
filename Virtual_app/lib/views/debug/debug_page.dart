@@ -93,6 +93,7 @@ class _DebugPageState extends State<DebugPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('调试'),
+        centerTitle: true,
       ),
       body: ListView(
         children: [

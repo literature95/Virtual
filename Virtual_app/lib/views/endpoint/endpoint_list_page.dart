@@ -14,7 +14,8 @@ class EndpointListPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('接口'),
-        // shell AppBar 已隐藏，返回键由本页承担（go 跳入无栈时回落到「我的」）
+        centerTitle: true,
+        // 独立根路由进入，返回键由本页承担（无栈时回落到「我的」）
         leading: BackButton(
           onPressed: () {
             if (context.canPop()) {
@@ -28,7 +29,7 @@ class EndpointListPage extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: '新接口',
-            onPressed: () => context.go('/endpoint/new'),
+            onPressed: () => context.push('/endpoint/new'),
           ),
         ],
       ),
@@ -108,7 +109,7 @@ class EndpointListPage extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.go('/endpoint/${ep.id}/edit'),
+                  onTap: () => context.push('/endpoint/${ep.id}/edit'),
                 ),
               );
             },
@@ -116,7 +117,7 @@ class EndpointListPage extends StatelessWidget {
         },
       ),
       floatingActionButton: TavoBrand.extendedFab(
-        onPressed: () => context.go('/endpoint/new'),
+        onPressed: () => context.push('/endpoint/new'),
         icon: const Icon(Icons.add),
         label: const Text('新接口'),
       ),

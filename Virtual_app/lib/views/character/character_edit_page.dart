@@ -425,6 +425,7 @@ class _CharacterEditPageState extends State<CharacterEditPage>
       return Scaffold(
         appBar: AppBar(
           title: Text(_isEditing ? '编辑角色' : '新角色'),
+        centerTitle: true,
         ),
         body: const Center(child: CircularProgressIndicator()),
       );
@@ -433,6 +434,7 @@ class _CharacterEditPageState extends State<CharacterEditPage>
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEditing ? '编辑角色' : '新角色'),
+        centerTitle: true,
         actions: [
           TextButton(
             onPressed: _saveCharacter,

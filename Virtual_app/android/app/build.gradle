@@ -40,14 +40,6 @@ android {
         main.java.srcDirs += 'src/main/kotlin'
     }
 
-    // 本地模型（GGUF）以 **stored（不压缩）** 方式打入 APK：
-    // 量化后的 GGUF 本身几乎不可压缩，压缩只会让构建变慢并在首次运行时
-    // 解压产生额外拷贝开销。运行期由 MainActivity 的 MethodChannel
-    // 以流式方式复制到应用私有目录（不从 Dart 堆里读整份 532MB）。
-    androidResources {
-        noCompress 'gguf'
-    }
-
     signingConfigs {
         release {
             storeFile file('tav-release.jks')
@@ -75,15 +67,6 @@ android {
         }
         debug {
             minifyEnabled false
-        }
-    }
-
-    // 只出 arm64-v8a：`--target-platform android-arm64` 只约束 Flutter 自身产物
-    // （libapp.so / libflutter.so），插件 AAR（如 nobodywho）仍会自带 x86_64 的
-    // 原生库（约 121MB）。这里显式剔除，避免 APK 白胖 120MB+。
-    packagingOptions {
-        jniLibs {
-            excludes += ['lib/x86_64/**', 'lib/armeabi-v7a/**']
         }
     }
 }

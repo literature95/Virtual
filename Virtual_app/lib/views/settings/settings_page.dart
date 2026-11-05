@@ -48,6 +48,17 @@ class SettingsPage extends StatelessWidget {
       appBar: AppBar(
         key: const Key('settingsAppBar'),
         title: const Text('设置'),
+        centerTitle: true,
+        // 独立根路由：点击返回与系统返回都回到「我的」
+        leading: BackButton(
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/profile');
+            }
+          },
+        ),
       ),
       body: ListView(
         children: [

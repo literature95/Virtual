@@ -124,6 +124,18 @@ class _ChatBackgroundPageState extends State<ChatBackgroundPage> {
     return Scaffold(
       appBar: InsetAppBar(
         title: const Text('对话背景'),
+        centerTitle: true,
+        // 独立根路由：显式返回键（InsetAppBar 默认不自动补 leading）
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/characters');
+            }
+          },
+        ),
         actions: [
           IconButton(
             tooltip: '清除背景',

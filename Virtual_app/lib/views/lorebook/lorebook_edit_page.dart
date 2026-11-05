@@ -274,14 +274,14 @@ class _LorebookEditPageState extends State<LorebookEditPage> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('加载中...')),
+        appBar: AppBar(title: const Text('加载中...'), centerTitle: true),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_lorebook == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('未找到')),
+        appBar: AppBar(title: const Text('未找到'), centerTitle: true),
         body: const Center(child: Text('Lorebook 不存在')),
       );
     }
@@ -289,6 +289,7 @@ class _LorebookEditPageState extends State<LorebookEditPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_lorebook!.name),
+        centerTitle: true,
         actions: [
           Switch(
             value: _lorebook!.enabled,

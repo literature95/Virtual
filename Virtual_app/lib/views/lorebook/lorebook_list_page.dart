@@ -45,6 +45,7 @@ class _LorebookListPageState extends State<LorebookListPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Lorebook 管理'),
+        centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.file_download),

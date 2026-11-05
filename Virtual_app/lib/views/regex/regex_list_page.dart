@@ -33,6 +33,7 @@ class _RegexListPageState extends State<RegexListPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('正则规则'),
+        centerTitle: true,
       ),
       body: _rules.isEmpty
           ? const _EmptyState()

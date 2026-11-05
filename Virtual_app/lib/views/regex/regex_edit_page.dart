@@ -160,7 +160,7 @@ class _RegexEditPageState extends State<RegexEditPage> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('加载中...')),
+        appBar: AppBar(title: const Text('加载中...'), centerTitle: true),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
@@ -168,6 +168,7 @@ class _RegexEditPageState extends State<RegexEditPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_isNew ? '新建正则规则' : '编辑正则规则'),
+        centerTitle: true,
         actions: [
           TextButton(
             onPressed: _save,

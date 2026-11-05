@@ -58,6 +58,7 @@ class _PluginListPageState extends State<PluginListPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('插件管理'),
+        centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.add),

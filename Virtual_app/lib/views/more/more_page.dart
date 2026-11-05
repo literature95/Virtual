@@ -32,7 +32,7 @@ class MorePage extends StatelessWidget {
           _MoreTile(
               label: 'API连接',
               icon: Icons.api_outlined,
-              onTap: () => context.go('/endpoints')),
+              onTap: () => context.push('/endpoints')),
           _MoreTile(
               label: '角色',
               icon: Icons.person_outline,
@@ -51,12 +51,12 @@ class MorePage extends StatelessWidget {
             label: '主题',
             trailing: Text('渊海',
                 style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 14)),
-            onTap: () => context.go('/theme'),
+            onTap: () => context.push('/theme'),
           ),
           _MoreTile(
               label: '语音与生圈',
               icon: Icons.record_voice_over_outlined,
-              onTap: () => context.go('/settings/tts')),
+              onTap: () => context.push('/settings/tts')),
 
           const SizedBox(height: 8),
 
@@ -67,16 +67,16 @@ class MorePage extends StatelessWidget {
             label: '预设',
             trailing: Text('默认',
                 style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 14)),
-            onTap: () => context.go('/presets'),
+            onTap: () => context.push('/presets'),
           ),
           _MoreTile(
               label: '世界书',
               icon: Icons.menu_book_outlined,
-              onTap: () => context.go('/lorebooks')),
+              onTap: () => context.push('/lorebooks')),
           _MoreTile(
               label: '正则',
               icon: Icons.text_fields_outlined,
-              onTap: () => context.go('/regex')),
+              onTap: () => context.push('/regex')),
           _MoreTile(
               label: '长记忆', icon: Icons.psychology_outlined, onTap: () {}),
 
@@ -88,7 +88,7 @@ class MorePage extends StatelessWidget {
             badge: 'BETA',
             badgeColor: const Color(0xFF7F77DD),
             icon: Icons.extension_outlined,
-            onTap: () => context.go('/plugins'),
+            onTap: () => context.push('/plugins'),
           ),
 
           const SizedBox(height: 8),
@@ -97,7 +97,7 @@ class MorePage extends StatelessWidget {
           _MoreTile(
               label: '设置',
               icon: Icons.settings_outlined,
-              onTap: () => context.go('/settings')),
+              onTap: () => context.push('/settings')),
 
           const SizedBox(height: 40),
         ],

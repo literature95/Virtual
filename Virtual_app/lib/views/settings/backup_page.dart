@@ -49,6 +49,7 @@ class _BackupPageState extends State<BackupPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('数据备份'),
+        centerTitle: true,
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),

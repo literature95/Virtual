@@ -177,7 +177,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     final loggedIn = context.watch<AuthProvider>().isLoggedIn;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('修改密码')),
+      appBar: AppBar(title: const Text('修改密码'), centerTitle: true),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         children: [

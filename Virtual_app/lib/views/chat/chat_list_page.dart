@@ -32,7 +32,7 @@ Future<void> _startNewChat(BuildContext context) async {
         ],
       ),
     );
-    if (go == true && context.mounted) context.go('/character/new');
+    if (go == true && context.mounted) context.push('/character/new');
     return;
   }
 
@@ -289,7 +289,7 @@ class ConversationListView extends StatelessWidget {
               ),
               trailing:
                   conv.isPinned ? const Icon(Icons.push_pin, size: 16) : null,
-              onTap: () => context.go('/chat/${conv.id}'),
+              onTap: () => context.push('/chat/${conv.id}'),
               onLongPress: () => onShowMenu(context, conv),
             );
           },

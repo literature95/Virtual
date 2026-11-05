@@ -41,6 +41,7 @@ class _AsrSettingsPageState extends State<AsrSettingsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('ASR 设置'),
+        centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.save),

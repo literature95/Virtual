@@ -45,6 +45,7 @@ class _ImageGenSettingsPageState extends State<ImageGenSettingsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('图像生成设置'),
+        centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.save),

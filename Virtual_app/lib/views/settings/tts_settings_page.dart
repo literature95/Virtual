@@ -51,6 +51,7 @@ class _TtsSettingsPageState extends State<TtsSettingsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('TTS 设置'),
+        centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.save),

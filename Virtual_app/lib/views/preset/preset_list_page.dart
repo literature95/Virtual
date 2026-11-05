@@ -35,6 +35,7 @@ class _PresetListPageState extends State<PresetListPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('预设管理'),
+        centerTitle: true,
       ),
       body: _presets.isEmpty
           ? const _EmptyState()

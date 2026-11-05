@@ -25,6 +25,7 @@ class NobodyWhoAdapter implements LLMAdapter {
     required String model,
     required List<Map<String, dynamic>> messages,
     required ChatSettings settings,
+    String? conversationId,
   }) =>
       Stream<ChatChunk>.error(UnsupportedError(_message));
 
@@ -33,6 +34,7 @@ class NobodyWhoAdapter implements LLMAdapter {
     required String model,
     required List<Map<String, dynamic>> messages,
     required ChatSettings settings,
+    String? conversationId,
   }) async =>
       throw UnsupportedError(_message);
 }

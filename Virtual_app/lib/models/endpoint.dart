@@ -96,10 +96,16 @@ class LlmEndpoint {
   /// 单次生成最大 token 数
   final int maxTokens;
 
+  /// 重复惩罚（1.0 = 不惩罚，>1.0 抑制复读；过高会发僵）
+  final double repetitionPenalty;
+
+  /// 新端点默认上下文长度：4096（与本地模型功能引入前保持一致）。
+  /// 已有端点读回自身存储值，不强制改。
   static const int kDefaultContextSize = 4096;
   static const int kDefaultMaxTokens = 1024;
   static const double kDefaultTemperature = 0.7;
   static const double kDefaultTopP = 0.9;
+  static const double kDefaultRepetitionPenalty = 1.1;
 
   LlmEndpoint({
     required this.id,
@@ -123,11 +129,14 @@ class LlmEndpoint {
     double temperature = kDefaultTemperature,
     double topP = kDefaultTopP,
     int maxTokens = kDefaultMaxTokens,
+    double repetitionPenalty = kDefaultRepetitionPenalty,
   })  : contextSize = contextSize.clamp(512, 131072).toInt(),
         threadCount = threadCount.clamp(0, 64).toInt(),
         temperature = temperature.clamp(0.0, 2.0).toDouble(),
         topP = topP.clamp(0.0, 1.0).toDouble(),
-        maxTokens = maxTokens.clamp(1, 32768).toInt();
+        maxTokens = maxTokens.clamp(1, 32768).toInt(),
+        repetitionPenalty =
+            repetitionPenalty.clamp(1.0, 1.3).toDouble();
 
   LlmEndpoint copyWith({
     String? id,
@@ -151,6 +160,7 @@ class LlmEndpoint {
     double? temperature,
     double? topP,
     int? maxTokens,
+    double? repetitionPenalty,
   }) {
     return LlmEndpoint(
       id: id ?? this.id,
@@ -174,6 +184,7 @@ class LlmEndpoint {
       temperature: temperature ?? this.temperature,
       topP: topP ?? this.topP,
       maxTokens: maxTokens ?? this.maxTokens,
+      repetitionPenalty: repetitionPenalty ?? this.repetitionPenalty,
     );
   }
 
@@ -199,6 +210,7 @@ class LlmEndpoint {
         'temperature': temperature,
         'topP': topP,
         'maxTokens': maxTokens,
+        'repetitionPenalty': repetitionPenalty,
       };
 
   factory LlmEndpoint.fromJson(Map<String, dynamic> json) => LlmEndpoint(
@@ -227,6 +239,9 @@ class LlmEndpoint {
             (json['temperature'] as num?)?.toDouble() ?? kDefaultTemperature,
         topP: (json['topP'] as num?)?.toDouble() ?? kDefaultTopP,
         maxTokens: (json['maxTokens'] as num?)?.toInt() ?? kDefaultMaxTokens,
+        // 旧 JSON 缺该字段按 1.1（引擎侧支持惩罚，默认轻微抑制复读）
+        repetitionPenalty: (json['repetitionPenalty'] as num?)?.toDouble() ??
+            kDefaultRepetitionPenalty,
       );
 
   /// 生效模型：默认模型仍存在时用它，否则回落列表第一个

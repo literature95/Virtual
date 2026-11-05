@@ -16,6 +16,8 @@ class StreamChatChunk {
   final String? finishReason;
   final int? promptTokens;
   final int? completionTokens;
+  final int? firstTokenMs;
+  final double? tokensPerSecond;
 
   const StreamChatChunk({
     this.content = '',
@@ -24,6 +26,8 @@ class StreamChatChunk {
     this.finishReason,
     this.promptTokens,
     this.completionTokens,
+    this.firstTokenMs,
+    this.tokensPerSecond,
   });
 }
 
@@ -33,6 +37,8 @@ class ChatCompletionResponse {
   final int? promptTokens;
   final int? completionTokens;
   final String? finishReason;
+  final int? firstTokenMs;
+  final double? tokensPerSecond;
 
   const ChatCompletionResponse({
     required this.content,
@@ -40,6 +46,8 @@ class ChatCompletionResponse {
     this.promptTokens,
     this.completionTokens,
     this.finishReason,
+    this.firstTokenMs,
+    this.tokensPerSecond,
   });
 }
 
@@ -48,13 +56,27 @@ abstract class LlmApiAdapter {
     required String model,
     required List<Map<String, dynamic>> messages,
     required ChatSettings settings,
+    String? conversationId,
   });
 
   Future<ChatCompletionResponse> chatCompletions({
     required String model,
     required List<Map<String, dynamic>> messages,
     required ChatSettings settings,
+    String? conversationId,
   });
+
+  /// 本地模型：返回会话 token 计数器；云端返回 null（走通用提示词路径）。
+  Future<Future<int> Function(String text)?> localTokenCounter(
+    String? conversationId,
+  ) async =>
+      null;
+
+  /// 本地模型：设置本轮压缩角色卡（systemPrompt）。云端无副作用。
+  void setLocalSystemPrompt(String? prompt) {}
+
+  /// 本地模型：释放会话上下文（切换/删除/清空对话）。云端无副作用。
+  Future<void> releaseLocalContext(String? conversationId) async {}
 }
 
 class _LLMAdapterWrapper implements LlmApiAdapter {
@@ -67,11 +89,13 @@ class _LLMAdapterWrapper implements LlmApiAdapter {
     required String model,
     required List<Map<String, dynamic>> messages,
     required ChatSettings settings,
+    String? conversationId,
   }) async* {
     await for (final chunk in _adapter.chatStream(
       model: model,
       messages: messages,
       settings: settings,
+      conversationId: conversationId,
     )) {
       yield StreamChatChunk(
         content: chunk.content,
@@ -80,6 +104,8 @@ class _LLMAdapterWrapper implements LlmApiAdapter {
         finishReason: chunk.finishReason,
         promptTokens: chunk.promptTokens,
         completionTokens: chunk.completionTokens,
+        firstTokenMs: chunk.firstTokenMs,
+        tokensPerSecond: chunk.tokensPerSecond,
       );
     }
   }
@@ -89,11 +115,13 @@ class _LLMAdapterWrapper implements LlmApiAdapter {
     required String model,
     required List<Map<String, dynamic>> messages,
     required ChatSettings settings,
+    String? conversationId,
   }) async {
     final response = await _adapter.chat(
       model: model,
       messages: messages,
       settings: settings,
+      conversationId: conversationId,
     );
     return ChatCompletionResponse(
       content: response.content,
@@ -101,7 +129,36 @@ class _LLMAdapterWrapper implements LlmApiAdapter {
       promptTokens: response.promptTokens,
       completionTokens: response.completionTokens,
       finishReason: response.finishReason,
+      firstTokenMs: response.firstTokenMs,
+      tokensPerSecond: response.tokensPerSecond,
     );
+  }
+
+  @override
+  Future<Future<int> Function(String text)?> localTokenCounter(
+    String? conversationId,
+  ) async {
+    final adapter = _adapter;
+    if (adapter is LocalContextAdapter) {
+      return adapter.tokenCounter(conversationId ?? 'default');
+    }
+    return null;
+  }
+
+  @override
+  void setLocalSystemPrompt(String? prompt) {
+    final adapter = _adapter;
+    if (adapter is LocalContextAdapter) {
+      adapter.setNextSystemPrompt(prompt);
+    }
+  }
+
+  @override
+  Future<void> releaseLocalContext(String? conversationId) async {
+    final adapter = _adapter;
+    if (adapter is LocalContextAdapter) {
+      await adapter.releaseLocalContext(conversationId ?? 'default');
+    }
   }
 }
 
@@ -176,6 +233,13 @@ class ApiService {
 
   void clearCache(String endpointId) {
     _adapterCache.remove(endpointId);
+  }
+
+  /// 释放某个对话在所有端点下的本地上下文（切换/删除/清空对话时调用）。
+  Future<void> releaseLocalContext(String conversationId) async {
+    for (final adapter in _adapterCache.values) {
+      await adapter.releaseLocalContext(conversationId);
+    }
   }
 
   void clearAllCache() {

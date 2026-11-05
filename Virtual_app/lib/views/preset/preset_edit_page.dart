@@ -349,14 +349,14 @@ class _PresetEditPageState extends State<PresetEditPage> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('加载中...')),
+        appBar: AppBar(title: const Text('加载中...'), centerTitle: true),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_preset == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('预设不存在')),
+        appBar: AppBar(title: const Text('预设不存在'), centerTitle: true),
         body: const Center(child: Text('找不到该预设')),
       );
     }
@@ -364,6 +364,7 @@ class _PresetEditPageState extends State<PresetEditPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_preset!.name),
+        centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.preview),

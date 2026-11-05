@@ -12,6 +12,7 @@ class ThemeListPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('主题选择'),
+        centerTitle: true,
       ),
       body: Consumer<SettingsProvider>(
         builder: (context, settings, _) {
