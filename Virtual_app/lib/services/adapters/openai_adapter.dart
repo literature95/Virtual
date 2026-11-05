@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 
 import '../../models/conversation.dart';
 import '../../models/endpoint.dart';
+import '../retry_policy.dart';
 import 'llm_adapter.dart';
 
 class OpenAIAdapter implements LLMAdapter {
@@ -28,6 +29,7 @@ class OpenAIAdapter implements LLMAdapter {
     required String model,
     required List<Map<String, dynamic>> messages,
     required ChatSettings settings,
+    String? conversationId,
   }) async* {
     final body = <String, dynamic>{
       'model': model,
@@ -84,7 +86,7 @@ class OpenAIAdapter implements LLMAdapter {
 
       yield const ChatChunk(isFinal: true);
     } on DioException catch (e) {
-      throw Exception(await extractDioErrorMessage(e));
+      throw await createLlmRequestException(e);
     }
   }
 
@@ -146,6 +148,7 @@ class OpenAIAdapter implements LLMAdapter {
     required String model,
     required List<Map<String, dynamic>> messages,
     required ChatSettings settings,
+    String? conversationId,
   }) async {
     final body = <String, dynamic>{
       'model': model,
@@ -185,7 +188,7 @@ class OpenAIAdapter implements LLMAdapter {
         finishReason: choices[0]['finish_reason'] as String?,
       );
     } on DioException catch (e) {
-      throw Exception(await extractDioErrorMessage(e));
+      throw await createLlmRequestException(e);
     }
   }
 

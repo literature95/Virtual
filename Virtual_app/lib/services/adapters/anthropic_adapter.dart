@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 
 import '../../models/conversation.dart';
 import '../../models/endpoint.dart';
+import '../retry_policy.dart';
 import 'llm_adapter.dart';
 
 class AnthropicAdapter implements LLMAdapter {
@@ -68,6 +69,7 @@ class AnthropicAdapter implements LLMAdapter {
     required String model,
     required List<Map<String, dynamic>> messages,
     required ChatSettings settings,
+    String? conversationId,
   }) async* {
     final convertedMessages = _convertMessages(messages, settings.systemPrompt ?? '');
     final systemContent = settings.systemPrompt ?? '';
@@ -124,7 +126,7 @@ class AnthropicAdapter implements LLMAdapter {
 
       yield const ChatChunk(isFinal: true);
     } on DioException catch (e) {
-      throw Exception(await extractDioErrorMessage(e));
+      throw await createLlmRequestException(e);
     }
   }
 
@@ -187,6 +189,7 @@ class AnthropicAdapter implements LLMAdapter {
     required String model,
     required List<Map<String, dynamic>> messages,
     required ChatSettings settings,
+    String? conversationId,
   }) async {
     final convertedMessages = _convertMessages(messages, settings.systemPrompt ?? '');
     final systemContent = settings.systemPrompt ?? '';
@@ -234,7 +237,7 @@ class AnthropicAdapter implements LLMAdapter {
         finishReason: data['stop_reason'] as String?,
       );
     } on DioException catch (e) {
-      throw Exception(await extractDioErrorMessage(e));
+      throw await createLlmRequestException(e);
     }
   }
 

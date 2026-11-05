@@ -199,9 +199,8 @@ class PromptService {
       'content': systemContent,
     });
 
-    // 历史消息（过滤掉隐藏的和错误的）
+    // 历史消息（隐藏消息只隐藏「界面渲染」，仍必须进入上下文）
     for (final msg in history) {
-      if (msg.isHidden) continue;
       if (msg.role == MessageRole.system) continue;
 
       final role = _roleToString(msg.role);

@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 
 import '../../models/conversation.dart';
 import '../../models/endpoint.dart';
+import '../retry_policy.dart';
 import 'llm_adapter.dart';
 
 class GeminiAdapter implements LLMAdapter {
@@ -71,6 +72,7 @@ class GeminiAdapter implements LLMAdapter {
     required String model,
     required List<Map<String, dynamic>> messages,
     required ChatSettings settings,
+    String? conversationId,
   }) async* {
     final geminiFormat = _convertToGeminiFormat(messages, settings.systemPrompt ?? '');
 
@@ -122,7 +124,7 @@ class GeminiAdapter implements LLMAdapter {
 
       yield const ChatChunk(isFinal: true);
     } on DioException catch (e) {
-      throw Exception(await extractDioErrorMessage(e));
+      throw await createLlmRequestException(e);
     }
   }
 
@@ -168,6 +170,7 @@ class GeminiAdapter implements LLMAdapter {
     required String model,
     required List<Map<String, dynamic>> messages,
     required ChatSettings settings,
+    String? conversationId,
   }) async {
     final geminiFormat = _convertToGeminiFormat(messages, settings.systemPrompt ?? '');
 
@@ -221,7 +224,7 @@ class GeminiAdapter implements LLMAdapter {
             : null,
       );
     } on DioException catch (e) {
-      throw Exception(await extractDioErrorMessage(e));
+      throw await createLlmRequestException(e);
     }
   }
 

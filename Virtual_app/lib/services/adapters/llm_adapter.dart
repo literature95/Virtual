@@ -12,6 +12,11 @@ class ChatChunk {
   final int? promptTokens;
   final int? completionTokens;
 
+  /// 本地模型性能：首字延迟（ms）与生成速度（tok/s）。
+  /// 仅最终块携带，云端适配器恒为 null。
+  final int? firstTokenMs;
+  final double? tokensPerSecond;
+
   const ChatChunk({
     this.content = '',
     this.reasoning = '',
@@ -19,6 +24,8 @@ class ChatChunk {
     this.finishReason,
     this.promptTokens,
     this.completionTokens,
+    this.firstTokenMs,
+    this.tokensPerSecond,
   });
 }
 
@@ -28,6 +35,8 @@ class ChatResponse {
   final int? promptTokens;
   final int? completionTokens;
   final String? finishReason;
+  final int? firstTokenMs;
+  final double? tokensPerSecond;
 
   const ChatResponse({
     required this.content,
@@ -35,23 +44,46 @@ class ChatResponse {
     this.promptTokens,
     this.completionTokens,
     this.finishReason,
+    this.firstTokenMs,
+    this.tokensPerSecond,
   });
 }
 
 abstract class LLMAdapter {
+  /// [conversationId] 仅本地模型适配器使用：按会话隔离推理上下文，
+  /// 云端适配器无状态，忽略该参数。
   Stream<ChatChunk> chatStream({
     required String model,
     required List<Map<String, dynamic>> messages,
     required ChatSettings settings,
+    String? conversationId,
   });
 
   Future<ChatResponse> chat({
     required String model,
     required List<Map<String, dynamic>> messages,
     required ChatSettings settings,
+    String? conversationId,
   });
 
   String get protocol;
+}
+
+/// 本地模型增量上下文能力（由 nobodywho 适配器实现，云端适配器不实现）。
+///
+/// 提示词组装层需要引擎 tokenizer 来压缩角色卡/裁历史；上下文生命周期
+/// （复用、75% 裁剪、会话释放）也由适配器负责，避免组装逻辑散落在适配器里。
+abstract class LocalContextAdapter implements LLMAdapter {
+  /// 设置本轮使用的 system prompt（压缩角色卡，由组装层产出）。
+  void setNextSystemPrompt(String? prompt);
+
+  /// 返回当前会话的 token 计数器；模型未配置时返回 null。
+  Future<Future<int> Function(String text)?> tokenCounter(
+    String conversationId,
+  );
+
+  /// 释放指定会话的推理上下文（切换 / 删除 / 清空对话时调用）。
+  Future<void> releaseLocalContext(String conversationId);
 }
 
 /// 把流式响应体安全解码为 SSE 行流（三个适配器共用）。

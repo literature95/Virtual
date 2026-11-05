@@ -300,6 +300,11 @@ class ChatMessage {
   final int? promptTokens;
   final int? completionTokens;
 
+  /// 本地模型性能：首字延迟（毫秒）与生成速度（token/秒）。
+  /// 云端接口不填，气泡下方因此不显示性能行。
+  final int? firstTokenMs;
+  final double? tokensPerSecond;
+
   /// 时间戳
   /// 证据：pp.txt [pp+0x3d28] String: "timestamp"
   final DateTime createdAt;
@@ -346,6 +351,8 @@ class ChatMessage {
     this.revision = 1,
     this.promptTokens,
     this.completionTokens,
+    this.firstTokenMs,
+    this.tokensPerSecond,
     required this.createdAt,
     this.updatedAt,
   });
@@ -384,6 +391,8 @@ class ChatMessage {
     int? revision,
     int? promptTokens,
     int? completionTokens,
+    int? firstTokenMs,
+    double? tokensPerSecond,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -423,6 +432,8 @@ class ChatMessage {
       revision: revision ?? this.revision + 1,
       promptTokens: promptTokens ?? this.promptTokens,
       completionTokens: completionTokens ?? this.completionTokens,
+      firstTokenMs: firstTokenMs ?? this.firstTokenMs,
+      tokensPerSecond: tokensPerSecond ?? this.tokensPerSecond,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
     );
@@ -462,6 +473,8 @@ class ChatMessage {
         'revision': revision,
         'promptTokens': promptTokens,
         'completionTokens': completionTokens,
+        'firstTokenMs': firstTokenMs,
+        'tokensPerSecond': tokensPerSecond,
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt?.toIso8601String(),
       };
@@ -569,6 +582,8 @@ class ChatMessage {
         revision: json['revision'] ?? 1,
         promptTokens: json['promptTokens'],
         completionTokens: json['completionTokens'],
+        firstTokenMs: (json['firstTokenMs'] as num?)?.toInt(),
+        tokensPerSecond: (json['tokensPerSecond'] as num?)?.toDouble(),
         createdAt: DateTime.parse(json['createdAt']),
         updatedAt: json['updatedAt'] != null
             ? DateTime.parse(json['updatedAt'])

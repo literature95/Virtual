@@ -14,7 +14,8 @@ import '../../providers/chat_provider.dart';
 import '../../providers/character_provider.dart';
 import '../../providers/endpoint_provider.dart';
 import '../../providers/settings_provider.dart';
-import '../common/character_cover_card.dart' show resolveAvatarImage;
+import '../../services/app_image_cache.dart';
+import '../../services/chat_action_policy.dart' show kContinueInstruction;
 import '../common/inset_app_bar.dart';
 import 'chat_background.dart';
 
@@ -73,12 +74,34 @@ class _ChatPageState extends State<ChatPage> {
     final text = _textController.text.trim();
     if (text.isEmpty && _pendingImages.isEmpty) return;
 
+    final chatProvider = context.read<ChatProvider>();
+    // 同一对话串行：已有请求在跑时直接提示，不排队（排队会让用户以为
+    // 消息丢失，并在长等待后突然连出两条回复）。
+    if (chatProvider.isGenerating || chatProvider.isCurrentConversationBusy) {
+      _showBusyHint();
+      return;
+    }
+
     _textController.clear();
     final images = _pendingImages.isEmpty ? null : List.of(_pendingImages);
     if (mounted) setState(_pendingImages.clear);
-    final chatProvider = context.read<ChatProvider>();
-    await chatProvider.sendMessage(text, images: images);
+    final accepted = await chatProvider.sendMessage(text, images: images);
+    if (!accepted) {
+      // 极窄的并发窗口（检查与占锁之间）：把文本还给输入框，避免内容丢失。
+      if (mounted) {
+        if (_textController.text.isEmpty) _textController.text = text;
+        _showBusyHint();
+      }
+      return;
+    }
     _scrollToBottom();
+  }
+
+  void _showBusyHint() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('上一条还在生成，请稍候或点击停止')),
+    );
   }
 
   Future<void> _stopGeneration() async {
@@ -224,6 +247,8 @@ class _ChatPageState extends State<ChatPage> {
       final who = m.role == MessageRole.user ? '我' : charName;
       buf.writeln('**$who**');
       buf.writeln();
+      // 隐藏消息（如「继续上文」指令）仍在导出里标注，便于调试核对上下文
+      if (m.isHidden) buf.writeln('> [隐藏消息，不显示于聊天]');
       if (m.content.trim().isNotEmpty) buf.writeln(m.content);
       final imgs = m.attachments
           .where((a) => a.type == MessageAttachmentType.image)
@@ -528,7 +553,7 @@ class _ChatPageState extends State<ChatPage> {
                     });
 
                     final Widget content;
-                    if (provider.messages.isEmpty) {
+                    if (provider.visibleMessages.isEmpty) {
                       content = Center(
                         child: Padding(
                           padding: EdgeInsets.only(top: topInset),
@@ -544,9 +569,9 @@ class _ChatPageState extends State<ChatPage> {
                           top: 8 + topInset,
                           bottom: 8,
                         ),
-                        itemCount: provider.messages.length,
+                        itemCount: provider.visibleMessages.length,
                         itemBuilder: (context, index) {
-                          final msg = provider.messages[index];
+                          final msg = provider.visibleMessages[index];
                           return _MessageBubble(message: msg);
                         },
                       );
@@ -556,6 +581,7 @@ class _ChatPageState extends State<ChatPage> {
                 ),
               ),
               _buildPendingImagesBar(),
+              _buildStoryAssistBar(),
               _buildInputBar(transparent: hasBg),
             ],
           ),
@@ -564,10 +590,155 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  /// AI 回复下方的「剧情选项 / 继续」条。
+  ///
+  /// 只在最后一条是已完成的 AI 回复且无进行中的请求时显示：
+  /// - 选项是一次独立轻量请求，按 AI 消息 id 缓存，可「换一批」；
+  /// - 点选项 = 以普通用户消息发送该条文字；
+  /// - 继续 = 发送一条隐藏指令（列表不渲染，但进上下文）。
+  Widget _buildStoryAssistBar() {
+    return Consumer<ChatProvider>(
+      builder: (context, provider, _) {
+        final visible = provider.visibleMessages;
+        if (visible.isEmpty) return const SizedBox.shrink();
+        final last = visible.last;
+        if (last.role != MessageRole.assistant) {
+          return const SizedBox.shrink();
+        }
+        final scheme = Theme.of(context).colorScheme;
+        final busy = provider.isGenerating ||
+            provider.isGeneratingOptions ||
+            provider.isCurrentConversationBusy;
+
+        // 上一条还在生成：按钮整体禁用，并明确提示（避免用户以为按钮坏了）
+        if (provider.isGenerating) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(14, 4, 14, 2),
+            child: Text(
+              '上一条还在生成，请稍候…',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+          );
+        }
+        if (last.isGenerating || last.isError) {
+          return const SizedBox.shrink();
+        }
+
+        final options = provider.plotOptionsFor(last.id);
+        final loading = provider.isPlotOptionsLoading(last.id);
+        final error = provider.plotOptionsErrorFor(last.id);
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (loading)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: scheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text('正在生成选项…',
+                          style: TextStyle(
+                              fontSize: 12.5, color: scheme.onSurfaceVariant)),
+                    ],
+                  ),
+                )
+              else if (options.isNotEmpty)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    for (final o in options)
+                      ActionChip(
+                        label: Text(o, style: const TextStyle(fontSize: 12.5)),
+                        onPressed: busy ? null : () => _sendPlotOption(o),
+                      ),
+                  ],
+                ),
+              if (error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    error,
+                    style: TextStyle(fontSize: 12, color: scheme.error),
+                  ),
+                ),
+              Row(
+                children: [
+                  TextButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () => provider.generatePlotOptions(
+                              refresh: options.isNotEmpty,
+                            ),
+                    icon: const Icon(Icons.auto_awesome, size: 17),
+                    label: Text(options.isEmpty ? '生成选项' : '换一批',
+                        style: const TextStyle(fontSize: 12.5)),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  TextButton.icon(
+                    onPressed: busy ? null : _continueGeneration,
+                    icon: const Icon(Icons.play_arrow, size: 19),
+                    label: const Text('继续',
+                        style: TextStyle(fontSize: 12.5)),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 点击选项：作为普通用户消息发送（与手输完全同一条链路）。
+  Future<void> _sendPlotOption(String option) async {
+    final ok = await context.read<ChatProvider>().sendPlotOption(option);
+    if (!ok) {
+      _showBusyHint();
+      return;
+    }
+    _scrollToBottom();
+  }
+
+  /// 继续生成：追加隐藏指令后走 sendMessage（含重试与并发锁）。
+  Future<void> _continueGeneration() async {
+    final provider = context.read<ChatProvider>();
+    if (provider.isGenerating || provider.isCurrentConversationBusy) {
+      _showBusyHint();
+      return;
+    }
+    final ok = await provider.sendMessage(kContinueInstruction, hidden: true);
+    if (!ok) {
+      _showBusyHint();
+      return;
+    }
+    _scrollToBottom();
+  }
+
   Widget _buildInputBar({required bool transparent}) {
     return Consumer<ChatProvider>(
       builder: (context, provider, _) {
         final canSend = !provider.isGenerating &&
+            !provider.isGeneratingOptions &&
             (_textController.text.trim().isNotEmpty ||
                 _pendingImages.isNotEmpty);
 
@@ -719,6 +890,21 @@ class _MessageBubbleState extends State<_MessageBubble> {
                     child: _buildMessageContent(
                         context, msg, isBubbleStyle, isUser),
                   ),
+                  // 本地模型性能行（云端不填这些字段，因此不显示）
+                  if (!isUser && msg.firstTokenMs != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '首字 ${(msg.firstTokenMs! / 1000).toStringAsFixed(2)}s · '
+                      '${msg.tokensPerSecond?.toStringAsFixed(1) ?? '-'} tok/s',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant
+                            .withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1021,8 +1207,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
           ? Theme.of(context).colorScheme.secondaryContainer
           : Theme.of(context).colorScheme.primaryContainer,
       // avatarPath 可能是在线卡 http(s) 外链 / data URL / 本地文件路径，
-      // Web 上 FileImage 处理 URL 会直接抛 _Namespace，统一走分发助手
-      backgroundImage: resolveAvatarImage(avatarPath),
+      // 统一走 AppImageCache（网络图带磁盘缓存，按头像尺寸解码）
+      backgroundImage: AppImageCache.providerFor(avatarPath, decodeWidth: 160),
       child: Text(
         initial,
         style: TextStyle(
@@ -1069,8 +1255,15 @@ class _MessageBubbleState extends State<_MessageBubble> {
                 leading: const Icon(Icons.refresh),
                 title: const Text('重新生成'),
                 onTap: () {
+                  final messenger = ScaffoldMessenger.of(context);
                   Navigator.pop(context);
-                  chatProvider.regenerateMessage(msg.id);
+                  chatProvider.regenerateMessage(msg.id).then((ok) {
+                    if (!ok) {
+                      messenger.showSnackBar(const SnackBar(
+                        content: Text('上一条还在生成，请稍候或点击停止'),
+                      ));
+                    }
+                  });
                 },
               ),
             ListTile(

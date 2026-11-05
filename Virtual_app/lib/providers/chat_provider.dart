@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../config/app_feature_flags.dart';
 import '../data/app_database.dart';
+import '../models/character.dart';
 import '../models/chat_message.dart';
 import '../models/chat_theme.dart';
 import '../models/conversation.dart';
@@ -10,8 +12,13 @@ import '../models/lorebook.dart';
 import '../models/persona.dart';
 import '../models/preset.dart';
 import '../services/api_service.dart';
+import '../services/chat_action_policy.dart';
 import '../services/context_window_service.dart';
+import '../services/conversation_request_lock.dart';
+import '../services/local_prompt_builder.dart';
+import '../services/plot_option_parser.dart';
 import '../services/prompt_service.dart';
+import '../services/retry_policy.dart';
 import 'settings_provider.dart';
 import 'character_provider.dart';
 import 'endpoint_provider.dart';
@@ -39,6 +46,36 @@ class ChatProvider extends ChangeNotifier {
 
   bool _isGenerating = false;
   bool get isGenerating => _isGenerating;
+
+  /// 同一对话的串行锁：快速连点 / 重入时只允许一个上游请求在跑。
+  final ConversationRequestLock _requestLock = ConversationRequestLock();
+
+  /// 当前对话是否已有进行中的请求（供 UI 提示使用）。
+  bool get isCurrentConversationBusy {
+    final id = _currentConversation?.id;
+    return id != null && _requestLock.isLocked(id);
+  }
+
+  /// 渲染用消息列表：隐藏消息（如「继续上文」指令）仍进上下文，但不显示。
+  List<ChatMessage> get visibleMessages =>
+      _messages.where((m) => !m.isHidden).toList();
+
+  /// 剧情选项缓存：key = AI 消息 id（同一消息生成一次后复用，切页面不丢）。
+  final Map<String, List<String>> _plotOptions = {};
+  final Map<String, String> _plotOptionsError = {};
+  final Set<String> _plotOptionsLoading = {};
+
+  List<String> plotOptionsFor(String messageId) =>
+      _plotOptions[messageId] ?? const [];
+
+  String? plotOptionsErrorFor(String messageId) =>
+      _plotOptionsError[messageId];
+
+  bool isPlotOptionsLoading(String messageId) =>
+      _plotOptionsLoading.contains(messageId);
+
+  /// 是否有选项请求在跑（任一消息）。与聊天请求共用对话锁，故两者互斥。
+  bool get isGeneratingOptions => _plotOptionsLoading.isNotEmpty;
 
   bool _isStopRequested = false;
 
@@ -178,6 +215,8 @@ class ChatProvider extends ChangeNotifier {
     await _db.deleteConversation(id);
     // 连带清掉该对话的背景设置，避免主题表里留下孤儿条目
     await _db.deleteTheme(backgroundThemeId(id));
+    // 释放本地模型上下文，避免同一端点下残留该会话的推理历史
+    await _apiService.releaseLocalContext(id);
     if (_currentConversation?.id == id) {
       _currentConversation = null;
       _messages = [];
@@ -206,6 +245,8 @@ class ChatProvider extends ChangeNotifier {
   /// 清空指定对话的所有消息（保留对话本身）
   Future<void> clearMessages(String conversationId) async {
     _db.clearMessages(conversationId);
+    // 清空历史后引擎侧上下文也必须重置，否则会出现「界面为空但模型记得」
+    await _apiService.releaseLocalContext(conversationId);
     if (_currentConversation?.id == conversationId) {
       _messages = [];
       notifyListeners();
@@ -271,6 +312,12 @@ class ChatProvider extends ChangeNotifier {
     final conv = _db.getConversation(conversationId);
     if (conv == null) return;
 
+    // 切换会话：释放上一个会话的本地上下文，避免跨会话串场
+    final previousId = _currentConversation?.id;
+    if (previousId != null && previousId != conversationId) {
+      await _apiService.releaseLocalContext(previousId);
+    }
+
     _currentConversation = conv;
     _messages = _db.getMessages(conversationId);
     _currentModelId = conv.modelId;
@@ -321,12 +368,35 @@ class ChatProvider extends ChangeNotifier {
 
   /// 发送消息并流式生成回复
   ///
+  /// 返回 false 表示**同一对话已有进行中的请求**，本次发送被拦截
+  /// （UI 据此提示「上一条还在生成」）；其余情况（包括参数校验失败）返回 true。
+  ///
   /// [content] 用户消息内容
   /// [images] 附带的图片路径列表
-  Future<void> sendMessage(String content, {List<String>? images}) async {
-    if (_currentConversation == null) return;
-    if (_isGenerating) return;
+  Future<bool> sendMessage(String content,
+      {List<String>? images, bool hidden = false}) async {
+    final current = _currentConversation;
+    if (current == null) return false;
 
+    // 同步占锁，必须早于任何 await：否则快速连点两次时，两条请求都会在
+    // `_isGenerating` 置 true 之前穿过检查，形成真实的并发上游调用。
+    if (!_requestLock.tryAcquire(current.id)) {
+      debugPrint('[Retry] 对话 ${current.id} 已有进行中的请求，拦截本次发送');
+      notifyListeners();
+      return false;
+    }
+    try {
+      await _sendMessageInner(content, images: images, hidden: hidden);
+      return true;
+    } finally {
+      // 成功 / 失败 / 取消 / 提前 return 都必须释放，异常路径不得泄漏。
+      _requestLock.release(current.id);
+    }
+  }
+
+  /// [sendMessage] 的实际执行体（调用方已持有该对话的请求锁）。
+  Future<void> _sendMessageInner(String content,
+      {List<String>? images, bool hidden = false}) async {
     final conv = _currentConversation!;
 
     // 1. 获取角色信息
@@ -341,6 +411,12 @@ class ChatProvider extends ChangeNotifier {
     final endpoint = _resolveEndpoint();
     if (endpoint == null) {
       _addErrorMessage('未配置 API 端点，请先在设置中添加');
+      return;
+    }
+    // 本地部署已停用：保留旧端点在列表里，但不做本地推理
+    if (!AppFeatureFlags.localDeployEnabled &&
+        endpoint.mode == EndpointMode.deploy) {
+      _addErrorMessage('本地部署已停用，请改用接入型端点');
       return;
     }
 
@@ -370,6 +446,8 @@ class ChatProvider extends ChangeNotifier {
               .toList() ??
           [],
       isGenerating: false,
+      // 隐藏消息（如「继续上文」）仍写入数据库并参与上下文，只是不在列表渲染
+      isHidden: hidden,
       createdAt: DateTime.now(),
     );
     _messages.add(userMsg);
@@ -392,53 +470,72 @@ class ChatProvider extends ChangeNotifier {
     _isStopRequested = false;
     notifyListeners();
 
-    // 6. 两遍拼装第一遍:先拼出完整 system 文本(含预设/世界书/示例对话),
-    //    用真实文本估算 token,避免旧「字段累加」估算漏项导致超窗
+    // 6. 组装本轮请求：
+    //    本地模型（0.8B）走独立组装层（压缩角色卡 + 最近 4 轮 + 本轮指令），
+    //    云端沿用原有「完整角色卡 + 预设/世界书 + 全局裁剪」流程。
     final visibleHistory = _messages
         .where((m) => m.id != userMsg.id && m.id != assistantMsg.id)
-        .where((m) => !m.isHidden)
         .toList();
-    final assembled = PromptService.assembleSystem(
+    final adapter = _apiService.getAdapter(endpoint);
+    final localPrompt = await _buildLocalPrompt(
+      adapter: adapter,
+      endpoint: endpoint,
+      conversationId: conv.id,
       character: character,
       history: visibleHistory,
       userMessage: content.trim(),
-      persona: persona,
-      systemPromptOverride: conv.settings.systemPrompt,
-      jailbreakPrompt: conv.settings.jailbreakPrompt,
-      lorebook:
-          resolveLorebook(conv.settings.lorebookId ?? character.lorebookId),
-      preset: resolvePreset(conv.settings.presetId),
+      settings: conv.settings,
     );
 
-    // 7. system 区真实占用(含预设/世界书/示例,beforeUser/afterUser 块与余量)
-    final reservedForSystem =
-        PromptService.estimateSystemTokens(assembled);
+    final List<Map<String, dynamic>> messages;
+    if (localPrompt != null) {
+      messages = localPrompt.messages;
+      adapter.setLocalSystemPrompt(localPrompt.systemPrompt);
+    } else {
+      // 两遍拼装第一遍:先拼出完整 system 文本(含预设/世界书/示例对话),
+      // 用真实文本估算 token,避免旧「字段累加」估算漏项导致超窗
+      final assembled = PromptService.assembleSystem(
+        character: character,
+        history: visibleHistory,
+        userMessage: content.trim(),
+        persona: persona,
+        systemPromptOverride: conv.settings.systemPrompt,
+        jailbreakPrompt: conv.settings.jailbreakPrompt,
+        lorebook:
+            resolveLorebook(conv.settings.lorebookId ?? character.lorebookId),
+        preset: resolvePreset(conv.settings.presetId),
+      );
 
-    // 8. 历史消息（排除刚添加的两条）+ 上下文窗口裁剪
-    final historyMessages = ContextWindowService.trim(
-      visibleHistory,
-      maxTokens: _resolveContextWindow(endpoint, modelId),
-      reservedForSystem: reservedForSystem,
-    );
+      // system 区真实占用(含预设/世界书/示例,beforeUser/afterUser 块与余量)
+      final reservedForSystem =
+          PromptService.estimateSystemTokens(assembled);
 
-    // 9. 构建 Prompt（复用第一遍拼装结果,世界书只选一次）
-    final messages = PromptService.buildMessages(
-      character: character,
-      history: historyMessages,
-      userMessage: content.trim(),
-      userAttachments: userMsg.attachments,
-      persona: persona,
-      systemPromptOverride: conv.settings.systemPrompt,
-      jailbreakPrompt: conv.settings.jailbreakPrompt,
-      assembled: assembled,
-    );
+      // 历史消息（排除刚添加的两条）+ 上下文窗口裁剪
+      final historyMessages = ContextWindowService.trim(
+        visibleHistory,
+        maxTokens: _resolveContextWindow(endpoint, modelId),
+        reservedForSystem: reservedForSystem,
+      );
 
-    // 8. 调用 API 流式生成
-    final adapter = _apiService.getAdapter(endpoint);
+      // 复用第一遍拼装结果,世界书只选一次
+      messages = PromptService.buildMessages(
+        character: character,
+        history: historyMessages,
+        userMessage: content.trim(),
+        userAttachments: userMsg.attachments,
+        persona: persona,
+        systemPromptOverride: conv.settings.systemPrompt,
+        jailbreakPrompt: conv.settings.jailbreakPrompt,
+        assembled: assembled,
+      );
+    }
+
     final chatSettings = conv.settings;
 
     int promptTokens = 0;
     int completionTokens = 0;
+    int? firstTokenMs;
+    double? tokensPerSecond;
     String accumulatedContent = '';
     String accumulatedReasoning = '';
 
@@ -449,8 +546,10 @@ class ChatProvider extends ChangeNotifier {
               model: modelId,
               messages: messages,
               settings: s,
+              conversationId: conv.id,
             )
-          : _nonStreamToStream(adapter, modelId, messages, s);
+          : _nonStreamToStream(adapter, modelId, messages, s,
+              conversationId: conv.id);
 
       await for (final chunk in stream) {
         if (_isStopRequested) break;
@@ -460,6 +559,12 @@ class ChatProvider extends ChangeNotifier {
         }
         if (chunk.completionTokens != null) {
           completionTokens = chunk.completionTokens!;
+        }
+        if (chunk.firstTokenMs != null) {
+          firstTokenMs = chunk.firstTokenMs;
+        }
+        if (chunk.tokensPerSecond != null) {
+          tokensPerSecond = chunk.tokensPerSecond;
         }
 
         if (chunk.content.isNotEmpty) {
@@ -482,42 +587,26 @@ class ChatProvider extends ChangeNotifier {
       }
     }
 
+    var waitedSeconds = 0.0;
     try {
-      // 两类可自愈错误，各自独立计数重试：
-      //   ① 上游并发/速率限流（如 "reached max organization concurrency: 1,
-      //      please try again after 1 seconds"）→ 按其 retry-after 等待后原样重发；
-      //   ② 采样参数被逐项拒绝（先 temperature 后 top_p…）→ 钳制到允许值后重发。
-      // 仅在尚未产出任何内容时重试，避免半截文本被重复拼接。
-      var attemptSettings = chatSettings;
-      var clampRetries = 0;
-      var throttleRetries = 0;
-      while (true) {
-        try {
-          await consume(attemptSettings);
-          break;
-        } catch (e) {
-          final err = e.toString();
-          if (accumulatedContent.isEmpty) {
-            final wait = _retryAfterSeconds(err);
-            if (wait != null && throttleRetries < _maxThrottleRetries) {
-              throttleRetries++;
-              await Future<void>.delayed(Duration(seconds: wait));
-              continue;
-            }
-            final clamped = _clampedSamplingSettings(attemptSettings, err);
-            if (clamped != null && clampRetries < 3) {
-              clampRetries++;
-              attemptSettings = clamped;
-              accumulatedContent = '';
-              accumulatedReasoning = '';
-              promptTokens = 0;
-              completionTokens = 0;
-              continue;
-            }
-          }
-          rethrow;
-        }
-      }
+      // 统一重试入口：仅 429 / 5xx / 超时 / 网络中断按退避重试，
+      // 其余 4xx 直接报错；已收到首 token 的流式中断不重试（见 _consumeWithRetry）。
+      await _consumeWithRetry(
+        endpointName: endpoint.name,
+        initialSettings: chatSettings,
+        consume: consume,
+        hasOutput: () =>
+            accumulatedContent.isNotEmpty || accumulatedReasoning.isNotEmpty,
+        resetOutput: () {
+          accumulatedContent = '';
+          accumulatedReasoning = '';
+          promptTokens = 0;
+          completionTokens = 0;
+          firstTokenMs = null;
+          tokensPerSecond = null;
+        },
+        onWaited: (d) => waitedSeconds += d.inMilliseconds / 1000.0,
+      );
 
       // 生成完成，保存到数据库
       final finalIndex = _messages.indexWhere((m) => m.id == assistantMsg.id);
@@ -526,6 +615,8 @@ class ChatProvider extends ChangeNotifier {
           isGenerating: false,
           promptTokens: promptTokens > 0 ? promptTokens : null,
           completionTokens: completionTokens > 0 ? completionTokens : null,
+          firstTokenMs: firstTokenMs,
+          tokensPerSecond: tokensPerSecond,
           updatedAt: DateTime.now(),
         );
         _messages[finalIndex] = finalMsg;
@@ -545,8 +636,9 @@ class ChatProvider extends ChangeNotifier {
       if (errorIndex != -1) {
         _messages[errorIndex] = _messages[errorIndex].copyWith(
           content: accumulatedContent.isNotEmpty
-              ? '$accumulatedContent\n\n**生成失败**: ${_formatError(e)}'
-              : '生成失败: ${_formatError(e)}',
+              ? '$accumulatedContent\n\n**生成失败**: '
+                  '${_formatError(e, waitedSeconds: waitedSeconds)}'
+              : '生成失败: ${_formatError(e, waitedSeconds: waitedSeconds)}',
           isError: true,
           isGenerating: false,
           variant: MessageVariant.error,
@@ -563,10 +655,27 @@ class ChatProvider extends ChangeNotifier {
   }
 
   /// 重新生成指定消息
-  Future<void> regenerateMessage(String messageId) async {
-    if (_currentConversation == null) return;
-    if (_isGenerating) return;
+  ///
+  /// 返回 false 表示同一对话已有进行中的请求（被串行锁拦截）。
+  Future<bool> regenerateMessage(String messageId) async {
+    final current = _currentConversation;
+    if (current == null) return false;
 
+    if (!_requestLock.tryAcquire(current.id)) {
+      debugPrint('[Retry] 对话 ${current.id} 已有进行中的请求，拦截本次重新生成');
+      notifyListeners();
+      return false;
+    }
+    try {
+      await _regenerateMessageInner(messageId);
+      return true;
+    } finally {
+      _requestLock.release(current.id);
+    }
+  }
+
+  /// [regenerateMessage] 的实际执行体（调用方已持有该对话的请求锁）。
+  Future<void> _regenerateMessageInner(String messageId) async {
     final msgIndex = _messages.indexWhere((m) => m.id == messageId);
     if (msgIndex == -1) return;
 
@@ -612,6 +721,11 @@ class ChatProvider extends ChangeNotifier {
       _finishWithError(targetMsg.id, '未配置 API 端点');
       return;
     }
+    if (!AppFeatureFlags.localDeployEnabled &&
+        endpoint.mode == EndpointMode.deploy) {
+      _finishWithError(targetMsg.id, '本地部署已停用，请改用接入型端点');
+      return;
+    }
 
     final modelId = _resolveModelId(endpoint);
     if (modelId == null) {
@@ -622,50 +736,67 @@ class ChatProvider extends ChangeNotifier {
     // Persona（重新生成与发送同源：绑定 > 激活 > 账号昵称兜底）
     final persona = resolvePersona(conv.settings.personaId ?? character.personaId);
 
-    // 两遍拼装第一遍:先拼完整 system 文本(与发送路径同口径)
+    // 组装请求：本地模型走独立组装层（与发送路径同口径）
     final visibleHistory = _messages
         .sublist(0, msgIndex)
-        .where((m) => !m.isHidden)
         .toList();
-    final assembled = PromptService.assembleSystem(
+    final adapter = _apiService.getAdapter(endpoint);
+    final localPrompt = await _buildLocalPrompt(
+      adapter: adapter,
+      endpoint: endpoint,
+      conversationId: conv.id,
       character: character,
       history: visibleHistory,
       userMessage: userMsg.content,
-      persona: persona,
-      systemPromptOverride: conv.settings.systemPrompt,
-      jailbreakPrompt: conv.settings.jailbreakPrompt,
-      lorebook:
-          resolveLorebook(conv.settings.lorebookId ?? character.lorebookId),
-      preset: resolvePreset(conv.settings.presetId),
+      settings: conv.settings,
     );
 
-    // system 区真实占用(与发送路径同口径)
-    final reservedForSystem =
-        PromptService.estimateSystemTokens(assembled);
+    final List<Map<String, dynamic>> messages;
+    if (localPrompt != null) {
+      messages = localPrompt.messages;
+      adapter.setLocalSystemPrompt(localPrompt.systemPrompt);
+    } else {
+      // 两遍拼装第一遍:先拼完整 system 文本(与发送路径同口径)
+      final assembled = PromptService.assembleSystem(
+        character: character,
+        history: visibleHistory,
+        userMessage: userMsg.content,
+        persona: persona,
+        systemPromptOverride: conv.settings.systemPrompt,
+        jailbreakPrompt: conv.settings.jailbreakPrompt,
+        lorebook:
+            resolveLorebook(conv.settings.lorebookId ?? character.lorebookId),
+        preset: resolvePreset(conv.settings.presetId),
+      );
 
-    // 历史消息（用户消息之前的 + 用户消息本身）+ 上下文窗口裁剪
-    final historyMessages = ContextWindowService.trim(
-      visibleHistory,
-      maxTokens: _resolveContextWindow(endpoint, modelId),
-      reservedForSystem: reservedForSystem,
-    );
+      // system 区真实占用(与发送路径同口径)
+      final reservedForSystem =
+          PromptService.estimateSystemTokens(assembled);
 
-    // 构建 Prompt（复用第一遍拼装结果）
-    final messages = PromptService.buildMessages(
-      character: character,
-      history: historyMessages,
-      userMessage: userMsg.content,
-      userAttachments: userMsg.attachments,
-      persona: persona,
-      systemPromptOverride: conv.settings.systemPrompt,
-      jailbreakPrompt: conv.settings.jailbreakPrompt,
-      assembled: assembled,
-    );
+      // 历史消息（用户消息之前的 + 用户消息本身）+ 上下文窗口裁剪
+      final historyMessages = ContextWindowService.trim(
+        visibleHistory,
+        maxTokens: _resolveContextWindow(endpoint, modelId),
+        reservedForSystem: reservedForSystem,
+      );
 
-    // 流式生成
-    final adapter = _apiService.getAdapter(endpoint);
+      // 复用第一遍拼装结果
+      messages = PromptService.buildMessages(
+        character: character,
+        history: historyMessages,
+        userMessage: userMsg.content,
+        userAttachments: userMsg.attachments,
+        persona: persona,
+        systemPromptOverride: conv.settings.systemPrompt,
+        jailbreakPrompt: conv.settings.jailbreakPrompt,
+        assembled: assembled,
+      );
+    }
+
     final chatSettings = conv.settings;
 
+    int? firstTokenMs;
+    double? tokensPerSecond;
     String accumulatedContent = '';
     String accumulatedReasoning = '';
 
@@ -676,8 +807,10 @@ class ChatProvider extends ChangeNotifier {
               model: modelId,
               messages: messages,
               settings: s,
+              conversationId: conv.id,
             )
-          : _nonStreamToStream(adapter, modelId, messages, s);
+          : _nonStreamToStream(adapter, modelId, messages, s,
+              conversationId: conv.id);
 
       await for (final chunk in stream) {
         if (_isStopRequested) break;
@@ -685,6 +818,10 @@ class ChatProvider extends ChangeNotifier {
         if (chunk.content.isNotEmpty) accumulatedContent += chunk.content;
         if (chunk.reasoning.isNotEmpty) {
           accumulatedReasoning += chunk.reasoning;
+        }
+        if (chunk.firstTokenMs != null) firstTokenMs = chunk.firstTokenMs;
+        if (chunk.tokensPerSecond != null) {
+          tokensPerSecond = chunk.tokensPerSecond;
         }
 
         final idx = _messages.indexWhere((m) => m.id == targetMsg.id);
@@ -699,36 +836,23 @@ class ChatProvider extends ChangeNotifier {
       }
     }
 
+    var waitedSeconds = 0.0;
     try {
-      // 限流等待重试 + 采样参数钳制（与发送路径同构，各自独立计数）
-      var attemptSettings = chatSettings;
-      var clampRetries = 0;
-      var throttleRetries = 0;
-      while (true) {
-        try {
-          await consume(attemptSettings);
-          break;
-        } catch (e) {
-          final err = e.toString();
-          if (accumulatedContent.isEmpty) {
-            final wait = _retryAfterSeconds(err);
-            if (wait != null && throttleRetries < _maxThrottleRetries) {
-              throttleRetries++;
-              await Future<void>.delayed(Duration(seconds: wait));
-              continue;
-            }
-            final clamped = _clampedSamplingSettings(attemptSettings, err);
-            if (clamped != null && clampRetries < 3) {
-              clampRetries++;
-              attemptSettings = clamped;
-              accumulatedContent = '';
-              accumulatedReasoning = '';
-              continue;
-            }
-          }
-          rethrow;
-        }
-      }
+      // 与发送路径共用同一重试策略（失效判定 / 退避 / Retry-After）。
+      await _consumeWithRetry(
+        endpointName: endpoint.name,
+        initialSettings: chatSettings,
+        consume: consume,
+        hasOutput: () =>
+            accumulatedContent.isNotEmpty || accumulatedReasoning.isNotEmpty,
+        resetOutput: () {
+          accumulatedContent = '';
+          accumulatedReasoning = '';
+          firstTokenMs = null;
+          tokensPerSecond = null;
+        },
+        onWaited: (d) => waitedSeconds += d.inMilliseconds / 1000.0,
+      );
 
       final finalIndex = _messages.indexWhere((m) => m.id == targetMsg.id);
       if (finalIndex != -1) {
@@ -736,12 +860,17 @@ class ChatProvider extends ChangeNotifier {
           isGenerating: false,
           updatedAt: DateTime.now(),
           revision: targetMsg.revision + 1,
+          firstTokenMs: firstTokenMs,
+          tokensPerSecond: tokensPerSecond,
         );
         _messages[finalIndex] = finalMsg;
         await _db.saveMessage(conv.id, finalMsg);
       }
     } catch (e) {
-      _finishWithError(targetMsg.id, '生成失败: ${_formatError(e)}');
+      _finishWithError(
+        targetMsg.id,
+        '生成失败: ${_formatError(e, waitedSeconds: waitedSeconds)}',
+      );
     } finally {
       _isGenerating = false;
       _isStopRequested = false;
@@ -852,20 +981,64 @@ class ChatProvider extends ChangeNotifier {
     LlmApiAdapter adapter,
     String modelId,
     List<Map<String, dynamic>> messages,
-    ChatSettings settings,
-  ) async* {
+    ChatSettings settings, {
+    String? conversationId,
+  }) async* {
     final response = await adapter.chatCompletions(
       model: modelId,
       messages: messages,
       settings: settings,
+      conversationId: conversationId,
     );
     yield StreamChatChunk(
       content: response.content,
       reasoning: response.reasoning ?? '',
       promptTokens: response.promptTokens,
       completionTokens: response.completionTokens,
+      firstTokenMs: response.firstTokenMs,
+      tokensPerSecond: response.tokensPerSecond,
     );
     yield const StreamChatChunk(isFinal: true);
+  }
+
+  /// 本地模型（部署端点）专用组装：压缩角色卡 + 最近 4 轮 + 本轮指令。
+  ///
+  /// 返回 null 表示走通用 PromptService 路径（云端端点，或本地 tokenizer
+  /// 不可用时降级）。上下文生命周期（复用 / 裁剪）由适配器负责。
+  Future<_LocalPromptResult?> _buildLocalPrompt({
+    required LlmApiAdapter adapter,
+    required LlmEndpoint endpoint,
+    required String conversationId,
+    required Character character,
+    required List<ChatMessage> history,
+    required String userMessage,
+    required ChatSettings settings,
+  }) async {
+    if (endpoint.mode != EndpointMode.deploy) return null;
+    try {
+      final counter = await adapter.localTokenCounter(conversationId);
+      final countTokens =
+          counter ?? (String text) async => (text.length / 2).ceil();
+      final plan = await LocalPromptBuilder.build(
+        character: character,
+        history: history,
+        userMessage: userMessage,
+        countTokens: countTokens,
+        contextSize: endpoint.contextSize,
+        maxTokens: endpoint.maxTokens,
+        systemPromptOverride: settings.systemPrompt,
+      );
+      debugPrint('[LocalPrompt] system=${plan.systemTokens} token，'
+          '历史 ${plan.history.length} 条（丢 ${plan.droppedMessages}），'
+          '预算 ${plan.historyBudget}，短输入=${plan.shortInput}');
+      return _LocalPromptResult(
+        messages: plan.fullMessages,
+        systemPrompt: plan.systemPrompt,
+      );
+    } catch (e) {
+      debugPrint('[LocalPrompt] 组装失败，回退通用路径：$e');
+      return null;
+    }
   }
 
   /// 添加错误消息（直接显示，不调用 API）
@@ -889,39 +1062,220 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 上游限流的最大自动重试次数（超出后把错误暴露给用户）
+  /// 上游限流的最大重试次数（首次 + 3 次重试 = 最多尝试 4 次）
   static const int _maxThrottleRetries = 3;
 
-  /// 从错误信息解析上游限流的等待秒数；非限流类错误返回 null。
+  /// 执行一次上游请求，按统一策略重试。
   ///
-  /// 例："Your account org-547cfebf... request reached max organization
-  ///      concurrency: 1, please try again after 1 seconds" → 1
-  /// 同时兼容 "try again in 20ms"、"429 Too Many Requests"、"rate limit" 等表述。
-  /// 返回上限 30s，避免异常长的等待把界面卡死。
-  int? _retryAfterSeconds(String err) {
-    final lower = err.toLowerCase();
-    final isThrottled = lower.contains('concurrency') ||
-        lower.contains('rate limit') ||
-        lower.contains('ratelimit') ||
-        lower.contains('too many requests') ||
-        lower.contains('429');
-    if (!isThrottled) return null;
+  /// - 仅 429 / 5xx(500/502/503/504) / 超时 / 网络中断重试；
+  ///   400/401/403/404/422 等其余 4xx 直接抛出，不浪费配额。
+  /// - 等待：`Retry-After`（上限 30s）优先，否则 2s / 6s / 15s ±20% 抖动。
+  /// - 已收到首 token（[hasOutput] 为 true）时绝不重试，抛
+  ///   [GenerationInterruptedException]，由上层展示「生成中断」。
+  /// - 采样参数被拒（400 invalid temperature 等）沿用旧的钳制重试，
+  ///   单独计数，不占用上面的上游尝试次数。
+  Future<void> _consumeWithRetry({
+    required String endpointName,
+    required ChatSettings initialSettings,
+    required Future<void> Function(ChatSettings s) consume,
+    required bool Function() hasOutput,
+    required void Function() resetOutput,
+    void Function(Duration d)? onWaited,
+  }) async {
+    var attemptSettings = initialSettings;
+    var attempt = 0;
+    var clampRetries = 0;
 
-    // 毫秒表述优先，避免被 "20ms" 里的数字误当作秒
-    final ms =
-        RegExp(r'try again (?:after|in)\s+(\d+)\s*ms').firstMatch(lower);
-    if (ms != null) {
-      final v = int.tryParse(ms.group(1)!);
-      if (v != null) return (v / 1000).ceil().clamp(1, 30);
+    while (true) {
+      attempt++;
+      try {
+        await consume(attemptSettings);
+        return;
+      } catch (e) {
+        final raw = _rawError(e);
+
+        // 流式已产出内容：重发会把半截文本拼成两遍，必须报「生成中断」。
+        if (hasOutput()) {
+          debugPrint('[Retry] endpoint=$endpointName attempt=$attempt '
+              '已收到内容，判定生成中断且不重试。raw=$raw');
+          throw GenerationInterruptedException(
+            '生成中断：已收到部分内容，未自动重试。\n原始信息：$raw',
+          );
+        }
+
+        final clamped = _clampedSamplingSettings(attemptSettings, raw);
+        if (clamped != null && clampRetries < 3) {
+          clampRetries++;
+          attemptSettings = clamped;
+          resetOutput();
+          attempt--; // 参数钳制不是上游重试，不占用尝试次数
+          debugPrint('[Retry] endpoint=$endpointName 采样参数钳制后重试 '
+              '($clampRetries/3) raw=$raw');
+          continue;
+        }
+
+        final status = e is LlmRequestException ? e.statusCode : null;
+        final category =
+            e is LlmRequestException ? e.category : classifyMessage(raw);
+        final retryAfter = e is LlmRequestException ? e.retryAfter : null;
+        final decision = RetryPolicy.decide(
+          attempt: attempt,
+          statusCode: status,
+          category: category,
+          retryAfter: retryAfter,
+        );
+
+        if (!decision.shouldRetry) {
+          debugPrint('[Retry] endpoint=$endpointName attempt=$attempt/'
+              '${RetryPolicy.maxAttempts} status=${status ?? '-'} '
+              '放弃：${decision.reason} raw=$raw');
+          rethrow;
+        }
+
+        debugPrint('[Retry] endpoint=$endpointName attempt=$attempt/'
+            '${RetryPolicy.maxAttempts} status=${status ?? '-'} '
+            'wait=${(decision.delay.inMilliseconds / 1000).toStringAsFixed(1)}s '
+            'retryAfter=${decision.usedRetryAfter ? 'hit' : 'miss'} '
+            'reason=${decision.reason} raw=$raw');
+
+        await Future<void>.delayed(decision.delay);
+        onWaited?.call(decision.delay);
+
+        if (_isStopRequested) {
+          debugPrint('[Retry] endpoint=$endpointName 用户已停止，取消重试');
+          return;
+        }
+      }
     }
-    final sec = RegExp(r'try again (?:after|in)\s+([\d.]+)\s*s(?:ec(?:onds)?)?')
-        .firstMatch(lower);
-    if (sec != null) {
-      final v = double.tryParse(sec.group(1)!);
-      if (v != null) return v.ceil().clamp(1, 30);
-    }
-    return 2; // 已确认是限流但服务端未给建议时长：保守等 2 秒
   }
+
+  // ========== 剧情选项 / 继续生成 ==========
+
+  /// 选项请求的极简 system 指令（不复用角色卡，避免 token 与角色扮演干扰）。
+  static const String _plotOptionsSystemPrompt = '你是剧情助手。根据对话剧情，'
+      '为「用户」给出 3 个下一步行动选择。'
+      '只输出严格 JSON：{"options":["…","…","…"]}，不要解释、不要代码块、不要续写正文。'
+      '每条不超过 20 字，用第一人称「我要……」句式，三条方向要明显不同。';
+
+  /// 为最后一条 AI 回复生成 3 个剧情选项。
+  ///
+  /// 独立的一次轻量请求：不进对话历史、不写数据库，避免污染与重复计费。
+  /// [refresh] 为 true 时忽略缓存（「换一批」）。
+  Future<void> generatePlotOptions({bool refresh = false}) async {
+    final conv = _currentConversation;
+    if (conv == null) return;
+
+    final visible = visibleMessages;
+    if (!canActOnLastReply(visible, isGenerating: _isGenerating)) return;
+    final target = visible.last;
+
+    if (_plotOptionsLoading.contains(target.id)) return;
+    if (!refresh && _plotOptions.containsKey(target.id)) return;
+
+    // 与聊天请求共用同一对话锁：免费模型并发为 1，选项请求也不能与之并行。
+    if (_isGenerating || !_requestLock.tryAcquire(conv.id)) {
+      _plotOptionsError[target.id] = '上一条还在生成，请稍候';
+      notifyListeners();
+      return;
+    }
+
+    _plotOptionsLoading.add(target.id);
+    _plotOptionsError.remove(target.id);
+    _isStopRequested = false;
+    notifyListeners();
+
+    var raw = '';
+    try {
+      final endpoint = _resolveEndpoint();
+      if (endpoint == null) throw StateError('未配置 API 端点，请先在设置中添加');
+      if (!AppFeatureFlags.localDeployEnabled &&
+          endpoint.mode == EndpointMode.deploy) {
+        throw StateError('本地部署已停用，请改用接入型端点');
+      }
+      final modelId = _resolveModelId(endpoint);
+      if (modelId == null) throw StateError('未选择模型');
+      final adapter = _apiService.getAdapter(endpoint);
+
+      // 只带最近若干轮：独立请求不消耗主对话的上下文预算。
+      final recent = ContextWindowService.trim(
+        _messages
+            .where((m) => !m.isHidden && !m.isError && !m.isGenerating)
+            .toList(),
+        maxTokens: 1200,
+        reservedForSystem: 300,
+        reservedForReply: 200,
+      );
+      final messages = <Map<String, dynamic>>[
+        {'role': 'system', 'content': _plotOptionsSystemPrompt},
+        for (final m in recent)
+          {
+            'role': m.role == MessageRole.user ? 'user' : 'assistant',
+            'content': m.content,
+          },
+        {'role': 'user', 'content': '（仅生成 3 个选项，不要续写正文）'},
+      ];
+
+      final settings = ChatSettings(
+        temperature: 0.8,
+        maxTokens: 200,
+        enableStream: false,
+        showReasoning: false,
+        enableToolCalling: false,
+        enableReasoning: false,
+      );
+      await _consumeWithRetry(
+        endpointName: endpoint.name,
+        initialSettings: settings,
+        consume: (s) async {
+          final resp = await adapter.chatCompletions(
+            model: modelId,
+            messages: messages,
+            settings: s,
+            conversationId: conv.id,
+          );
+          raw = resp.content;
+        },
+        hasOutput: () => raw.trim().isNotEmpty,
+        resetOutput: () => raw = '',
+      );
+
+      final options = parsePlotOptions(raw);
+      if (options.isEmpty) {
+        debugPrint('[PlotOptions] endpoint=${endpoint.name} 解析失败 raw=$raw');
+        _plotOptionsError[target.id] = '没生成出来，再试一次';
+      } else {
+        _plotOptions[target.id] = options;
+        _plotOptionsError.remove(target.id);
+        debugPrint('[PlotOptions] endpoint=${endpoint.name} 生成 ${options.length} 条');
+      }
+    } catch (e) {
+      debugPrint('[PlotOptions] 请求失败：${_rawError(e)}');
+      _plotOptionsError[target.id] = '没生成出来，再试一次';
+    } finally {
+      _plotOptionsLoading.remove(target.id);
+      _requestLock.release(conv.id);
+      notifyListeners();
+    }
+  }
+
+  /// 点击选项 = 以普通用户消息发送该条文字（复用完整发送链路）。
+  ///
+  /// 发送成功后清空来源 AI 消息的选项缓存。
+  Future<bool> sendPlotOption(String option) async {
+    final visible = visibleMessages;
+    final sourceId = visible.isNotEmpty ? visible.last.id : null;
+    final ok = await sendMessage(option);
+    if (ok && sourceId != null) {
+      _plotOptions.remove(sourceId);
+      _plotOptionsError.remove(sourceId);
+      notifyListeners();
+    }
+    return ok;
+  }
+
+  /// 去掉 "Exception: " 前缀，保留原始错误正文（供日志与用户提示）。
+  String _rawError(Object e) =>
+      e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
 
   /// 采样参数被模型拒绝时，从错误信息解析服务端允许值并钳制设置。
   /// 例："invalid temperature: only 1 is allowed for this model"
@@ -957,11 +1311,18 @@ class ChatProvider extends ChangeNotifier {
 
   /// 错误信息展示格式化：去掉 "Exception: " 前缀,保留可读正文。
   /// 限流类错误额外给出中文处置建议，并保留原始信息便于核对上游返回。
-  String _formatError(Object e) {
-    final raw = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
-    if (_retryAfterSeconds(raw) != null) {
+  /// [waitedSeconds] 仅在最终失败时传入，用于说明已等待时长。
+  String _formatError(Object e, {double waitedSeconds = 0}) {
+    final raw = _rawError(e);
+    final throttled = e is LlmRequestException
+        ? e.category == UpstreamErrorCategory.throttled
+        : classifyMessage(raw) == UpstreamErrorCategory.throttled;
+    if (throttled) {
+      final waited = waitedSeconds > 0
+          ? '已等待约 ${waitedSeconds.round()} 秒仍限流，建议换模型或稍后再试。\n'
+          : '';
       return '上游限流：当前账号可同时处理的请求数已满，自动重试 '
-          '$_maxThrottleRetries 次后仍未成功。\n'
+          '$_maxThrottleRetries 次后仍未成功。\n$waited'
           '请稍等几秒后重新发送，或换用其它模型 / API 端点。\n\n原始信息：$raw';
     }
     return raw;
@@ -991,4 +1352,12 @@ class ChatProvider extends ChangeNotifier {
     if (clean.length <= maxLen) return clean;
     return '${clean.substring(0, maxLen)}...';
   }
+}
+
+/// 本地模型单轮组装结果：消息列表（历史 + 本轮）与压缩角色卡。
+class _LocalPromptResult {
+  final List<Map<String, dynamic>> messages;
+  final String systemPrompt;
+
+  const _LocalPromptResult({required this.messages, required this.systemPrompt});
 }
