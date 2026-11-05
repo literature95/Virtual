@@ -98,19 +98,26 @@ void main() {
       reason: '我的页内容必须避让状态栏（此前为 0）',
     );
 
-    // ── 3. 同类页面（同样隐藏 shell AppBar）一并覆盖 ──
+    // ── 3. 同级页面：已改为根 Navigator 独立路由（不再经 shell）──
+    // 标准 AppBar 自带状态栏内边距：widget 顶端贴屏幕顶（0），高度含状态栏。
     await go('/endpoints');
     expect(
       topOf(find.byType(AppBar), '/endpoints AppBar'),
-      statusBar,
-      reason: 'API 接入页自带 AppBar 必须避让状态栏',
+      0.0,
+      reason: 'API 接入页为独立根路由，标准 AppBar 自身包含状态栏内边距',
+    );
+    expect(
+      topOf(find.byType(AppBar), '/endpoints AppBar') +
+          tester.getSize(find.byType(AppBar)).height,
+      statusBar + kToolbarHeight,
+      reason: 'API 接入页 AppBar 高度应为 状态栏 44 + 工具栏 56',
     );
 
     await go('/character/new');
     expect(
       topOf(find.byType(AppBar), '/character/new AppBar'),
-      statusBar,
-      reason: '角色编辑页自带 AppBar 必须避让状态栏',
+      0.0,
+      reason: '角色编辑页为独立根路由，标准 AppBar 自身包含状态栏内边距',
     );
 
     // ── 4. 对话页：页面 InsetAppBar 自避让（shell 不再补），AppBar 仍在状态栏下 ──
@@ -131,13 +138,18 @@ void main() {
       reason: '角色卡详情页保持沉浸式，内容有意铺到状态栏之后',
     );
 
-    // ── 5. 设置页：自带 AppBar 且已加入隐藏列表 → 避让状态栏，无双层 AppBar ──
+    // ── 5. 设置页：独立根路由 → 标准 AppBar 自身避让状态栏，无双层 AppBar ──
     await go('/settings');
     // 用稳定 Key 直接命中「设置页自己的」AppBar，避开退场页/抽屉里的同名 widget。
     expect(
       tester.getTopLeft(find.byKey(const Key('settingsAppBar'))).dy,
-      statusBar,
-      reason: '设置页自带 AppBar（已加入隐藏列表）须避让状态栏，且不应出现双层 AppBar',
+      0.0,
+      reason: '设置页为根路由，标准 AppBar 自绘状态栏内边距（widget 顶端在 0）',
+    );
+    expect(
+      tester.getSize(find.byKey(const Key('settingsAppBar'))).height,
+      statusBar + kToolbarHeight,
+      reason: '设置页 AppBar 高度应为 状态栏 44 + 工具栏 56，且不存在双层栏',
     );
   });
 }

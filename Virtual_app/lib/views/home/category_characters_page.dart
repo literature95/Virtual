@@ -11,12 +11,12 @@ import '../common/character_cover_card.dart';
 /// 角色卡搜索筛选页
 ///
 /// 从后端拉全量角色，提供多维度筛选：搜索关键词 + 标签横向筛选 +
-/// 点赞/收藏/转发数量筛选，下方网格展示匹配的角色卡。
+/// 点赞/转发数量筛选，下方网格展示匹配的角色卡。
 /// 入口：
 ///   - 首页分类区「更多 >」按钮（预选中该分类）
-///   - 首页 AppBar 搜索图标（无预选分类）
+///   - 首页顶栏搜索框（无预选分类）
 ///
-/// 互动数（点赞/收藏/转发）后端 /api/characters 暂不下发，按 characterId
+/// 互动数（点赞/转发）后端 /api/characters 暂不下发，按 characterId
 /// hash 本地生成稳定 mock，与详情页互动条同源，后续后端补字段时替换即可。
 class CategoryCharactersPage extends StatefulWidget {
   /// 预选中的分类 tag；为空表示不预选（从搜索入口进入）
@@ -45,7 +45,6 @@ class _CategoryCharactersPageState extends State<CategoryCharactersPage> {
 
   /// 互动数筛选项
   _MetricFilter _likesFilter = _MetricFilter.none;
-  _MetricFilter _savesFilter = _MetricFilter.none;
   _MetricFilter _sharesFilter = _MetricFilter.none;
 
   @override
@@ -109,7 +108,6 @@ class _CategoryCharactersPageState extends State<CategoryCharactersPage> {
 
   /// 按 characterId hash 生成稳定的互动数 mock
   int _likesOf(OnlineCharacter c) => 120 + (c.id.hashCode.abs() % 5) * 87;
-  int _savesOf(OnlineCharacter c) => 56 + (c.id.hashCode.abs() % 7) * 23;
   int _sharesOf(OnlineCharacter c) => 18 + (c.id.hashCode.abs() % 3) * 14;
 
   /// 应用全部筛选条件后的角色卡列表
@@ -131,7 +129,6 @@ class _CategoryCharactersPageState extends State<CategoryCharactersPage> {
       }
       // 互动数
       if (!_likesFilter.applies(_likesOf(c))) return false;
-      if (!_savesFilter.applies(_savesOf(c))) return false;
       if (!_sharesFilter.applies(_sharesOf(c))) return false;
       return true;
     }).toList();
@@ -554,7 +551,7 @@ class _CategoryCharactersPageState extends State<CategoryCharactersPage> {
   }
 
   // ════════════════════════════════════════════════════
-  // 互动数筛选条：点赞 / 收藏 / 转发
+  // 互动数筛选条：点赞 / 转发
   // ════════════════════════════════════════════════════
 
   Widget _buildMetricFilters(ColorScheme scheme) {
@@ -570,16 +567,6 @@ class _CategoryCharactersPageState extends State<CategoryCharactersPage> {
                 value: _likesFilter,
                 scheme: scheme,
                 onChanged: (v) => setState(() => _likesFilter = v),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _MetricDropdown(
-                label: '收藏',
-                icon: Icons.bookmark_outline_rounded,
-                value: _savesFilter,
-                scheme: scheme,
-                onChanged: (v) => setState(() => _savesFilter = v),
               ),
             ),
             const SizedBox(width: 10),
@@ -691,7 +678,6 @@ class _CategoryCharactersPageState extends State<CategoryCharactersPage> {
           ),
           if (_selectedTags.isNotEmpty ||
               _likesFilter != _MetricFilter.none ||
-              _savesFilter != _MetricFilter.none ||
               _sharesFilter != _MetricFilter.none) ...[
             const SizedBox(height: 12),
             TextButton(
@@ -699,7 +685,6 @@ class _CategoryCharactersPageState extends State<CategoryCharactersPage> {
                 setState(() {
                   _selectedTags.clear();
                   _likesFilter = _MetricFilter.none;
-                  _savesFilter = _MetricFilter.none;
                   _sharesFilter = _MetricFilter.none;
                   _searchCtrl.clear();
                   _query = '';

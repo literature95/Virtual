@@ -1,7 +1,8 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+
+import '../common/cached_app_image.dart';
 
 import '../../models/character.dart';
 import '../../models/lorebook.dart';
@@ -16,7 +17,7 @@ import '../common/cosmos_background.dart';
 /// 在线角色卡详情页
 ///
 /// 沉浸式布局：立绘作为视觉主角固定不滚动，立绘上直接叠 CTA「开始对话」，
-/// 下方依次为互动条（点赞/转发/收藏/评分）、创作人区、详情卡片（描述/人设/场景/
+/// 下方依次为互动条（点赞/转发/评分）、创作人区、详情卡片（描述/人设/场景/
 /// 创作者备注/开场白）。导入闭环与原详情页一致：拉详情→建本地卡→建会话→跳聊天。
 class CharacterDetailPage extends StatefulWidget {
   final String characterId;
@@ -43,10 +44,8 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
 
   // ── 互动数据（mock，后续接后端 API）──
   bool _liked = false;
-  bool _saved = false;
   int _likeCount = 0;
   int _shareCount = 0;
-  int _saveCount = 0;
   double _rating = 0.0;
   int _ratingCount = 0;
   bool _followingCreator = false;
@@ -68,7 +67,6 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
     final hash = c.id.hashCode.abs();
     _likeCount = 120 + (hash % 5) * 87; // 120 ~ 468
     _shareCount = 18 + (hash % 3) * 14; // 18 ~ 46
-    _saveCount = 56 + (hash % 7) * 23; // 56 ~ 218
     _rating = 4.0 + (hash % 10) / 10.0; // 4.0 ~ 4.9
     _ratingCount = 34 + (hash % 11) * 9; // 34 ~ 133
   }
@@ -358,28 +356,13 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
           children: [
             // ── 立绘铺满 + contain 保留完整主体（cover 会切掉人脸）──
             if (hasImage)
-              CachedNetworkImage(
-                imageUrl: c.avatarUrl!,
+              CachedAppImage(
+                path: c.avatarUrl,
                 fit: BoxFit.cover,
-                // 按显示宽解码（≤560 逻辑宽 × 2 dpr），原图更小时不受影响
-                memCacheWidth: 1120,
-                fadeInDuration: const Duration(milliseconds: 120),
-                placeholder: (_, __) => Container(
-                  decoration: const BoxDecoration(
-                    gradient: TavoColors.signGradientDiagonal,
-                  ),
-                  child: const Center(
-                    child: SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.4,
-                        color: Colors.white54,
-                      ),
-                    ),
-                  ),
-                ),
-                errorWidget: (_, __, ___) => _buildFallbackHero(c.name),
+                // 详情页允许解原图（列表页才降采样）
+                decodeWidth: 0,
+                placeholderColor: TavoColors.cosmosElev,
+                fallback: _buildFallbackHero(c.name),
               )
             else
               _buildFallbackHero(c.name),
@@ -573,7 +556,7 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
   }
 
   // ════════════════════════════════════════════════════
-  // 互动条：点赞 / 转发 / 收藏 / 评分
+  // 互动条：点赞 / 转发 / 评分
   // ════════════════════════════════════════════════════
 
   Widget _buildInteractionBar(ColorScheme scheme) {
@@ -621,20 +604,6 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
               color: scheme.onSurfaceVariant,
               count: _shareCount,
               onTap: () => _toast('转发功能开发中'),
-              scheme: scheme,
-            ),
-            // 收藏
-            _InteractionButton(
-              icon: _saved
-                  ? Icons.bookmark_rounded
-                  : Icons.bookmark_border_rounded,
-              color:
-                  _saved ? TavoColors.violet : scheme.onSurfaceVariant,
-              count: _saveCount + (_saved ? 1 : 0),
-              active: _saved,
-              onTap: () {
-                setState(() => _saved = !_saved);
-              },
               scheme: scheme,
             ),
           ],
@@ -902,7 +871,7 @@ class _DetailSection {
   });
 }
 
-/// 互动按钮（点赞/转发/收藏）：图标 + 计数
+/// 互动按钮（点赞/转发/评分）：图标 + 计数
 class _InteractionButton extends StatelessWidget {
   final IconData icon;
   final Color color;

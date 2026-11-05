@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 
 import '../../models/character.dart';
 import '../../providers/character_provider.dart';
+import '../../services/app_image_cache.dart';
 import '../../theme/design_tokens.dart';
-import '../common/character_cover_card.dart' show resolveAvatarImage;
 import '../common/inset_app_bar.dart';
 
 /// 「角色信息」只读页
@@ -29,7 +29,20 @@ class ChatCharacterInfoPage extends StatelessWidget {
         final character = provider.getCharacter(characterId);
         if (character == null) {
           return Scaffold(
-            appBar: const InsetAppBar(title: Text('角色信息')),
+            appBar: InsetAppBar(
+              title: const Text('角色信息'),
+              centerTitle: true,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go('/characters');
+                  }
+                },
+              ),
+            ),
             body: Center(
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.xl),
@@ -68,11 +81,23 @@ class _CharacterInfoBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final avatar = resolveAvatarImage(character.avatarPath);
+    final avatar = AppImageCache.providerFor(character.avatarPath,
+        decodeWidth: 320);
 
     return Scaffold(
       appBar: InsetAppBar(
         title: Text(character.name),
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/characters');
+            }
+          },
+        ),
         actions: [
           IconButton(
             tooltip: '编辑角色卡',
@@ -157,16 +182,11 @@ class _CharacterInfoBody extends StatelessWidget {
             ),
           ],
 
-          if (character.isFavorite || character.isPinned) ...[
+          if (character.isPinned) ...[
             const SizedBox(height: AppSpacing.sm),
-            Row(
+            const Row(
               children: [
-                if (character.isFavorite)
-                  const _FlagChip(icon: Icons.favorite, label: '已收藏'),
-                if (character.isPinned) ...[
-                  const SizedBox(width: AppSpacing.sm),
-                  const _FlagChip(icon: Icons.push_pin, label: '已置顶'),
-                ],
+                _FlagChip(icon: Icons.push_pin, label: '已置顶'),
               ],
             ),
           ],

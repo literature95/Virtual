@@ -145,8 +145,31 @@ button { font-family: inherit; }
   -webkit-text-fill-color: transparent;
   letter-spacing: 0.02em;
 }
-.nav-right { display: flex; align-items: center; gap: 26px; }
+.nav-right { display: flex; align-items: center; gap: 26px; flex-shrink: 0; }
 .nav-links { display: flex; gap: 22px; }
+/* GitHub 图标 + 下载 App：同一行相邻，图标用无边框圆角块，不抢 CTA 权重 */
+.nav-actions { display: flex; align-items: center; gap: 10px; }
+.nav-github {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--text-dim);
+  transition: color 0.2s, background 0.2s, box-shadow 0.25s;
+}
+.nav-github svg { display: block; }
+.nav-github:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 14px rgba(126, 77, 241, 0.22);
+}
+.nav-github:focus-visible {
+  outline: 2px solid var(--violet);
+  outline-offset: 2px;
+  color: var(--text);
+}
 .nav-links a {
   color: var(--text-dim);
   font-size: 14.5px;
@@ -1070,6 +1093,8 @@ button { font-family: inherit; }
 }
 @media (max-width: 560px) {
   .nav-links { display: none; }
+  .nav-actions { gap: 6px; }
+  .nav-github { width: 30px; height: 30px; }
   .feature-row { grid-template-columns: 52px 1fr; padding: 24px 4px; }
   .sheet { padding: 26px 22px; }
   .capsule { font-size: 11.5px; padding: 7px 13px; }

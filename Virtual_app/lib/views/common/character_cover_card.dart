@@ -1,45 +1,7 @@
-import 'dart:convert';
-import 'dart:io' show File;
-
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../theme/tavo_brand.dart';
-import '../../utils/image_data.dart';
-
-/// 按头像路径形态返回对应的 [ImageProvider]，供 [CircleAvatar.backgroundImage]
-/// 等使用。
-///
-/// `avatarPath` 有三种来源，混用过会直接崩：
-/// - **在线卡导入**：`http(s)://…` 外链（如 charhub 立绘）→ 必须走
-///   [NetworkImage]；用 `FileImage(File(url))` 在 Web 上会抛
-///   `Unsupported operation: _Namespace`（dart:io 在 Web 不可用）。
-/// - **data URL**（`data:image/…;base64,…`）→ [MemoryImage]。
-/// - **本地选图**（原生端文件路径）→ [FileImage]；Web 端无文件系统能力，
-///   返回 null 由调用方回退到首字占位。
-///
-/// 空值 / 无法识别时返回 null。
-ImageProvider? resolveAvatarImage(String? path) {
-  if (path == null || path.isEmpty) return null;
-  if (path.startsWith('http://') || path.startsWith('https://')) {
-    return NetworkImage(path);
-  }
-  if (path.startsWith('data:')) {
-    final parsed = parseDataUrl(path);
-    if (parsed != null) {
-      try {
-        return MemoryImage(base64Decode(parsed.$2));
-      } catch (_) {
-        return null;
-      }
-    }
-    return null;
-  }
-  // 本地文件路径：Web 端 dart:io File 不可用，直接回退占位
-  if (kIsWeb) return null;
-  return FileImage(File(path));
-}
+import 'cached_app_image.dart';
 
 /// 封面卡简介预处理
 ///
@@ -91,6 +53,12 @@ String coverSummaryOf(String description) {
 
 String _flatten(String text) => text.replaceAll(RegExp(r'\s+'), ' ').trim();
 
+/// 封面卡排版风格
+///
+/// - [overlay]：照片铺满整卡 + 底部压暗渐变 + 白字（首页/搜索/发现列表使用）；
+/// - [below]：照片在上、标题与描述在图下方（角色页「角色 / 历史」两段统一使用）。
+enum CharacterCoverCardStyle { overlay, below }
+
 /// 竖版封面角色卡 —— 「小说封面」式信息流卡片：
 ///
 /// 照片铺满整卡（而非旧版左置右虚化），顶部左角分类胶囊，
@@ -103,7 +71,15 @@ class CharacterCoverCard extends StatelessWidget {
   final List<String> tags;
   final String? avatarUrl;
 
+  /// 卡片排版风格（默认 [CharacterCoverCardStyle.overlay]）
+  final CharacterCoverCardStyle style;
+
+  /// 多选模式：卡片右上角显示勾选圈，点击由外层切换选中
+  final bool selectionMode;
+  final bool selected;
+
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   /// 正在拉取详情 / 导入 —— 转圈并屏蔽点击
   final bool busy;
@@ -114,7 +90,11 @@ class CharacterCoverCard extends StatelessWidget {
     required this.description,
     this.tags = const [],
     this.avatarUrl,
+    this.style = CharacterCoverCardStyle.overlay,
+    this.selectionMode = false,
+    this.selected = false,
     this.onTap,
+    this.onLongPress,
     this.busy = false,
   });
 
@@ -126,9 +106,92 @@ class CharacterCoverCard extends StatelessWidget {
     final summary = coverSummaryOf(description);
     return GestureDetector(
       onTap: busy ? null : onTap,
+      onLongPress: onLongPress,
       // 每张卡独立重绘边界：网格滚动/别的卡变化时不连带重绘本卡
       child: RepaintBoundary(
+        child: style == CharacterCoverCardStyle.below
+            ? _buildBelow(context, scheme, summary)
+            : _buildOverlay(context, scheme, summary),
+      ),
+    );
+  }
+
+  /// 多选勾选圈（右上角，选中态明显）
+  Widget _selectionBadge(ColorScheme scheme) {
+    return Positioned(
+      top: 8,
+      right: 8,
+      child: IgnorePointer(
         child: Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: selected ? scheme.primary : Colors.black.withValues(alpha: 0.38),
+            border: Border.all(color: Colors.white, width: 1.5),
+          ),
+          child: selected
+              ? const Icon(Icons.check_rounded, size: 15, color: Colors.white)
+              : null,
+        ),
+      ),
+    );
+  }
+
+  /// 图 5 风格：图片在上，标题 / 描述在图下方（无深色渐变遮罩）
+  Widget _buildBelow(BuildContext context, ColorScheme scheme, String summary) {
+    final desc = summary.isNotEmpty ? summary : '点按开始对话';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Container(
+                  color: TavoColors.cosmosElev,
+                  child: _hasImage
+                      ? CachedAppImage(
+                          path: avatarUrl,
+                          fit: BoxFit.cover,
+                          placeholderColor: TavoColors.cosmosElev,
+                        )
+                      : _fallbackCover(),
+                ),
+                if (selectionMode) _selectionBadge(scheme),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 7),
+        Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: scheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          desc,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 11,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOverlay(BuildContext context, ColorScheme scheme, String summary) {
+    return Container(
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
@@ -139,17 +202,14 @@ class CharacterCoverCard extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             // ── 照片铺满整卡 ──
-            // memCacheWidth：按卡片实际显示宽（~180px × 2 dpr ≈ 360）解码，
-            // 避免 1368×768 原图整张解码上传纹理 —— Web/低端设备的主要卡顿源。
-            // 淡入压到 120ms：默认 500ms 在慢加载时观感像「渲染不出来」。
+            // CachedAppImage 统一走磁盘缓存 + 按显示宽解码（~180dp × DPR），
+            // 避免 1368×768 原图整张解码后上传纹理 —— 列表卡顿的主要来源。
+            // 加载中给浅色骨架、成功后 150ms 淡入，不再「一张张蹦」。
             if (_hasImage)
-              CachedNetworkImage(
-                imageUrl: avatarUrl!,
+              CachedAppImage(
+                path: avatarUrl,
                 fit: BoxFit.cover,
-                memCacheWidth: 400,
-                fadeInDuration: const Duration(milliseconds: 120),
-                placeholder: (_, __) => const SizedBox.shrink(),
-                errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                placeholderColor: TavoColors.cosmosElev,
               )
             else
               _fallbackCover(),
@@ -179,6 +239,9 @@ class CharacterCoverCard extends StatelessWidget {
                 left: 8,
                 child: _glassChip(tags.first),
               ),
+
+            // ── 右上角：多选勾选圈 ──
+            if (selectionMode) _selectionBadge(scheme),
 
             // ── 底部文字块（居中）──
             Positioned(
@@ -248,8 +311,6 @@ class CharacterCoverCard extends StatelessWidget {
               ),
           ],
         ),
-      ),
-      ),
     );
   }
 

@@ -23,7 +23,7 @@ Virtual 是一个**本地优先、跨模型、隐私向**的 AI 角色聊天全�
 
 | 项 | 值 |
 |---|---|
-| **App 版本** | **1.0.7+8**（`Virtual_app/pubspec.yaml`） |
+| **App 版本** | **1.0.27+28**（`Virtual_app/pubspec.yaml`） |
 | **GitHub Release** | [Virtual v1.0.7](https://github.com/literature95/Virtual/releases/tag/v1.0.7)（自 v1.0.6 起对外发版） |
 | **官网 APK** | https://virtual.literature95.com/app-release.apk |
 | **GitHub 资产** | Release 页附件 `app-release.apk`（与官网应一致） |
@@ -42,9 +42,8 @@ Virtual 是一个**本地优先、跨模型、隐私向**的 AI 角色聊天全�
    cd .. && bash deploy/deploy_apk.sh
    ```
 
-   > 内置模型版**必须带 `--target-platform android-arm64`**（只出 arm64 单 ABI），
-   > 否则会多打包 x86_64 的 nobodywho 原生库（约 +120MB）。当前产物约 568MB，
-   > 仓库里 `android/app/src/main/assets/models/` 的 508MB GGUF 也会参与构建。
+   > 仍建议带 `--target-platform android-arm64`（只出 arm64 单 ABI，避免 x86_64 原生库）。
+   > 本地模型已停用（见 5.1），当前 release APK 约 **103MB**（1.0.27+28），APK 内不含 `.gguf`。
 4. **（若有后端/接口变更）部署后端**：`dart_frog build` 后同步服务器 `build/routes`、`build/lib`、`build/bin/server.dart` 并 `systemctl restart virtual-backend`（JIT 冷启动约 30s）。
 5. **（若有 Web 变更）部署静态站**：`cd Virtual_web && npm run build`，再 `bash deploy/push_web_dist.sh`（保留线上 APK）。
 6. **Git + GitHub Release**（自 v1.0.6 起）：
@@ -197,12 +196,49 @@ d:\Documents\Desktop\Virtual\
 | 字段 | 默认 | 范围 | 含义 |
 |---|---|---|---|
 | `localModelPath` | `''`（必填） | — | GGUF 模型绝对路径。**自用版改为内置打包**：新建部署型端点时从「内置模型」下拉选择，保存时自动复制并回填真实绝对路径；仍保留「自定义路径」供手动放置的模型 |
-| `contextSize` | 4096 | 512~131072 | 推理上下文长度（token） |
+| `contextSize` | 4096 | 512~131072 | 推理上下文长度（token）。**新默认 4096**（配合压缩角色卡 + 最近 4 轮 + 增量上下文，4096 足够且更省内存/首字延迟）；已有端点保留自身存储值，不强制改 |
 | `useGpu` | true | — | 模型层 offload 到 GPU，设备不支持时引擎自动回退 CPU |
 | `threadCount` | 0 | 0~64 | 推理线程数，0 = 按 CPU 核数自动 |
-| `temperature` | 0.7 | 0~2 | 采样温度 |
+| `temperature` | 0.6 | 0~2 | 采样温度 |
 | `topP` | 0.9 | 0~1 | 核采样 top-p |
-| `maxTokens` | 1024 | 1~32768 | 单次生成最大 token 数 |
+| `maxTokens` | 768 | 1~32768 | 单次生成最大 token 数 |
+| `repetitionPenalty` | 1.1 | 1.0~1.3 | 重复惩罚（引擎 `SamplerBuilder.penalties(penaltyRepeat:)`；1.0 = 不惩罚，>1.0 抑制复读，>1.25 易发僵）。旧 JSON 缺字段按 1.1 |
+
+**本地模型提示词组装与上下文策略（2026-11-04，修复角色扮演失败/答非所问）**：
+
+真机症状：只发「你是」两字，0.8B 模型却续写「推眼镜/铁饭碗/刘岚厨房」大段设定。
+根因是整张角色卡 + 开场白 + 全部历史一次性塞入上下文，模型把用户输入当成续写素材。
+现在按「**只给当前对话需要的内容，用户输入是第一优先级**」重做：
+
+- **独立组装层** `lib/services/local_prompt_builder.dart`（不散落在适配器）：
+  - **压缩角色卡**：名字 + 身份（描述前 90 字）+ 一句话性格 + 场景 + 口吻 +
+    3 条禁止项；三级收缩后仍超限则按 token 二分截断，**硬上限 300 token**
+    （用引擎 `Chat.tokenize` 校验）。整张角色卡不再进 system。
+  - **历史只带最近 4 轮（8 条）**：按「用户消息开启一轮」分组，超预算从最老
+    整轮丢弃，不切断 user/assistant 配对。
+  - **历史预算** = `(contextSize − maxTokens − system 占用) × 50%`，另一半留给
+    模板与生成长度波动；不超过即不再追加更老消息。
+  - **顺序固定**：`system(压缩卡) → 最近历史 → 用户最新输入 → 本轮指令`。
+    指令明确「直接回应用户这句话；不要复述设定，不要另起场景，不要续写他人故事」。
+  - **极短输入特判**：用户输入 ≤6 字时追加「先用一句话回应或反问澄清，不要扩写场景」。
+  - **开场白**：仅作为普通历史参与 4 轮窗口，超出即丢，不会每轮重复注入。
+- **增量上下文**（`nobodywho_adapter.dart`）：同一对话复用 `endpointId::conversationId`
+  的 Chat，**不再每轮 resetHistory / 重传全部历史**；每轮只发送「最后一条 assistant
+  之后的消息」，首字延迟不再每轮全额重付。检测到重新生成（同一用户消息重复）时
+  自动重建 Chat 并携带最近 4 轮。
+- **75% 阈值裁剪**：用 `getStats().contextUsed` 监控，超过 `contextSize × 0.75`
+  才 `setChatHistory(压缩卡 + 最近轮次)`；裁剪触发点与前后 token 数写入日志。
+- **ContextShift**：`keepFirstTurns: 1, keepLastTurns: 8`，让引擎可自动丢中段旧轮次。
+- **降级路径**：裁剪后仍报 `context_shift_too_few_messages` 时，重建 Chat 并只带
+  最近 4 轮重发一次（日志前缀 `[LocalPrompt]` 标注降级）。
+- **会话释放**：切换 / 删除 / 清空对话时调用 `releaseLocalContext()`，释放该会话 Chat，
+  避免跨会话串场（nobodywho 无公开 `dispose`，`resetHistory()` 后移出缓存）。
+- **性能行**：本地模型回复气泡下方显示 `首字 X.XXs · YY.Y tok/s`
+  （首 chunk 延迟 / 生成 token 数 ÷ 生成耗时）；云端适配器不填该字段，不显示。
+- **日志**：`[LocalPrompt]` 统一输出 system token 数、历史条数、丢弃条数、预算、
+  contextUsed、是否触发裁剪；原始错误仍保留 `[LocalModel] 原始错误：…`。
+- **单测**：`test/local_prompt_builder_test.dart` 覆盖 ①超长卡压到 ≤300 token
+  ②≤6 字附加提示 ③超 4 轮被裁且 system 保留 ④裁剪不切断 user/assistant 配对。
 
 **平台限制**：nobodywho 仅 android/ios/linux/macos/windows 有实现，**无 web**。
 web 端通过条件导入 `nobodywho_adapter_stub.dart`（默认）/ `nobodywho_adapter.dart`
@@ -392,6 +428,7 @@ dart run tool/import_cards.dart "/路径/卡库" --recursive
 - 官网首页：Hero 区（左文右机不对称布局 + 漂浮玻璃胶囊 + CSS 手机 mockup）+ 角色卡预览 + 应用介绍
 - 角色卡浏览页：后端 `/api/characters` 拉取 + 沉浸式图片卡 + 详情弹窗
 - 深空设计系统：近黑深空 `#0e0e0e` + 星空闪烁 + 三色签名渐变 + 楷体 display 字体
+- 顶栏「下载 App」左侧 GitHub 图标入口（`App.jsx` 内联 SVG，链接 `https://github.com/literature95/Virtual`，新窗口打开；移动端同样可见）
 - `/api` 代理到后端 `:8080`
 
 **待实现：**
@@ -470,7 +507,7 @@ App 首次启动后，进入 **设置 → 后端地址**，默认 `http://localh
 | 后端连接 PostgreSQL 失败 | 正常降级到内存数据，控制台会显示 "degraded to memory" |
 | App 元数据加载失败 | 自动回退 `assets/metadata_default.json`，无网也能跑 |
 | 对话一发送就报 `type 'Utf8Decoder' is not a subtype of type 'StreamTransformer<Uint8List, String>' of 'streamTransformer'` | dio 的 `ResponseBody.stream` 运行时类型是 `Stream<Uint8List>`，在其上调用 `.transform(utf8.decoder)` 会因泛型实参不匹配被运行时检查拒绝（`as Stream<List<int>>` 无法规避，它只改静态类型）。必须用 `utf8.decoder.bind(stream)`；已抽为 `decodeSseLines()` 统一实现，回归见 `test/sse_decode_test.dart`（含反例固化） |
-| 报 `request reached max organization concurrency: N, please try again after X seconds` | 上游账号并发额度占满（同一 API Key 同时只允许 N 个请求）。客户端已按 retry-after 自动重试 3 次；仍失败时说明额度被其它会话/进程占用，等待或换 Key / 换端点 |
+| 报 `request reached max organization concurrency: N, please try again after X seconds` / `Too many requests for this free model` | 上游账号并发额度占满（同一 API Key / 免费模型档同时只允许 N 个请求，常见 N=1）。客户端按 `Retry-After`（无则 2s / 6s / 15s ±20% 退避）自动重试 3 次，且同一对话串行、快速连点第二次会被拦截；仍失败时说明额度被其它会话/进程占用，等待或换 Key / 换模型 / 换端点。详见 `Virtual_app/README.md`「4.1 上游限流与重试」 |
 | Web `npm run dev` 启动但 API 404 | 确认后端 8080 端口已启动 |
 | 用户下载到的 App 仍是旧版本 | App 分发包有**三处**（构建产物 / `Virtual_web/public/` / 服务器 `/var/www/virtual/dist/`），必须同步。用 `bash deploy/deploy_apk.sh` 一键同步 + 三层哈希校验，勿手动 `cp`。对外分发以 **GitHub Release Latest** 与官网 APK 为准 |
 | 服务器磁盘被 APK 备份占满 | 单个 APK 约 49MB。`deploy_apk.sh` 已固化「只保留最近 1 份备份」（`VIRTUAL_KEEP_APK_BACKUPS` 可调），勿手动无限制 `cp` |

@@ -8,13 +8,13 @@ import '../discover/compose_post_dialog.dart';
 /// 主框架 — 底栏 5 位：首页 | 发现 | 发布(＋) | 角色 | 我的
 ///
 /// - 中间「＋」是**动作**不是 Tab：点按进入全页 `/compose` 发布，不切换选中态
-/// - （「对话」已并入「角色」Tab：角色 Tab 内分「角色 / 历史 / 收藏」三段，
+/// - （「对话」已并入「角色」Tab：角色 Tab 内分「角色 / 历史」两段，
 ///    历史段承载会话列表，故底部不再单列对话）
 /// - AppBar 按路由条件渲染：
-///   - 首页：右上角搜索图标
-///   - 接口页（/endpoint*）：页面自带 AppBar（返回+标题+新建），隐藏 shell 的
+///   - 首页：一行顶栏 —— 左侧圆角搜索框（点按进 `/home/search`）+ 右侧「分类」
+///     按钮（点按进 `/home/tags`）。原 ☰ 抽屉与 "Virtual" 字标已移除；
+///     抽屉里的入口全部在「我的」页有可达路径（详见 README）。
 ///   - 其余页面不显示 "+"（角色 Tab 的 "+" 由其内部 AppBar 自绘）
-/// - 左上角 ☰ 抽屉：复用「我的」的导航内容
 /// - 宽屏：左侧 NavigationRail（同样含中间发布按钮）
 class HomeShell extends StatelessWidget {
   final Widget child;
@@ -117,20 +117,22 @@ class HomeShell extends StatelessWidget {
   bool _hideShellAppBar(String loc) {
     // 发现页：自带「关注 / 推荐」TabBar
     if (loc == '/discover') return true;
-    // 搜索筛选页 / 分类页：自带「返回 + 搜索框 + 搜索」一体化 AppBar
-    if (loc == '/home/search' || loc.startsWith('/home/category/')) return true;
+    // 搜索筛选页 / 分类页 / 标签筛选页：自带「返回 + 搜索框 + 搜索」一体化 AppBar
+    if (loc == '/home/search' ||
+        loc == '/home/tags' ||
+        loc.startsWith('/home/category/')) {
+      return true;
+    }
     // 对话页：/chat、/chat/:id；角色 Tab：/characters；我的页：/profile
-    // **更多 /more**：页面自带顶栏（返回+标题同一行），shell 必须隐藏，否则双层栏
     // 角色卡详情：/home/character/:id（沉浸式立绘，extendBodyBehindAppBar）
-    // 接口页：/endpoints、/endpoint/new、/endpoint/:id/edit
+    //
+    // 注意：设置 / 插件 / 世界书 / 正则 / 预设 / 端点 / 主题 / 更多 / 角色编辑等
+    // 二级页面已改为**根 Navigator 的独立路由**（见 `AppRouter`），根本不经过
+    // shell，因此这里不再需要为它们隐藏顶栏。
     return loc == '/chat' ||
         loc.startsWith('/chat/') ||
         loc.startsWith('/character') ||
         loc.startsWith('/home/character/') ||
-        loc.startsWith('/endpoint') ||
-        loc.startsWith('/settings') ||
-        loc == '/more' ||
-        loc.startsWith('/more/') ||
         loc == '/profile';
   }
 
@@ -260,7 +262,6 @@ class HomeShell extends StatelessWidget {
                   loc,
                   _centered(child, screenWidth),
                 ),
-                drawer: _buildDrawer(context),
               ),
             ),
           ],
@@ -268,10 +269,9 @@ class HomeShell extends StatelessWidget {
       );
     }
 
-    // ── 窄屏模式：底部导航 + AppBar + 抽屉 ──
+    // ── 窄屏模式：底部导航 + AppBar ──
     return Scaffold(
       appBar: _buildAppBar(context),
-      drawer: _buildDrawer(context),
       body: CosmosBackground(
         child: _withStatusBarInset(
           context,
@@ -360,32 +360,13 @@ class HomeShell extends StatelessWidget {
     }
 
     return AppBar(
-      // ── 左侧：菜单 ☰ + 紧随其后的品牌 logo（左对齐）──
+      automaticallyImplyLeading: false,
+      // 首页顶栏左右内边距 5dp（用户指定）；非首页（返回按钮态）仍 16dp
+      titleSpacing: isRoot ? 5 : 16,
+      // 首页一行顶栏：左搜索框 + 右「分类」；其余（理论上只剩详情类路由，
+      // 详情页多已自带顶栏）回退为标准返回按钮，保证系统返回规则不变。
       leading: isRoot
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Builder(
-                  builder: (ctx) => IconButton(
-                    icon: const Icon(Icons.menu, size: 24),
-                    onPressed: Scaffold.of(ctx).openDrawer,
-                    tooltip: '菜单',
-                  ),
-                ),
-                ShaderMask(
-                  shaderCallback: (bounds) =>
-                      TavoColors.signGradient.createShader(bounds),
-                  child: const Text(
-                    'Virtual',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            )
+          ? null
           : BackButton(onPressed: () {
               if (context.canPop()) {
                 context.pop();
@@ -393,193 +374,47 @@ class HomeShell extends StatelessWidget {
                 context.go('/home');
               }
             }),
-      // 菜单图标 + "Virtual" 字标实际宽度约 190px；写死 130 会在窄屏触发
-      // RenderFlex overflow（右侧溢出 ~60px）。这里给足 210px 余量避免溢出。
-      leadingWidth: isRoot ? 210 : null,
-      actions: [
-        // 首页 → 搜索图标（跳转到搜索筛选页）
-        if (loc.startsWith('/home'))
-          IconButton(
-            icon: const Icon(Icons.search, size: 23),
-            tooltip: '搜索',
-            onPressed: () => context.go('/home/search'),
-          ),
-        const SizedBox(width: 4),
-      ],
+      title: isRoot ? _homeTopBar(context) : null,
+      actions: [SizedBox(width: isRoot ? 5 : 16)],
       elevation: 0,
     );
   }
 
-  // ── 侧边抽屉：复用「我的」的导航内容 ─────────────────────────────
-
-  Widget _buildDrawer(BuildContext context) {
-    final loc = GoRouterState.of(context).uri.path;
-    return Drawer(
-      width: 288,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.horizontal(right: Radius.circular(20)),
-      ),
-      child: CosmosDrawerBody(
-        currentPath: loc,
-        brandAvatar: _brandAvatar(size: 56),
-      ),
-    );
-  }
-}
-
-/// 抽屉主体：深空背景 + 用户区块 + 与「我的」一致的导航项
-class CosmosDrawerBody extends StatelessWidget {
-  final String currentPath;
-  final Widget brandAvatar;
-
-  const CosmosDrawerBody({
-    super.key,
-    required this.currentPath,
-    required this.brandAvatar,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  /// 首页顶栏：圆角搜索框（点击进搜索筛选页）+「分类」按钮（点击进标签筛选页）
+  ///
+  /// 搜索框是**只读的视觉入口**，不做输入 —— 输入与提交统一在
+  /// `/home/search` 完成，避免首页与搜索页两套输入状态互相打架。
+  Widget _homeTopBar(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      color: scheme.surface,
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          children: [
-            // ── 头部：头像 / 昵称 / ID ──
-            Row(
-              children: [
-                brandAvatar,
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Virtual 用户',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                          color: scheme.onSurface,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'ID · LOCAL-0001',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: scheme.onSurfaceVariant,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.close,
-                      size: 20, color: scheme.onSurfaceVariant),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // ── 签名渐变分隔线 ──
-            Container(
-              height: 2,
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                gradient: TavoColors.signGradient,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-
-            // ── 一级 Tab 导航（与底部导航一致）──
-            ..._navItems(context, [
-              (Icons.home_outlined, '首页', '/home'),
-              (Icons.explore_outlined, '发现', '/discover'),
-              (Icons.face_3_outlined, '角色', '/characters'),
-            ]),
-
-            _sectionLabel(context, '我的'),
-            ..._navItems(context, [
-              (Icons.person_outline, '我的', '/profile'),
-              (Icons.api, 'API接入', '/endpoints'),
-              (Icons.more_horiz, '更多', '/more'),
-            ]),
-
-            _sectionLabel(context, '扩展'),
-            ..._navItems(context, [
-              (Icons.menu_book_outlined, '世界书', '/lorebooks'),
-              (Icons.tune, '预设', '/presets'),
-              (Icons.manage_history_outlined, '正则', '/regex'),
-              (Icons.extension_outlined, '插件', '/plugins'),
-              (Icons.palette_outlined, '主题', '/theme'),
-            ]),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _sectionLabel(BuildContext context, String text) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 14, 0, 6),
-      child: Text(
-        text.toUpperCase(),
-        style: TextStyle(
-          fontSize: 10.5,
-          letterSpacing: 1.6,
-          color: scheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _navItems(
-      BuildContext context, List<(IconData, String, String)> items) {
-    final scheme = Theme.of(context).colorScheme;
-    return items.map((item) {
-      final (icon, label, route) = item;
-      final selected =
-          currentPath == route || currentPath.startsWith('$route/');
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 2),
-        child: Material(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () {
-              Navigator.pop(context);
-              context.go(route);
-            },
+    return Row(
+      children: [
+        // 搜索框 : 分类按钮 = 4 : 1（左右外边距由 AppBar titleSpacing / actions 统一 5dp）
+        Expanded(
+          flex: 4,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => context.push('/home/search'),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-              decoration: selected
-                  ? BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      color: scheme.primary.withValues(alpha: 0.12),
-                      border: Border.all(
-                          color: scheme.primary.withValues(alpha: 0.4)),
-                    )
-                  : null,
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: scheme.outlineVariant),
+              ),
               child: Row(
                 children: [
-                  Icon(icon,
-                      size: 20,
-                      color:
-                          selected ? scheme.primary : scheme.onSurfaceVariant),
-                  const SizedBox(width: 13),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                      color:
-                          selected ? scheme.onSurface : scheme.onSurfaceVariant,
+                  Icon(Icons.search, size: 20, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '搜索内容',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ],
@@ -587,7 +422,51 @@ class CosmosDrawerBody extends StatelessWidget {
             ),
           ),
         ),
-      );
-    }).toList();
+        const SizedBox(width: 10),
+        Expanded(
+          flex: 1,
+          child: SizedBox(
+            height: 40,
+            child: Container(
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: scheme.outlineVariant),
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => context.push('/home/tags'),
+                  child: Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.grid_view_rounded,
+                            size: 16, color: scheme.onSurface),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            '分类',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
+
 }

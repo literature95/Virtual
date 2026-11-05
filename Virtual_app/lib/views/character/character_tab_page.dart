@@ -9,9 +9,10 @@ import '../../models/lorebook.dart';
 import '../../providers/character_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/app_image_cache.dart';
 import '../../services/character_publish_service.dart';
-import '../chat/chat_list_page.dart' show ConversationListView;
-import '../common/character_cover_card.dart' show resolveAvatarImage;
+import '../../utils/multi_select.dart';
+import '../common/character_cover_card.dart';
 import 'character_import_flow.dart';
 
 /// 「角色」Tab —— 底部导航合并后的单入口页
@@ -21,12 +22,13 @@ import 'character_import_flow.dart';
 ///    **新建 / 文件导入 / URL 导入**的角色自动入架；首页在线卡需在详情页
 ///    点「加入角色库」才会出现。
 ///    **点卡片 = 直接进入对话**（有历史会话则续聊）；长按出菜单（详情 / 移出）。
-///  - **历史**：会话历史（复用 [ConversationListView]）。在这里发起的会话
+///  - **历史**：会话历史。与首页一致的三列卡片网格（复用
+///    [CharacterCoverCard]），长按仍可置顶 / 删除。在这里发起的会话
 ///    只出现在历史分段，不会回流进角色库。
-///  - **收藏**：预留分段位（复用角色卡既有 `isFavorite` 字段）。
 ///
-/// 右上角 `+`：三选一创建（新建 / 文件导入 / URL 导入），均只进**本地**角色库。
-/// 右上角上传：把本地角色卡显式发布到后端数据库。
+/// 右上角 **⋮ 三点菜单**：角色管理 / 上传角色 / 创建角色
+/// （新建 / 文件导入 / URL 导入三选一），创建与上传均只进**本地**角色库；
+/// 上传是显式发布到后端数据库。
 class CharacterTabPage extends StatefulWidget {
   const CharacterTabPage({super.key});
 
@@ -38,11 +40,23 @@ class _CharacterTabPageState extends State<CharacterTabPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
 
+  /// 多选模式（长按任一卡片进入）。仅对当前分段生效，切换分段自动退出。
+  bool _selecting = false;
+  MultiSelectState _selection = const MultiSelectState();
+  int _lastTabIndex = 0;
+
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 3, vsync: this);
-    _tab.addListener(() => setState(() {}));
+    _tab = TabController(length: 2, vsync: this);
+    _tab.addListener(() {
+      if (_tab.index != _lastTabIndex) {
+        _lastTabIndex = _tab.index;
+        _exitSelection();
+      } else {
+        setState(() {});
+      }
+    });
   }
 
   @override
@@ -54,40 +68,249 @@ class _CharacterTabPageState extends State<CharacterTabPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(
-        // ── 单行顶部：左「角色|历史|收藏」分段 + 右「上传/加号」 ──
-        // 不再单独放标题「角色」——它与第一个分段标签重复。
-        automaticallyImplyLeading: false,
-        titleSpacing: 16,
-        // 分段条自带 8+8 padding 与边框，需要比默认 56 略高才不会挤压
-        toolbarHeight: 58,
-        title: _segmentBar(scheme),
+    final chars = context.watch<CharacterProvider>();
+    final chatProvider = context.watch<ChatProvider>();
+
+    return PopScope(
+      // 多选态拦截系统返回：先退出多选，再允许退页面
+      canPop: !_selecting,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _selecting) _exitSelection();
+      },
+      child: Scaffold(
+        appBar:
+            _selecting ? _selectionAppBar(scheme) : _normalAppBar(scheme),
+        body: TabBarView(
+          controller: _tab,
+          children: [
+            _ShelfView(
+              items: chars.shelfCharacters,
+              selecting: _selecting,
+              selection: _selection,
+              onToggleSelect: _toggleSelection,
+              onLongPress: _beginSelection,
+            ),
+            _HistoryView(
+              items: sortedConversations(chatProvider.conversations),
+              characters: chars.characters,
+              selecting: _selecting,
+              selection: _selection,
+              onToggleSelect: _toggleSelection,
+              onLongPress: _beginSelection,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _normalAppBar(ColorScheme scheme) {
+    return AppBar(
+      // ── 单行顶部：左「角色|历史」分段 + 右「搜索 / ⋮」──
+      automaticallyImplyLeading: false,
+      titleSpacing: 16,
+      // 分段条自带 8+8 padding 与边框，需要比默认 56 略高才不会挤压
+      toolbarHeight: 58,
+      title: _segmentBar(scheme),
+      actions: [
+        IconButton(
+          tooltip: '搜索角色',
+          onPressed: () => context.push('/home/search'),
+          icon: Icon(Icons.search_rounded, color: scheme.onSurface),
+        ),
+        PopupMenuButton<String>(
+          icon: Icon(Icons.more_vert, color: scheme.onSurface),
+          tooltip: '更多操作',
+          onSelected: (value) {
+            switch (value) {
+              case 'manage':
+                context.push('/character/manage');
+                break;
+              case 'upload':
+                _showPublishSheet();
+                break;
+              case 'create':
+                _showCreateSheet();
+                break;
+            }
+          },
+          itemBuilder: (_) => [
+            _menuItem(Icons.view_list_outlined, '角色管理', 'manage'),
+            _menuItem(Icons.cloud_upload_outlined, '上传角色', 'upload'),
+            _menuItem(Icons.add, '创建角色', 'create'),
+          ],
+        ),
+        const SizedBox(width: 4),
+      ],
+    );
+  }
+
+  /// 多选操作栏：已选 N 项 + 全选 / 置顶 / 删除 / 取消
+  PreferredSizeWidget _selectionAppBar(ColorScheme scheme) {
+    return AppBar(
+      automaticallyImplyLeading: false,
+      titleSpacing: 16,
+      toolbarHeight: 58,
+      title: Text(
+        '已选 ${_selection.count} 项',
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          color: scheme.onSurface,
+        ),
+      ),
+      actions: [
+        _barButton('全选', _selectAll),
+        _barButton('置顶', _pinSelected),
+        _barButton('删除', _deleteSelected, color: scheme.error),
+        _barButton('取消', _exitSelection),
+        const SizedBox(width: 4),
+      ],
+    );
+  }
+
+  Widget _barButton(String label, VoidCallback onPressed, {Color? color}) {
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: color,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        minimumSize: const Size(0, 40),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+      ),
+      child: Text(label, style: const TextStyle(fontSize: 13)),
+    );
+  }
+
+  /// 当前分段全部条目的 id（全选与批量操作都以它为准）
+  List<String> _activeItemIds() {
+    if (_tab.index == 0) {
+      return context
+          .read<CharacterProvider>()
+          .shelfCharacters
+          .map((c) => c.id)
+          .toList();
+    }
+    return context
+        .read<ChatProvider>()
+        .conversations
+        .map((c) => c.id)
+        .toList();
+  }
+
+  void _beginSelection(String id) {
+    setState(() {
+      _selecting = true;
+      _selection = MultiSelectState({id});
+    });
+  }
+
+  void _toggleSelection(String id) {
+    setState(() => _selection = _selection.toggle(id));
+  }
+
+  void _exitSelection() {
+    if (!_selecting) return;
+    setState(() {
+      _selecting = false;
+      _selection = const MultiSelectState();
+    });
+  }
+
+  void _selectAll() {
+    setState(() => _selection = _selection.selectAll(_activeItemIds()));
+  }
+
+  Future<void> _pinSelected() async {
+    final ids = _selection.selected;
+    if (ids.isEmpty) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (_tab.index == 0) {
+      final chars = context.read<CharacterProvider>();
+      var applied = 0;
+      for (final id in ids) {
+        final c = chars.getCharacter(id);
+        if (c == null) continue; // 已删除/失效的条目忽略
+        if (!c.isPinned) {
+          await chars.updateCharacter(c.copyWith(isPinned: true));
+        }
+        applied++;
+      }
+      _exitSelection();
+      messenger.showSnackBar(SnackBar(
+        content: Text(applied == ids.length
+            ? '已置顶 $applied 个角色'
+            : '已置顶 $applied 项，${ids.length - applied} 项已失效，已忽略'),
+      ));
+    } else {
+      final chat = context.read<ChatProvider>();
+      var applied = 0;
+      for (final id in ids) {
+        if (chat.conversations.any((c) => c.id == id)) {
+          chat.pinConversation(id, true);
+          applied++;
+        }
+      }
+      _exitSelection();
+      messenger.showSnackBar(SnackBar(
+        content: Text(applied == ids.length
+            ? '已置顶 $applied 条对话'
+            : '已置顶 $applied 项，${ids.length - applied} 项已失效，已忽略'),
+      ));
+    }
+  }
+
+  Future<void> _deleteSelected() async {
+    final ids = _selection.selected;
+    if (ids.isEmpty) return;
+    final isShelf = _tab.index == 0;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text(isShelf ? '删除角色' : '删除对话'),
+        content: Text(isShelf
+            ? '要从本地删除所选的 ${ids.length} 个角色吗？\n角色卡数据将被移除，此操作不可撤销。'
+            : '要删除所选的 ${ids.length} 条对话记录吗？此操作不可撤销。'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.view_list_outlined),
-            tooltip: '管理全部角色（含未入架的本地卡）',
-            onPressed: () => context.push('/character/manage'),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('取消'),
           ),
-          IconButton(
-            icon: const Icon(Icons.cloud_upload_outlined),
-            tooltip: '上传到后端',
-            onPressed: _showPublishSheet,
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child:
+                Text('删除', style: TextStyle(color: Theme.of(dialogCtx).colorScheme.error)),
           ),
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: '创建角色卡',
-            onPressed: _showCreateSheet,
-          ),
-          const SizedBox(width: 4),
         ],
       ),
-      body: TabBarView(
-        controller: _tab,
-        children: const [
-          _ShelfView(query: ''),
-          _HistoryView(query: ''),
-          _FavoriteView(query: ''),
+    );
+    if (ok != true || !mounted) return;
+    if (isShelf) {
+      final chars = context.read<CharacterProvider>();
+      for (final id in ids) {
+        chars.deleteCharacter(id);
+      }
+    } else {
+      final chat = context.read<ChatProvider>();
+      for (final id in ids) {
+        chat.deleteConversation(id);
+      }
+    }
+    _exitSelection();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已删除 ${ids.length} ${isShelf ? '个角色' : '条对话'}')),
+    );
+  }
+
+  PopupMenuItem<String> _menuItem(IconData icon, String label, String value) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 12),
+          Text(label),
         ],
       ),
     );
@@ -178,7 +401,10 @@ class _CharacterTabPageState extends State<CharacterTabPage>
                 itemCount: chars.length,
                 itemBuilder: (_, i) {
                   final c = chars[i];
-                  final avatar = resolveAvatarImage(c.avatarPath);
+                  final avatar = AppImageCache.providerFor(
+                    c.avatarPath,
+                    decodeWidth: 160,
+                  );
                   return ListTile(
                     leading: CircleAvatar(
                       backgroundImage: avatar,
@@ -251,17 +477,17 @@ class _CharacterTabPageState extends State<CharacterTabPage>
     }
   }
 
-  /// 顶部分段切换（角色 / 历史 / 收藏）—— 放在 AppBar 内，占满左侧可达区
+  /// 顶部分段切换（角色 / 历史）—— 放在 AppBar 内，占满左侧可达区
   Widget _segmentBar(ColorScheme scheme) {
     return Row(
       children: [
-        for (var i = 0; i < 3; i++) ...[
+        for (var i = 0; i < 2; i++) ...[
           if (i > 0) const SizedBox(width: 8),
           Expanded(
             child: _segmentItem(
               scheme: scheme,
               index: i,
-              label: ['角色', '历史', '收藏'][i],
+              label: ['角色', '历史'][i],
             ),
           ),
         ],
@@ -311,26 +537,26 @@ class _CharacterTabPageState extends State<CharacterTabPage>
 // ── 角色库 ────────────────────────────────────────────────
 
 class _ShelfView extends StatelessWidget {
-  final String query;
-  const _ShelfView({required this.query});
+  final List<Character> items;
+  final bool selecting;
+  final MultiSelectState selection;
+  final ValueChanged<String> onToggleSelect;
+  final ValueChanged<String> onLongPress;
+
+  const _ShelfView({
+    required this.items,
+    required this.selecting,
+    required this.selection,
+    required this.onToggleSelect,
+    required this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final chars = context.watch<CharacterProvider>();
     final chat = context.watch<ChatProvider>();
 
-    var shelf = chars.shelfCharacters;
-    if (query.trim().isNotEmpty) {
-      final q = query.trim().toLowerCase();
-      shelf = shelf
-          .where((c) =>
-              c.name.toLowerCase().contains(q) ||
-              c.tags.any((t) => t.toLowerCase().contains(q)))
-          .toList();
-    }
-
-    if (shelf.isEmpty) {
+    if (items.isEmpty) {
       return _emptyShelf(context, scheme);
     }
 
@@ -342,43 +568,25 @@ class _ShelfView extends StatelessWidget {
         mainAxisSpacing: 14,
         childAspectRatio: 0.62,
       ),
-      itemCount: shelf.length,
-      itemBuilder: (_, i) => _ShelfCard(
-        character: shelf[i],
-        lastMessage: chat.latestConversationOf(shelf[i].id)?.lastMessagePreview,
-        onOpen: () => context.push(
-            '/home/character/${Uri.encodeComponent(shelf[i].id)}'),
-        onChat: () => _openOrStartChat(context, shelf[i]),
-        onRemove: () => chars.removeFromShelf(shelf[i].id),
-        onDelete: (c) => _confirmDelete(context, chars, c),
-      ),
-    );
-  }
-
-  /// 彻底删除确认框：与「移出角色库」明确区分——删除会从本地移除角色卡
-  void _confirmDelete(
-      BuildContext context, CharacterProvider chars, Character character) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('彻底删除角色'),
-        content: Text(
-          '确定要从本地删除角色「${character.name}」吗？\n角色卡数据将被移除，此操作不可撤销。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(dialogCtx);
-              chars.deleteCharacter(character.id);
-            },
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+      itemCount: items.length,
+      itemBuilder: (_, i) {
+        final c = items[i];
+        final preview =
+            (chat.latestConversationOf(c.id)?.lastMessagePreview ?? '').trim();
+        return CharacterCoverCard(
+          style: CharacterCoverCardStyle.below,
+          name: c.name,
+          description: preview.isEmpty ? '点按开始对话' : preview,
+          avatarUrl: c.avatarPath,
+          selectionMode: selecting,
+          selected: selection.contains(c.id),
+          // 多选态：点卡片 = 切换选中；平时点卡片 = 开始/继续对话
+          onTap: selecting
+              ? () => onToggleSelect(c.id)
+              : () => openOrStartChat(context, c),
+          onLongPress: () => onLongPress(c.id),
+        );
+      },
     );
   }
 
@@ -421,14 +629,11 @@ class _ShelfView extends StatelessWidget {
         ),
       );
 
-  /// 点卡片正文：有历史会话就续聊，否则新建
-  Future<void> _openOrStartChat(BuildContext context, Character c) =>
-      openOrStartChat(context, c);
 }
 
 /// 打开角色对话：有历史会话就续聊，否则新建一条空会话。
 ///
-/// 角色库与收藏两处共用。用 `chat.latestConversationOf` 而不是无脑新建 ——
+/// 角色库与历史两处共用。用 `chat.latestConversationOf` 而不是无脑新建 ——
 /// 否则重复点同一张卡会攒出一串空对话。
 ///
 /// 路由与 Messenger 都在 `await` 之前取出：既避免
@@ -452,314 +657,123 @@ Future<void> openOrStartChat(BuildContext context, Character c) async {
   }
 }
 
-/// 角色库单卡：立绘 + 名称 + 最近对话内容
-///
-/// **点击整卡 = 进入对话**（用户要求「角色库里点角色卡就是对话」）。
-/// 此前 `onTap` 绑的是「查看角色卡详情」，只有最后一行 11px 的预览文字
-/// 才绑了对话 —— 点按区极小，实际几乎点不到。
-/// 现在：「查看角色卡详情」「移出角色库」都在长按菜单里。
-class _ShelfCard extends StatelessWidget {
-  final Character character;
-  final String? lastMessage;
-  final VoidCallback onOpen;
-  final VoidCallback onChat;
+// ── 历史（会话列表复用）──────────────────────────────────────
 
-  /// 菜单里的「轻移除」动作：角色库=移出角色库，收藏页=取消收藏
-  final VoidCallback onRemove;
-  final String removeLabel;
+class _HistoryView extends StatelessWidget {
+  final List<Conversation> items;
+  final List<Character> characters;
+  final bool selecting;
+  final MultiSelectState selection;
+  final ValueChanged<String> onToggleSelect;
+  final ValueChanged<String> onLongPress;
 
-  /// 菜单里的「彻底删除」动作（带确认）；null 则不显示该项
-  final void Function(Character character)? onDelete;
-
-  const _ShelfCard({
-    required this.character,
-    required this.lastMessage,
-    required this.onOpen,
-    required this.onChat,
-    required this.onRemove,
-    this.removeLabel = '移出角色库',
-    this.onDelete,
+  const _HistoryView({
+    required this.items,
+    required this.characters,
+    required this.selecting,
+    required this.selection,
+    required this.onToggleSelect,
+    required this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final img = resolveAvatarImage(character.avatarPath);
-    final preview = (lastMessage ?? '').trim();
-
-    return InkWell(
-      // 整卡直达对话（有历史会话续聊，否则新建）
-      onTap: onChat,
-      onLongPress: () => _menu(context, scheme),
-      borderRadius: BorderRadius.circular(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 立绘（竖版 3:4）
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: AspectRatio(
-                aspectRatio: 3 / 4,
-                child: Container(
-                  color: scheme.surfaceContainerHigh,
-                  child: img != null
-                      ? Image(image: img, fit: BoxFit.cover)
-                      : Center(
-                          child: Text(
-                            character.name.isNotEmpty
-                                ? character.name.characters.first
-                                : '?',
-                            style: TextStyle(
-                              fontSize: 30,
-                              fontWeight: FontWeight.w700,
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 7),
-          // 名称
-          Text(
-            character.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: scheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 2),
-          // 最近对话内容（点按由整卡接管，不再单独嵌套手势）
-          Text(
-            preview.isEmpty ? '点按开始对话' : preview,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 11,
-              color: preview.isEmpty
-                  ? scheme.primary.withValues(alpha: 0.85)
-                  : scheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _menu(BuildContext context, ColorScheme scheme) {
-    showModalBottomSheet<void>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (sheetCtx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                character.name,
-                style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-            ),
-            // 整卡点击已是「进入对话」，菜单里改把详情放第一位
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('查看角色卡详情'),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                onOpen();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.chat_bubble_outline),
-              title: const Text('开始 / 继续对话'),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                onChat();
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.bookmark_remove_outlined,
-                  color: scheme.error),
-              title: Text(removeLabel, style: TextStyle(color: scheme.error)),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                onRemove();
-              },
-            ),
-            if (onDelete != null)
-              ListTile(
-                leading:
-                    Icon(Icons.delete_forever_outlined, color: scheme.error),
-                title: Text('彻底删除角色',
-                    style: TextStyle(color: scheme.error)),
-                subtitle: Text('从本地删除角色卡，不可恢复',
-                    style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant)),
-                onTap: () {
-                  Navigator.pop(sheetCtx);
-                  onDelete!(character);
-                },
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── 历史（会话列表复用）──────────────────────────────────────
-
-class _HistoryView extends StatefulWidget {
-  final String query;
-  const _HistoryView({required this.query});
-
-  @override
-  State<_HistoryView> createState() => _HistoryViewState();
-}
-
-class _HistoryViewState extends State<_HistoryView> {
-  List<Conversation> _sorted(List<Conversation> all) {
-    final q = widget.query.trim().toLowerCase();
-    final filtered = q.isEmpty
-        ? List<Conversation>.from(all)
-        : all
-            .where((c) =>
-                c.title.toLowerCase().contains(q) ||
-                (c.lastMessagePreview ?? '').toLowerCase().contains(q))
-            .toList();
-    filtered.sort((a, b) {
-      if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
-      final ta = a.lastMessageAt ?? a.updatedAt;
-      final tb = b.lastMessageAt ?? b.updatedAt;
-      return tb.compareTo(ta);
-    });
-    return filtered;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ConversationListView(
-      query: widget.query,
-      sorted: _sorted,
-      onShowMenu: _showMenu,
-    );
-  }
-
-  void _showMenu(BuildContext context, Conversation conv) {
-    final chat = context.read<ChatProvider>();
-    showModalBottomSheet<void>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (sheetCtx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(conv.title,
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w600)),
-            ),
-            ListTile(
-              leading: Icon(conv.isPinned
-                  ? Icons.push_pin_outlined
-                  : Icons.push_pin),
-              title: Text(conv.isPinned ? '取消置顶' : '置顶'),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                chat.pinConversation(conv.id, !conv.isPinned);
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.delete_outline,
-                  color: Theme.of(sheetCtx).colorScheme.error),
-              title: Text('删除',
-                  style: TextStyle(
-                      color: Theme.of(sheetCtx).colorScheme.error)),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                chat.deleteConversation(conv.id);
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── 收藏（占位）──────────────────────────────────────────────
-
-class _FavoriteView extends StatelessWidget {
-  final String query;
-  const _FavoriteView({required this.query});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final chars = context.watch<CharacterProvider>();
-    var favs = chars.favorites;
-    if (query.trim().isNotEmpty) {
-      final q = query.trim().toLowerCase();
-      favs = favs.where((c) => c.name.toLowerCase().contains(q)).toList();
-    }
-
-    if (favs.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(40),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.star_border,
-                  size: 64, color: scheme.onSurfaceVariant.withValues(alpha: 0.5)),
-              const SizedBox(height: 18),
-              Text('还没有收藏的角色',
-                  style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onSurface)),
-              const SizedBox(height: 8),
-              Text('在角色卡上点亮星标后会出现在这里。',
-                  style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
-            ],
-          ),
-        ),
-      );
-    }
+    if (items.isEmpty) return const _HistoryEmpty();
 
     return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
         crossAxisSpacing: 12,
         mainAxisSpacing: 14,
         childAspectRatio: 0.62,
       ),
-      itemCount: favs.length,
-      itemBuilder: (_, i) => _ShelfCard(
-        character: favs[i],
-        lastMessage:
-            context.read<ChatProvider>().latestConversationOf(favs[i].id)?.lastMessagePreview,
-        onOpen: () =>
-            context.push('/home/character/${Uri.encodeComponent(favs[i].id)}'),
-        onChat: () => openOrStartChat(context, favs[i]),
-        onRemove: () => context.read<CharacterProvider>().toggleFavorite(favs[i].id),
-        removeLabel: '取消收藏',
+      itemCount: items.length,
+      itemBuilder: (context, i) {
+        final conv = items[i];
+        final char = _characterOf(characters, conv.characterId);
+        return CharacterCoverCard(
+          // 与「角色」分段统一：图片在上、标题与描述在图下
+          style: CharacterCoverCardStyle.below,
+          name: conv.title,
+          description: conv.lastMessagePreview?.isNotEmpty == true
+              ? conv.lastMessagePreview!
+              : (conv.lastMessageAt != null
+                  ? _formatTimeFrom(conv.lastMessageAt!)
+                  : '开始新对话'),
+          avatarUrl: char?.avatarPath,
+          selectionMode: selecting,
+          selected: selection.contains(conv.id),
+          onTap: selecting
+              ? () => onToggleSelect(conv.id)
+              : () => context.push('/chat/${conv.id}'),
+          onLongPress: () => onLongPress(conv.id),
+        );
+      },
+    );
+  }
+
+  Character? _characterOf(List<Character> all, String id) {
+    for (final c in all) {
+      if (c.id == id) return c;
+    }
+    return null;
+  }
+}
+
+/// 会话排序：置顶优先，其次按最近消息 / 更新时间倒序
+///
+/// 纯函数，页面与「历史」分段共用；多选模式的「全选」也按同一顺序取 id。
+List<Conversation> sortedConversations(List<Conversation> all) {
+  final list = List<Conversation>.from(all);
+  list.sort((a, b) {
+    if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+    final ta = a.lastMessageAt ?? a.updatedAt;
+    final tb = b.lastMessageAt ?? b.updatedAt;
+    return tb.compareTo(ta);
+  });
+  return list;
+}
+
+// ── 历史空态 ───────────────────────────────────────────────
+
+class _HistoryEmpty extends StatelessWidget {
+  const _HistoryEmpty();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.forum_outlined,
+                size: 64, color: scheme.onSurfaceVariant.withValues(alpha: 0.5)),
+            const SizedBox(height: 18),
+            Text('还没有对话记录',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface)),
+            const SizedBox(height: 8),
+            Text('点「角色」分段挑一张卡，开始第一段对话吧。',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
+          ],
+        ),
       ),
     );
   }
+}
+
+/// 相对时间格式化（历史卡片缺 lastMessagePreview 时用）
+String _formatTimeFrom(DateTime time) {
+  final diff = DateTime.now().difference(time);
+  if (diff.inMinutes < 1) return '刚刚';
+  if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
+  if (diff.inDays < 1) return '${diff.inHours}小时前';
+  if (diff.inDays < 7) return '${diff.inDays}天前';
+  return '${time.month}/${time.day}';
 }
