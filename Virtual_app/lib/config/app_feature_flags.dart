@@ -1,11 +1,11 @@
 /// 全局功能开关。
 ///
-/// 本地模型（GGUF + nobodywho）部署能力已停用：模型不再打包进 APK，
-/// 端点编辑页不再提供「部署」入口，已存在的部署型端点保留但不可推理。
-/// 相关代码保留，未来把 [localDeployEnabled] 置为 true 并恢复打包配置即可。
+/// 本地模型（GGUF + nobodywho）部署能力已恢复：默认不打包任何模型，
+/// 由用户在「部署」型端点里自行导入 GGUF 文件（见
+/// `services/local_model_service.dart`）。APK 内 `.gguf` 条目恒为 0。
 class AppFeatureFlags {
   const AppFeatureFlags._();
 
   /// 是否启用「部署」型端点（本地模型推理）。
-  static const bool localDeployEnabled = false;
+  static const bool localDeployEnabled = true;
 }

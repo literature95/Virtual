@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
-import '../config/app_feature_flags.dart';
 import '../data/app_database.dart';
 import '../models/character.dart';
 import '../models/chat_message.dart';
@@ -416,12 +415,7 @@ class ChatProvider extends ChangeNotifier {
       _addErrorMessage('未配置 API 端点，请先在设置中添加');
       return;
     }
-    // 本地部署已停用：保留旧端点在列表里，但不做本地推理
-    if (!AppFeatureFlags.localDeployEnabled &&
-        endpoint.mode == EndpointMode.deploy) {
-      _addErrorMessage('本地部署已停用，请改用接入型端点');
-      return;
-    }
+    // 本地部署已恢复：部署型端点与接入型端点并存，均可推理。
 
     final modelId = _resolveModelId(endpoint);
     if (modelId == null) {
@@ -488,6 +482,10 @@ class ChatProvider extends ChangeNotifier {
       history: visibleHistory,
       userMessage: content.trim(),
       settings: conv.settings,
+      persona: persona,
+      lorebook: resolveLorebook(conv.settings.lorebookId ?? character.lorebookId),
+      preset: resolvePreset(conv.settings.presetId),
+      attachments: userMsg.attachments,
     );
 
     final List<Map<String, dynamic>> messages;
@@ -724,12 +722,6 @@ class ChatProvider extends ChangeNotifier {
       _finishWithError(targetMsg.id, '未配置 API 端点');
       return;
     }
-    if (!AppFeatureFlags.localDeployEnabled &&
-        endpoint.mode == EndpointMode.deploy) {
-      _finishWithError(targetMsg.id, '本地部署已停用，请改用接入型端点');
-      return;
-    }
-
     final modelId = _resolveModelId(endpoint);
     if (modelId == null) {
       _finishWithError(targetMsg.id, '未选择模型');
@@ -752,6 +744,10 @@ class ChatProvider extends ChangeNotifier {
       history: visibleHistory,
       userMessage: userMsg.content,
       settings: conv.settings,
+      persona: persona,
+      lorebook: resolveLorebook(conv.settings.lorebookId ?? character.lorebookId),
+      preset: resolvePreset(conv.settings.presetId),
+      attachments: userMsg.attachments,
     );
 
     final List<Map<String, dynamic>> messages;
@@ -1004,7 +1000,11 @@ class ChatProvider extends ChangeNotifier {
     yield const StreamChatChunk(isFinal: true);
   }
 
-  /// 本地模型（部署端点）专用组装：压缩角色卡 + 最近 4 轮 + 本轮指令。
+  /// 本地模型（部署端点）专用组装。
+  ///
+  /// - [LocalPromptMode.concise]：压缩角色卡 + 最近 4 轮 + 本轮指令（默认）；
+  /// - [LocalPromptMode.full]：完整角色卡 + 世界书 + 正常历史裁剪，复用云端
+  ///   `PromptService` 两遍拼装，适用于上下文容量足够的较大模型。
   ///
   /// 返回 null 表示走通用 PromptService 路径（云端端点，或本地 tokenizer
   /// 不可用时降级）。上下文生命周期（复用 / 裁剪）由适配器负责。
@@ -1016,8 +1016,27 @@ class ChatProvider extends ChangeNotifier {
     required List<ChatMessage> history,
     required String userMessage,
     required ChatSettings settings,
+    required Persona? persona,
+    required Lorebook? lorebook,
+    required Preset? preset,
+    List<MessageAttachment> attachments = const [],
   }) async {
     if (endpoint.mode != EndpointMode.deploy) return null;
+
+    if (endpoint.usesFullLocalPrompt) {
+      return _buildFullLocalPrompt(
+        endpoint: endpoint,
+        character: character,
+        history: history,
+        userMessage: userMessage,
+        settings: settings,
+        persona: persona,
+        lorebook: lorebook,
+        preset: preset,
+        attachments: attachments,
+      );
+    }
+
     try {
       final counter = await adapter.localTokenCounter(conversationId);
       final countTokens =
@@ -1031,7 +1050,7 @@ class ChatProvider extends ChangeNotifier {
         maxTokens: endpoint.maxTokens,
         systemPromptOverride: settings.systemPrompt,
       );
-      debugPrint('[LocalPrompt] system=${plan.systemTokens} token，'
+      debugPrint('[LocalPrompt] 模式=精简 system=${plan.systemTokens} token，'
           '历史 ${plan.history.length} 条（丢 ${plan.droppedMessages}），'
           '预算 ${plan.historyBudget}，短输入=${plan.shortInput}');
       return _LocalPromptResult(
@@ -1040,6 +1059,65 @@ class ChatProvider extends ChangeNotifier {
       );
     } catch (e) {
       debugPrint('[LocalPrompt] 组装失败，回退通用路径：$e');
+      return null;
+    }
+  }
+
+  /// 完整模式：与云端完全同源的 system（角色卡/预设/世界书/示例）+
+  /// 按本地引擎上下文窗口裁剪的历史 + 用户最新输入。
+  ///
+  /// 不复用云端分支是为了让本地端点也能拿到 `assembled.text` 作为引擎
+  /// system prompt（适配器用 `setNextSystemPrompt` 承载），其余逻辑一致。
+  _LocalPromptResult? _buildFullLocalPrompt({
+    required LlmEndpoint endpoint,
+    required Character character,
+    required List<ChatMessage> history,
+    required String userMessage,
+    required ChatSettings settings,
+    required Persona? persona,
+    required Lorebook? lorebook,
+    required Preset? preset,
+    List<MessageAttachment> attachments = const [],
+  }) {
+    try {
+      final assembled = PromptService.assembleSystem(
+        character: character,
+        history: history,
+        userMessage: userMessage,
+        persona: persona,
+        systemPromptOverride: settings.systemPrompt,
+        jailbreakPrompt: settings.jailbreakPrompt,
+        lorebook: lorebook,
+        preset: preset,
+      );
+      final reservedForSystem =
+          PromptService.estimateSystemTokens(assembled);
+      // 部署型的真实窗口就是端点里配置的 contextSize（不是描述符占位值）
+      final trimmed = ContextWindowService.trim(
+        history,
+        maxTokens: endpoint.contextSize,
+        reservedForSystem: reservedForSystem,
+        reservedForReply: endpoint.maxTokens,
+      );
+      final messages = PromptService.buildMessages(
+        character: character,
+        history: trimmed,
+        userMessage: userMessage,
+        userAttachments: attachments,
+        persona: persona,
+        systemPromptOverride: settings.systemPrompt,
+        jailbreakPrompt: settings.jailbreakPrompt,
+        assembled: assembled,
+      );
+      debugPrint('[LocalPrompt] 模式=完整 system=${assembled.text.length} 字，'
+          '历史 ${history.length}→${trimmed.length} 条，'
+          'ctx=${endpoint.contextSize}');
+      return _LocalPromptResult(
+        messages: messages,
+        systemPrompt: assembled.text,
+      );
+    } catch (e) {
+      debugPrint('[LocalPrompt] 完整模式组装失败，回退精简路径：$e');
       return null;
     }
   }
@@ -1191,10 +1269,6 @@ class ChatProvider extends ChangeNotifier {
     try {
       final endpoint = _resolveEndpoint();
       if (endpoint == null) throw StateError('未配置 API 端点，请先在设置中添加');
-      if (!AppFeatureFlags.localDeployEnabled &&
-          endpoint.mode == EndpointMode.deploy) {
-        throw StateError('本地部署已停用，请改用接入型端点');
-      }
       final modelId = _resolveModelId(endpoint);
       if (modelId == null) throw StateError('未选择模型');
       final adapter = _apiService.getAdapter(endpoint);

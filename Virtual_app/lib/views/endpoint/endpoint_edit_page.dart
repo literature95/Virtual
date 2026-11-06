@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +10,7 @@ import '../../providers/endpoint_provider.dart';
 import '../../models/endpoint.dart';
 import '../../models/conversation.dart';
 import '../../services/api_service.dart';
+import '../../services/local_model_service.dart';
 import '../../services/model_registry_service.dart';
 
 /// 端点编辑/新建页面
@@ -45,8 +47,16 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
   bool _testingConnection = false;
   Map<String, String> _customParams = {};
 
-  // ===== 部署型（本地模型）字段（功能停用，代码保留） =====
+  // ===== 部署型（本地模型）字段 =====
   EndpointMode _mode = EndpointMode.access;
+
+  /// 本地提示词组装模式（精简 / 完整），仅部署型生效
+  LocalPromptMode _localPromptMode = LocalPromptMode.concise;
+
+  /// 当前模型文件状态（是否存在 / 字节数）与是否位于 App 模型目录
+  LocalModelStatus? _modelStatus;
+  bool _modelManaged = false;
+  Timer? _modelStatusTimer;
 
   final _localModelPathController = TextEditingController();
   final _contextSizeController = TextEditingController();
@@ -157,6 +167,7 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
           ? endpoint.mode
           : EndpointMode.access;
       _localModelPathController.text = endpoint.localModelPath;
+      _localPromptMode = endpoint.localPromptMode;
       _contextSize = endpoint.contextSize;
       _useGpu = endpoint.useGpu;
       _threadCount = endpoint.threadCount;
@@ -166,6 +177,7 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
       _repetitionPenalty = endpoint.repetitionPenalty;
     }
     _syncDeployControllers();
+    _refreshModelStatus();
 
     if (mounted) {
       setState(() => _isLoading = false);
@@ -181,6 +193,7 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
     _customModelIdController.dispose();
     _customModelNameController.dispose();
     _localModelPathController.dispose();
+    _modelStatusTimer?.cancel();
     _contextSizeController.dispose();
     _maxTokensController.dispose();
     _temperatureController.dispose();
@@ -425,8 +438,8 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
     }
 
     // 部署型端点没有远端模型列表：注入一个占位本地模型，
-    // 避免对话页「未选择模型」校验拦截（模型选择对本地推理无实际影响）。
-    if (_mode == EndpointMode.deploy && _selectedModels.isEmpty) {
+    // 避免对话页「未选择模型」校验拦截；上下文长度与端点配置保持一致。
+    if (_mode == EndpointMode.deploy) {
       _selectedModels = [
         LlmModelDescriptor(
           id: 'local',
@@ -457,6 +470,7 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
         customParams: _customParams,
         mode: _mode,
         localModelPath: _localModelPathController.text.trim(),
+        localPromptMode: _localPromptMode,
         contextSize: _contextSize,
         useGpu: _useGpu,
         threadCount: _threadCount,
@@ -481,6 +495,7 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
         customParams: _customParams,
         mode: _mode,
         localModelPath: _localModelPathController.text.trim(),
+        localPromptMode: _localPromptMode,
         contextSize: _contextSize,
         useGpu: _useGpu,
         threadCount: _threadCount,
@@ -719,6 +734,337 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
     });
   }
 
+  // ===== 本地模型导入 / 状态 / 删除 =====
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _scheduleModelStatusRefresh() {
+    _modelStatusTimer?.cancel();
+    _modelStatusTimer = Timer(
+      const Duration(milliseconds: 500),
+      _refreshModelStatus,
+    );
+  }
+
+  Future<void> _refreshModelStatus() async {
+    final path = _localModelPathController.text.trim();
+    if (path.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _modelStatus = null;
+          _modelManaged = false;
+        });
+      }
+      return;
+    }
+    final status = await localModelService.inspect(path);
+    final managed = await localModelService.isManagedPath(path);
+    if (!mounted) return;
+    setState(() {
+      _modelStatus = status;
+      _modelManaged = managed;
+    });
+  }
+
+  /// 选择 `.gguf` → 校验头 → 流式复制到 App 模型目录 → 回填路径。
+  ///
+  /// 这里不申请全盘存储权限：file_picker 走 SAF（ACTION_GET_CONTENT），
+  /// 拿到的是系统授予的临时读取权限；复制目标为 App 私有外部目录
+  /// `getExternalFilesDir(null)/models/`。
+  Future<void> _pickLocalModel() async {
+    if (!localModelService.supported) {
+      _snack('当前平台不支持本地模型导入，请在 Android/iOS 客户端使用');
+      return;
+    }
+    FilePickerResult? picked;
+    try {
+      picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['gguf'],
+        withData: false,
+      );
+    } catch (e) {
+      _snack('打开文件选择器失败：$e');
+      return;
+    }
+    if (picked == null || picked.files.isEmpty) return; // 用户取消：静默返回
+    final file = picked.files.single;
+    final sourcePath = file.path;
+    if (sourcePath == null || sourcePath.isEmpty) {
+      _snack('无法读取所选文件路径，请改用「手填路径」');
+      return;
+    }
+
+    final progress = ValueNotifier<double>(0);
+    final cancelled = ValueNotifier<bool>(false);
+    BuildContext? dialogContext;
+    unawaited(showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        dialogContext = ctx;
+        return PopScope(
+          canPop: false,
+          child: AlertDialog(
+            title: const Text('正在导入模型'),
+            content: ValueListenableBuilder<double>(
+              valueListenable: progress,
+              builder: (_, value, __) => Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LinearProgressIndicator(
+                    value: value > 0 ? value : null,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '${(value * 100).toStringAsFixed(0)}%  ${file.name}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '仅复制到 App 模型目录，不写入系统下载目录',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => cancelled.value = true,
+                child: const Text('取消'),
+              ),
+            ],
+          ),
+        );
+      },
+    ));
+
+    LocalModelImportResult? result;
+    String? errorMessage;
+    try {
+      result = await localModelService.importGguf(
+        sourcePath: sourcePath,
+        sourceBytes: file.size,
+        preferredName: file.name,
+        onProgress: (p) => progress.value = p,
+        isCancelled: () => cancelled.value,
+      );
+    } on LocalModelImportException catch (e) {
+      errorMessage = e.message;
+    } catch (e) {
+      errorMessage = '导入失败：$e';
+    }
+    if (dialogContext != null && dialogContext!.mounted) {
+      Navigator.of(dialogContext!).pop();
+    }
+    if (!mounted) return;
+
+    if (errorMessage != null) {
+      _snack(errorMessage);
+      return;
+    }
+    if (result == null) return;
+    final imported = result;
+    if (imported.outcome == LocalModelImportOutcome.cancelled) {
+      _snack('已取消导入');
+      return;
+    }
+
+    setState(() {
+      _localModelPathController.text = imported.path;
+      _modelStatus = LocalModelStatus(
+        path: imported.path,
+        exists: true,
+        bytes: imported.bytes,
+      );
+    });
+    await _refreshModelStatus();
+    if (imported.outcome == LocalModelImportOutcome.skipped) {
+      _snack('已有同名同大小文件，跳过复制（路径已回填）');
+    } else {
+      final mb = (imported.bytes / (1024 * 1024)).toStringAsFixed(1);
+      _snack('已导入 $mb MB，路径已回填');
+    }
+  }
+
+  Future<void> _deleteLocalModel() async {
+    final path = _localModelPathController.text.trim();
+    if (path.isEmpty) return;
+    if (!await localModelService.isManagedPath(path)) {
+      _snack('该文件不在 App 模型目录内，为避免误删外部文件，请自行在文件管理器中删除');
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除模型文件'),
+        content: Text('将从 App 模型目录删除：\n$path\n\n此操作不可恢复，确定继续？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final deleted = await localModelService.deleteManaged(path);
+    if (!mounted) return;
+    if (!deleted) {
+      _snack('删除失败：文件可能已被移动或占用');
+      return;
+    }
+    setState(() {
+      _localModelPathController.clear();
+      _modelStatus = null;
+      _modelManaged = false;
+    });
+    _snack('模型文件已删除');
+  }
+
+  List<Widget> _buildLocalModelSection() {
+    final status = _modelStatus;
+    final path = _localModelPathController.text.trim();
+    final supported = localModelService.supported;
+    final exists = status?.exists ?? false;
+    return [
+      const Text('本地模型', style: TextStyle(fontWeight: FontWeight.w500)),
+      const SizedBox(height: 8),
+      const Text(
+        '模型由你自己提供：App 不打包任何 GGUF，也不会在后台静默下载整套模型。'
+        '选择文件后会校验 GGUF 头，并以流式复制到 App 私有目录（无需存储权限）。',
+        style: TextStyle(fontSize: 12, color: Colors.grey),
+      ),
+      if (!supported) ...[
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.errorContainer,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            '当前平台（Web）不支持本地推理，可在手机客户端导入模型；本页设置仍会保存。',
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+        ),
+      ],
+      const SizedBox(height: 12),
+      TextField(
+        controller: _localModelPathController,
+        onChanged: (_) => _scheduleModelStatusRefresh(),
+        decoration: const InputDecoration(
+          labelText: 'GGUF 模型文件路径',
+          border: OutlineInputBorder(),
+          hintText: '/storage/emulated/0/Android/data/.../files/models/model.gguf',
+          prefixIcon: Icon(Icons.folder_outlined),
+          helperText: '选择文件后自动回填；已用 adb 传过文件的也可手填绝对路径',
+          helperMaxLines: 2,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: supported ? _pickLocalModel : null,
+              icon: const Icon(Icons.upload_file, size: 18),
+              label: Text(path.isEmpty ? '选择模型文件' : '更换模型'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: exists ? _deleteLocalModel : null,
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: const Text('删除'),
+          ),
+        ],
+      ),
+      if (status != null) ...[
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Icon(
+              status.exists ? Icons.check_circle_outline : Icons.error_outline,
+              size: 16,
+              color: status.exists
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                status.exists
+                    ? '${modelFileNameFrom(path)} · ${status.sizeLabel}'
+                    : '文件不存在，请重新选择或检查路径',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+            if (status.exists)
+              Text(
+                _modelManaged ? 'App 目录' : '外部路径',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ),
+          ],
+        ),
+      ],
+      const SizedBox(height: 20),
+    ];
+  }
+
+  List<Widget> _buildPromptModeSection() {
+    return [
+      const Text('提示词模式', style: TextStyle(fontWeight: FontWeight.w500)),
+      const SizedBox(height: 8),
+      SegmentedButton<LocalPromptMode>(
+        segments: const [
+          ButtonSegment(
+            value: LocalPromptMode.concise,
+            label: Text('精简'),
+            icon: Icon(Icons.compress, size: 18),
+          ),
+          ButtonSegment(
+            value: LocalPromptMode.full,
+            label: Text('完整'),
+            icon: Icon(Icons.article_outlined, size: 18),
+          ),
+        ],
+        selected: {_localPromptMode},
+        showSelectedIcon: false,
+        onSelectionChanged: (selection) {
+          setState(() => _localPromptMode = selection.first);
+        },
+      ),
+      Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Text(
+          '${_localPromptMode.description}。默认精简：≤2B 小模型塞满上下文容易答非所问；'
+          '≥3B 且上下文窗口足够时可切「完整」，完整模式会带上世界书与完整角色卡。',
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.outline,
+          ),
+        ),
+      ),
+      const SizedBox(height: 16),
+    ];
+  }
+
   List<LlmModelDescriptor> get _filteredModels {
     final query = _modelSearchController.text.toLowerCase();
     if (query.isEmpty) return _selectedModels;
@@ -773,8 +1119,7 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 端点类型：本地部署已停用（AppFeatureFlags.localDeployEnabled = false），
-          // 新建/编辑一律按「接入」处理，相关控件不渲染。
+          // 端点类型：本地部署与云端接入并存（模型不打包，由用户自行导入）
           if (AppFeatureFlags.localDeployEnabled) ...[
             const Text('端点类型', style: TextStyle(fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
@@ -884,26 +1229,10 @@ class _EndpointEditPageState extends State<EndpointEditPage> {
             const SizedBox(height: 24),
           ],
 
-          // 部署型：本地模型路径与推理参数
+          // 部署型：用户自行导入模型 + 提示词模式 + 推理参数
           if (_mode == EndpointMode.deploy) ...[
-            const Text('本地模型',
-                style: TextStyle(fontWeight: FontWeight.w500)),
-            const SizedBox(height: 8),
-
-            // 本地部署已停用：不再提供「内置模型 → 保存时复制」的入口，
-            // 仅保留自定义 GGUF 路径字段（flag 恢复后可直接使用）。
-            TextField(
-              controller: _localModelPathController,
-              decoration: const InputDecoration(
-                labelText: 'GGUF 模型文件路径',
-                border: OutlineInputBorder(),
-                hintText: '/storage/emulated/0/Download/model-Q4_K_M.gguf',
-                prefixIcon: Icon(Icons.folder_outlined),
-                helperText: '自定义路径：模型文件需自行放到设备上，暂不支持应用内下载',
-                helperMaxLines: 2,
-              ),
-            ),
-            const SizedBox(height: 16),
+            ..._buildLocalModelSection(),
+            ..._buildPromptModeSection(),
 
             Row(
               children: [

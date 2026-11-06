@@ -32,6 +32,30 @@ enum EndpointMode {
       );
 }
 
+/// 部署型端点的本地提示词组装模式。
+///
+/// - [concise]：精简——压缩角色卡 + 最近 4 轮 + 本轮指令，适合 ≤2B 小模型；
+/// - [full]：完整——完整角色卡 + 世界书 + 正常历史裁剪（复用云端
+///   `PromptService` 两遍拼装），适合 ≥3B、上下文容量足够的模型。
+///
+/// 默认 [concise]：小模型塞满上下文会「答非所问」，精简模式是历史验证过的
+/// 安全默认；大模型由用户在端点里显式切换。
+enum LocalPromptMode {
+  concise('精简', '压缩角色卡 + 最近 4 轮，适合 ≤2B 小模型'),
+  full('完整', '完整角色卡 + 世界书 + 正常历史裁剪，适合 ≥3B 大模型');
+
+  const LocalPromptMode(this.displayName, this.description);
+
+  final String displayName;
+  final String description;
+
+  static LocalPromptMode fromJson(String? value) =>
+      LocalPromptMode.values.firstWhere(
+        (m) => m.name == value,
+        orElse: () => LocalPromptMode.concise, // 旧数据无该字段按精简处理
+      );
+}
+
 /// 端点参数值类型
 enum EndpointParamValueType {
   string,
@@ -81,8 +105,10 @@ class LlmEndpoint {
   // ===== 部署（本地模型）相关：仅 mode == EndpointMode.deploy 时生效 =====
   /// 接入方式（云端 API / 本地模型）。旧 JSON 缺省时按 [EndpointMode.access]
   final EndpointMode mode;
-  /// 本地 GGUF 模型文件绝对路径（暂不支持下载/校验，需手动放置后填写）
+  /// 本地 GGUF 模型文件绝对路径（由用户在端点里导入或手填）
   final String localModelPath;
+  /// 本地提示词组装模式：精简 / 完整（仅部署型生效，默认精简）
+  final LocalPromptMode localPromptMode;
   /// 本地推理上下文长度（token）
   final int contextSize;
   /// 是否把模型层 offload 到 GPU（设备不支持时引擎自动回退 CPU）
@@ -123,6 +149,7 @@ class LlmEndpoint {
     this.customParams = const {},
     this.mode = EndpointMode.access,
     this.localModelPath = '',
+    this.localPromptMode = LocalPromptMode.concise,
     int contextSize = kDefaultContextSize,
     this.useGpu = true,
     int threadCount = 0,
@@ -137,6 +164,10 @@ class LlmEndpoint {
         maxTokens = maxTokens.clamp(1, 32768).toInt(),
         repetitionPenalty =
             repetitionPenalty.clamp(1.0, 1.3).toDouble();
+
+  /// 部署型端点是否走「完整」提示词（云端同源组装）。
+  bool get usesFullLocalPrompt =>
+      mode == EndpointMode.deploy && localPromptMode == LocalPromptMode.full;
 
   LlmEndpoint copyWith({
     String? id,
@@ -154,6 +185,7 @@ class LlmEndpoint {
     Map<String, String>? customParams,
     EndpointMode? mode,
     String? localModelPath,
+    LocalPromptMode? localPromptMode,
     int? contextSize,
     bool? useGpu,
     int? threadCount,
@@ -178,6 +210,7 @@ class LlmEndpoint {
       customParams: customParams ?? this.customParams,
       mode: mode ?? this.mode,
       localModelPath: localModelPath ?? this.localModelPath,
+      localPromptMode: localPromptMode ?? this.localPromptMode,
       contextSize: contextSize ?? this.contextSize,
       useGpu: useGpu ?? this.useGpu,
       threadCount: threadCount ?? this.threadCount,
@@ -204,6 +237,7 @@ class LlmEndpoint {
         'customParams': customParams,
         'mode': mode.name,
         'localModelPath': localModelPath,
+        'localPromptMode': localPromptMode.name,
         'contextSize': contextSize,
         'useGpu': useGpu,
         'threadCount': threadCount,
@@ -232,6 +266,7 @@ class LlmEndpoint {
         customParams: Map<String, String>.from(json['customParams'] ?? {}),
         mode: EndpointMode.fromJson(json['mode'] as String?),
         localModelPath: json['localModelPath'] ?? '',
+        localPromptMode: LocalPromptMode.fromJson(json['localPromptMode'] as String?),
         contextSize: (json['contextSize'] as num?)?.toInt() ?? kDefaultContextSize,
         useGpu: json['useGpu'] as bool? ?? true,
         threadCount: (json['threadCount'] as num?)?.toInt() ?? 0,
