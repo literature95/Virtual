@@ -23,14 +23,15 @@ Virtual 是一个**本地优先、跨模型、隐私向**的 AI 角色聊天全�
 
 | 项 | 值 |
 |---|---|
-| **App 版本** | **1.0.27+28**（`Virtual_app/pubspec.yaml`） |
-| **GitHub Release** | [Virtual v1.0.7](https://github.com/literature95/Virtual/releases/tag/v1.0.7)（自 v1.0.6 起对外发版） |
+| **App 版本** | **1.0.27+28**（`Virtual_app/pubspec.yaml`、`Virtual_web/public/version.json`、线上 `/version.json` 三处一致） |
+| **最新 Tag** | `v1.0.27`（提交 `3f67068`） |
+| **GitHub Release** | [Virtual v1.0.27](https://github.com/literature95/Virtual/releases/tag/v1.0.27)（自 v1.0.6 起对外发版） |
 | **官网 APK** | https://virtual.literature95.com/app-release.apk |
-| **GitHub 资产** | Release 页附件 `app-release.apk`（与官网应一致） |
+| **GitHub 资产** | `Virtual-1.0.27-arm64.apk`（108,003,841 B，与官网 APK 一致） |
 | **PackageName** | `app.bitbear.virtual` |
 | **官网** | https://virtual.literature95.com |
 
-> 历史版本说明：GitHub Releases **从 v1.0.6 起建立**，只保证「当前 Latest」可安装。中间开发包（1.0.3～1.0.5）构建产物已覆盖，不再补挂；代码演进见 `main` 提交历史。回滚需求优先用服务器保留的最近 1 份 APK 备份（见故障排查）。
+> 历史版本说明：GitHub Releases **从 v1.0.6 起建立**，只保证「当前 Latest」可安装（当前为 v1.0.27）。中间开发包（1.0.3～1.0.5）构建产物已覆盖，不再补挂；代码演进见 `main` 提交历史。回滚需求优先用服务器保留的最近 1 份 APK 备份（见故障排查）。
 
 ### 发版流程（每次上线固定做）
 
@@ -49,13 +50,13 @@ Virtual 是一个**本地优先、跨模型、隐私向**的 AI 角色聊天全�
 6. **Git + GitHub Release**（自 v1.0.6 起）：
    ```bash
    git add -A && git commit -m "release: vX.Y ..."
-   git tag -f vX.Y -m "..."
-   git push https://github.com/literature95/Virtual.git main
-   git push https://github.com/literature95/Virtual.git refs/tags/vX.Y:refs/tags/vX.Y
+   git tag -a vX.Y -m "..."
+   git push origin main
+   git push origin refs/tags/vX.Y:refs/tags/vX.Y
    # 需 gh 登录或 GH_TOKEN；脚本会把 app-release.apk 挂到 Release
    bash deploy/create_github_release.sh   # 按需改脚本内 tag 名
    ```
-7. **验收**：官网下载 APK 的 SHA1 与本地产物一致；GitHub Release 标为 Latest。
+7. **验收**：官网下载 APK 的**字节数与 SHA256** 与本地产物一致；GitHub Release 标为 Latest 且 asset 大小一致。
 
 ## 二、技术栈
 
@@ -70,13 +71,13 @@ Virtual 是一个**本地优先、跨模型、隐私向**的 AI 角色聊天全�
 | 类别 | 依赖 |
 |---|---|
 | 状态管理 | Provider（6 个 ChangeNotifier：settings/metadata/endpoint/character/chat/**auth**） |
-| 路由 | GoRouter（30+ 路由，ShellRoute 包裹 4 Tab） |
+| 路由 | GoRouter（**43 条路由**，ShellRoute 包裹 4 Tab；二级页面走根路由） |
 | 网络 | Dio、http（App 直连 LLM 厂商）；Dart Frog/shelf（后端） |
 | 本地存储 | SharedPreferences（整表 JSON 持久化，已引 `sqflite` 待启用） |
 | 数据库（可选） | PostgreSQL（`postgres` 驱动，未安装自动降级到内存种子） |
 | 鉴权 | bcrypt（口令哈希）+ dart_jsonwebtoken（会话 JWT）+ mailer（邮箱验证码） |
 | UI 组件 | flutter_markdown、cached_network_image、image_picker、lottie 等 |
-| 本地模型 | nobodywho ^6.0.0（Rust/llama.cpp 封装，部署型端点用；**仅 Android/iOS/桌面，无 web 实现**，web 由条件导入 stub 隔离） |
+| 本地模型 | nobodywho ^6.0.0（Rust/llama.cpp 封装）依赖保留，但**已停用**：`AppFeatureFlags.localDeployEnabled = false`，APK 不打包 GGUF，部署型端点不可推理（见 4.1「本地部署历史归档」） |
 | 代码生成 | freezed / freezed_annotation ^3.1.0（2026-11-03 从 2.x 升级以对齐 nobodywho 依赖；项目当前无 `@freezed`/`@JsonSerializable` 使用，无生成物受影响） |
 | 设计系统 | `design_tokens.dart` 单一来源（颜色/间距/圆角/字号） |
 | 测试 | flutter_test（App）、test（后端）、oxlint（Web） |
@@ -84,7 +85,7 @@ Virtual 是一个**本地优先、跨模型、隐私向**的 AI 角色聊天全�
 架构原则：
 
 1. **除模型调用外**，App 所有外部服务走 `Virtual_background` 本地后端
-2. **模型调用**保持 App 直连厂商 API（OpenAI 兼容 / Anthropic / Gemini 三适配器，均 SSE 流式）；端点为「**部署**」类型时改走本机 nobodywho 本地模型（见下方「端点接入/部署」）
+2. **模型调用**保持 App 直连厂商 API（OpenAI 兼容 / Anthropic / Gemini 三适配器，均 SSE 流式）；「**部署**」型端点（本机 nobodywho 本地模型）已于 2026-11-04 停用，当前只保留「接入」型端点
 3. **PostgreSQL 可选**：未安装时后端自动降级到内存种子数据
 
 ```
@@ -109,32 +110,37 @@ d:\Documents\Desktop\Virtual\
 │   │   ├── providers/           # 6 个 ChangeNotifier：auth/settings/metadata/endpoint/character/chat
 │   │   ├── services/            # 业务服务层
 │   │   │   ├── adapters/        #   LLM 适配器：openai/anthropic/gemini/llm_adapter/nobodywho（+ web stub）
-│   │   │   ├── api_service.dart #   模型调用分发（按端点类型 接入/部署 路由，接入型再按 platform 路由）
-│   │   │   ├── builtin_model_service.dart  # 内置 GGUF 清单 + 原生通道封装（首次复制/就绪查询）
+│   │   │   ├── api_service.dart #   模型调用分发（当前仅「接入」型：按 platform 路由）
+│   │   │   ├── app_image_cache.dart     #   图片统一缓存：CachedNetworkImageProvider / base64 LRU / FileImage + ResizeImage
+│   │   │   ├── retry_policy.dart        #   上游限流重试决策（429/5xx、Retry-After、2/6/15s 退避）
+│   │   │   ├── conversation_request_lock.dart # 同一对话串行锁
+│   │   │   ├── plot_option_parser.dart  #   剧情选项 JSON/文本三级解析
 │   │   │   ├── asr/tts/image_generation/web_search_service.dart  # 已直连实现，未收敛后端
 │   │   │   ├── online_character_service.dart   # 在线角色卡（后端 /api/characters）
 │   │   │   ├── community_api_service.dart      # 社区：帖子/点赞/评论/关注/用户主页
 │   │   │   ├── prompt_service.dart             # 多模态消息组装
-│   │   │   └── ...（preset/lorebook/regex/plugin/backup/import/export 等 20 个）
+│   │   │   └── ...（preset/lorebook/regex/plugin/backup/import/export 等，共 34 个服务文件）
 │   │   ├── models/              # 14 个数据模型：character/chat_message/conversation/endpoint/
 │   │   │                        #   lorebook/persona/preset/regex_rule/plugin/chat_theme/
 │   │   │                        #   app_metadata/agent_run/banner_item/community_post
 │   │   ├── views/               # 按域分目录（character/chat/home/discover/profile/settings/
 │   │   │                        #   endpoint/lorebook/preset/regex/plugin/theme/more/
 │   │   │                        #   onboarding/debug/common）
+│   │   │                        #   common/ 含 cached_app_image（统一图片组件 + 预加载器）
 │   │   │                        #   discover/ 含 user_profile_page + post_detail_page
-│   │   ├── route/               # GoRouter，30+ 路由，ShellRoute 包裹 4 Tab
+│   │   ├── route/               # GoRouter，43 条路由，ShellRoute 包裹 4 Tab
+│   │   ├── config/              # app_feature_flags.dart（localDeployEnabled = false）
 │   │   ├── theme/               # design_tokens（唯一来源）+ app_theme（浅/深双主题）+ tavo_brand
 │   │   ├── data/                # app_database.dart（SharedPreferences 持久化）
-│   │   └── utils/               # image_data 等工具类
-│   ├── android/app/src/main/assets/models/  # 内置 GGUF（508MB，以 stored 方式入 APK）
-│   ├── android/app/src/main/kotlin/MainActivity.kt  # 内置模型安装桥（流式复制 + 进度）
-│   └── test/                    # 15 个测试（145 例：角色卡/PNG/世界书/角色库/社区/设置/Provider 注册/对话菜单与背景）
+│   │   └── utils/               # image_data / random_order / multi_select 等工具类
+│   ├── android/app/src/main/    # 已无 GGUF 资源；MainActivity 不再有内置模型安装通道（本地部署停用）
+│   └── test/                    # 33 个测试文件（277 例：角色卡/PNG/世界书/角色库/社区/设置/
+│                                #   Provider 注册/对话菜单与背景/限流重试/图片缓存/多选/标签筛选）
 │
 ├── Virtual_background/          # Dart Frog 后端（端口 8080）
 │   ├── routes/
 │   │   ├── _middleware.dart     # 全局 CORS 中间件
-│   │   └── api/                 # 23 个 API 路由：health/metadata/app-info、
+│   │   └── api/                 # 23 个 API 路由文件 / 26 个端点：health/metadata/app-info/banners、
 │   │                            #   characters(index,[id],[id]/export)、
 │   │                            #   auth(send-code/register/login/me/change-password/reset-password)、
 │   │                            #   users([id],me)、posts(index,[id],[id]/like,[id]/comments)、
@@ -151,13 +157,14 @@ d:\Documents\Desktop\Virtual\
 │   ├── e2e_test.py              # 端到端脚本（28 项，覆盖注册→发帖→评论→关注→资料→改密→重置）
 │   ├── public/avatars/          # 5 张本地立绘（char-001~005.jpg）
 │   ├── serve.ps1                # 单端口预览启动器（含 App 壳禁缓存补丁）
-│   └── test/                    # 7 个测试文件（72 例）
+│   └── test/                    # 7 个测试文件（73 例）
 │
 ├── Virtual_web/                 # React 官网（端口 5173）
 │   └── src/
 │       ├── api/client.js        # API 封装
+│       ├── lib/charaCard.js     # 角色卡解析/导出复用逻辑
 │       ├── pages/               # Home.jsx（首页）+ Characters.jsx（角色卡浏览）
-│       ├── App.jsx / App.css    # 入口 + 深空设计系统
+│       ├── App.jsx / App.css    # 入口（含顶栏 GitHub 入口）+ 深空设计系统
 │       └── assets/              # 静态资源
 │
 ├── docs/                        # 项目分析与战略评估文档
@@ -173,103 +180,41 @@ d:\Documents\Desktop\Virtual\
 
 | 功能域 | 说明 |
 |---|---|
-| 导航 | **4 Tab 主导航（首页/发现/角色/我的）**，窄屏 NavigationBar / 宽屏 NavigationRail；GoRouter 30+ 路由。会话详情走独立路由 `/chat/:id`，但导航高亮归入「角色」Tab |
-| 首页 | 在线角色卡广场：后端 `/api/characters` 拉取 + 分类过滤 chips + 搜索；竖版封面卡（0.62 比例、照片铺满、2~3 列网格，已导入角色带角标）；点击卡片 → 拉详情 → 幂等导入 → 直达对话（已聊过则回原对话） |
-| 对话 | 会话列表（搜索/置顶/长按菜单：重命名/置顶/删除）；聊天页流式输出；右上角**三点下拉菜单**（从按钮下方右侧弹出，非底部弹层）：**角色信息** / **对话背景** / 导出为 Markdown / 模型信息 / 清空消息 |
+| 导航 | **4 Tab 主导航（首页/发现/角色/我的）**，窄屏 NavigationBar / 宽屏 NavigationRail；GoRouter **43 条路由**。二级页面全部注册为根路由（无底部导航），入口一律 `push`；有返回箭头的页面按系统返回回上一级，仅根页面退出 App。会话详情走独立路由 `/chat/:id`，但导航高亮归入「角色」Tab |
+| 首页 | 在线角色卡广场：后端 `/api/characters` 拉取 + 分类过滤 chips + 搜索；**顶栏一行**为「搜索框 : 分类按钮 = 4 : 1」、高 40dp、左右留白 5dp，无抽屉、无 "Virtual" 字标；分类按钮进入**标签筛选页**（四组词表、同组并集/跨组交集）；竖版封面卡（0.62 比例、照片铺满、2~3 列网格，已导入角色带角标）；点击卡片 → 详情页 → 幂等导入 → 直达对话（已聊过则回原对话） |
+| 对话 | 会话列表（搜索/置顶/长按菜单：重命名/置顶/删除）；聊天页流式输出；**剧情选项与继续生成**：最后一条 AI 回复下方「生成选项 / 换一批 / 继续」（显式触发、不自动请求）；「继续」写入隐藏用户消息（`isHidden=true`，界面不渲染但仍入库并进入 Prompt）；隐藏消息导出时标注；右上角**三点下拉菜单**：角色信息 / 对话背景 / 导出为 Markdown / 模型信息 / 清空消息 |
 | 对话背景 | 按**对话**维度设置聊天页背景：内置渐变预设（6 款）/ 图片直链 / 本地图片 + 不透明度 + 模糊四档；**复用主题表 `ChatTheme`**（id 由对话 id 派生 `conv-bg-<convId>`），不新增数据表、不改 `Conversation` 模型；删除对话时连带清理 |
 | 角色信息 | 从对话页菜单进入的**只读**本地角色档案：立绘 / 简介 / 性格 / 场景 / 开场白 / 备选开场白 / 示例对话 / 系统提示 / 元信息。与在线卡详情页（`/home/character/:id`）互补 —— 这里展示的就是**真正参与 prompt 组装**的那份本地卡，便于排查 OOC |
-| 角色 | 顶栏**单行**「**角色 / 历史 / 收藏**」三分段 + ☁️（上传到后端）+ ➕ 创建角色卡（**三选一**：新建角色（从头开始）/ 从文件导入角色卡（JSON 或 PNG，自动识别）/ 从 URL 导入角色卡（社区角色站文件直链，自动识别）——三者都只进**本地角色库，不上传**）。**角色**=角色库（3 列网格，卡面为立绘 + 名称 + 最近一条对话预览，**点卡片正文 = 直接进入对话**（有历史会话则续聊，否则新建）；长按菜单：查看角色卡详情、开始/继续对话、移出角色库；**新建/导入的角色自动进角色库**（幂等），首页在线卡不自动收录、需详情页点「加入角色库」）；**历史**=会话列表（长按置顶/删除，与对话页共用同一列表组件）；**收藏**=已收藏角色。角色卡导出 —— **唯一格式为 PNG**（内嵌 CCv3 全字段与 `character_book` 世界书），Web/桌面/移动共用一条字节流路径，浏览器端亦可导出下载 |
+| 角色 | 顶栏**单行**「**角色 / 历史**」两分段（收藏分段已移除）+ 搜索图标 + ⋮ 菜单（角色管理 / 上传 / 创建角色卡；**三选一**：新建 / 从文件导入 / 从 URL 导入，均只进**本地角色库，不上传**）。**角色**=角色库（3 列网格，**图下标题**统一卡片样式 `style: below`）；**历史**=会话列表（同一卡片组件）；长按进入**批量多选**（已选 N 项 / 全选 / 置顶 / 删除 / 取消，删除二次确认）；**新建/导入的角色自动进角色库**（幂等），首页在线卡需详情页点「加入角色库」。角色卡导出 —— **唯一格式为 PNG**（内嵌 CCv3 全字段与 `character_book` 世界书） |
 | 社区 | 发现页社区信息流：帖子列表（分类 chips + 搜索）、点赞、评论（**正序分页** + 乐观插入并失败回滚）、关注/取关、点作者头像进**用户主页**、点卡片进**帖子详情**、点角色卡直达角色详情 |
 | 世界书 | **Lorebook 管理 —— 唯一格式为 JSON**：导入自动识别 SillyTavern World Info（`entries` 为对象）/ CCv3 `character_book`（`entries` 为数组）/ 本 App 导出格式；导出为 SillyTavern 形态，便于跨前端交换 |
-| 模型接入 | **端点分两型**：`接入`（OpenAI 兼容 20+ 平台 / Anthropic / Gemini 三适配器，均 SSE 流式，已解析思维链字段）与 `部署`（本机 GGUF 本地模型，nobodywho，见下） |
+| 模型接入 | **仅「接入」型**（OpenAI 兼容 20+ 平台 / Anthropic / Gemini 三适配器，均 SSE 流式，已解析思维链字段）。上游 429/500/502/503/504 按 `Retry-After` 或 **2/6/15s ±20%** 退避，最多 4 次尝试（首次 + 3 次重试）；同一对话经 `conversation_request_lock` 串行。部署型端点保留代码但已停用（见下「本地部署历史归档」） |
+| 图片 | 统一 `AppImageCache` + `CachedAppImage`：http 走共享磁盘缓存（**400 张 / 30 天**）、base64 LRU 24 条、本地文件走 `FileImage`；按「显示宽 × DPR」降采样（上限 4096）；150ms 淡入 + 骨架占位；预取并发 2 |
 | 多模态 | 图片输入（≤4 张，预览条可删除），转 OpenAI 视觉格式（data URL）。**上传策略（2026-09-14）**：只有**最新一条用户消息**的图片随请求上传；历史消息中的图片一律降级为 `[图片]` 文本占位，不重复上传（未来图片生成走「最新对话文本 + 图片」同一口径） |
-| 发现 | 扩展内容聚合：世界书/预设/正则/插件/主题/调试；上区为社区信息流（见「社区」行） |
+| 发现 | **社区聚合页**（推荐 / 发现 / 关注 三 Tab，底栏进入默认「发现」）：发现 Tab 为竖向角色卡流（点卡进详情，点赞/转发为本地状态）；推荐/关注为后端帖子流；**首屏只发 1 个请求**（`/api/characters`），社区数据切到对应 Tab 才懒加载；客户端首批渲染 12 张、滑动追加；预取下一张（`lookahead=1`）；下拉刷新才随机重排 |
 | 我的 | 头像/昵称/ID + 我的角色卡计数 + API 接入/主题外观/插件/更多；**资料编辑**（昵称/简介/头像）与**修改密码** |
 | 设置 | 后端地址配置、语言切换（跟随系统/简中/English/日本語）、数据迁移（JSON 导出导入） |
 | 设计系统 | `design_tokens.dart` 单一来源 + 浅/深双主题 + 星空背景/玻璃拟态，与 Web 端统一 |
 
-**端点接入/部署（项目级约定，2026-11-03）**：`LlmEndpoint.mode` 区分两型 —— `接入`
-（云端 API，原三适配器逻辑不变）与 `部署`（本机 GGUF，nobodywho 6.0.0 适配器）。
-序列化向后兼容：旧 JSON 无 `mode` 字段按 `接入` 处理；端点列表按类型打标签，
-排序与默认端点逻辑不变。部署型专属字段（均有默认值，构造时 clamp 到合法范围）：
+**端点接入/部署（历史归档，2026-11-04 起停用）**：`LlmEndpoint.mode` 的 `接入` / `部署`
+两型代码仍在，但功能开关 `AppFeatureFlags.localDeployEnabled = false`，**当前产品只提供「接入」型端点**：
 
-| 字段 | 默认 | 范围 | 含义 |
-|---|---|---|---|
-| `localModelPath` | `''`（必填） | — | GGUF 模型绝对路径。**自用版改为内置打包**：新建部署型端点时从「内置模型」下拉选择，保存时自动复制并回填真实绝对路径；仍保留「自定义路径」供手动放置的模型 |
-| `contextSize` | 4096 | 512~131072 | 推理上下文长度（token）。**新默认 4096**（配合压缩角色卡 + 最近 4 轮 + 增量上下文，4096 足够且更省内存/首字延迟）；已有端点保留自身存储值，不强制改 |
-| `useGpu` | true | — | 模型层 offload 到 GPU，设备不支持时引擎自动回退 CPU |
-| `threadCount` | 0 | 0~64 | 推理线程数，0 = 按 CPU 核数自动 |
-| `temperature` | 0.6 | 0~2 | 采样温度 |
-| `topP` | 0.9 | 0~1 | 核采样 top-p |
-| `maxTokens` | 768 | 1~32768 | 单次生成最大 token 数 |
-| `repetitionPenalty` | 1.1 | 1.0~1.3 | 重复惩罚（引擎 `SamplerBuilder.penalties(penaltyRepeat:)`；1.0 = 不惩罚，>1.0 抑制复读，>1.25 易发僵）。旧 JSON 缺字段按 1.1 |
+| 项 | 当前实际状态 |
+|---|---|
+| 新建/编辑端点 | 只显示「接入」；部署型控件（模型路径、GPU、线程、上下文、重复惩罚）不再渲染 |
+| 已存在的部署型端点 | 列表仍可见；进入对话时提示「本地部署已停用，请改用接入型端点」，不做本地推理 |
+| 模型打包 | `android/app/src/main/assets/models/*.gguf` 已删除；`MainActivity` 的内置模型安装通道已移除；`builtin_model_service.dart` 已删除 |
+| 默认参数 | 已回滚为 `contextSize 4096` / `maxTokens 1024` / `temperature 0.7`（本地调优的 768 / 0.6 已撤销） |
+| APK 体积 | 不含 `.gguf`，1.0.27+28 为 **108,003,841 B**（约 103MB） |
+| 云端对话路径 | 不受影响：完整角色卡 + 世界书 + `PromptService.assembleSystem` 两遍拼装 + `ContextWindowService.trim` |
 
-**本地模型提示词组装与上下文策略（2026-11-04，修复角色扮演失败/答非所问）**：
+停用原因、逐项回滚结果与开关恢复方式见 [`Virtual_app/README.md` 5.1](Virtual_app/README.md#51-本地部署已停用2026-11-04)。
+本地模型专用代码（`local_prompt_builder.dart`、nobodywho 适配器及 web stub）保留，仅作将来恢复参考，云端分支不调用。
+freezed 升级到 3.x 仅为保留 nobodywho 依赖链的兼容性，项目无 codegen 目标。
 
-真机症状：只发「你是」两字，0.8B 模型却续写「推眼镜/铁饭碗/刘岚厨房」大段设定。
-根因是整张角色卡 + 开场白 + 全部历史一次性塞入上下文，模型把用户输入当成续写素材。
-现在按「**只给当前对话需要的内容，用户输入是第一优先级**」重做：
-
-- **独立组装层** `lib/services/local_prompt_builder.dart`（不散落在适配器）：
-  - **压缩角色卡**：名字 + 身份（描述前 90 字）+ 一句话性格 + 场景 + 口吻 +
-    3 条禁止项；三级收缩后仍超限则按 token 二分截断，**硬上限 300 token**
-    （用引擎 `Chat.tokenize` 校验）。整张角色卡不再进 system。
-  - **历史只带最近 4 轮（8 条）**：按「用户消息开启一轮」分组，超预算从最老
-    整轮丢弃，不切断 user/assistant 配对。
-  - **历史预算** = `(contextSize − maxTokens − system 占用) × 50%`，另一半留给
-    模板与生成长度波动；不超过即不再追加更老消息。
-  - **顺序固定**：`system(压缩卡) → 最近历史 → 用户最新输入 → 本轮指令`。
-    指令明确「直接回应用户这句话；不要复述设定，不要另起场景，不要续写他人故事」。
-  - **极短输入特判**：用户输入 ≤6 字时追加「先用一句话回应或反问澄清，不要扩写场景」。
-  - **开场白**：仅作为普通历史参与 4 轮窗口，超出即丢，不会每轮重复注入。
-- **增量上下文**（`nobodywho_adapter.dart`）：同一对话复用 `endpointId::conversationId`
-  的 Chat，**不再每轮 resetHistory / 重传全部历史**；每轮只发送「最后一条 assistant
-  之后的消息」，首字延迟不再每轮全额重付。检测到重新生成（同一用户消息重复）时
-  自动重建 Chat 并携带最近 4 轮。
-- **75% 阈值裁剪**：用 `getStats().contextUsed` 监控，超过 `contextSize × 0.75`
-  才 `setChatHistory(压缩卡 + 最近轮次)`；裁剪触发点与前后 token 数写入日志。
-- **ContextShift**：`keepFirstTurns: 1, keepLastTurns: 8`，让引擎可自动丢中段旧轮次。
-- **降级路径**：裁剪后仍报 `context_shift_too_few_messages` 时，重建 Chat 并只带
-  最近 4 轮重发一次（日志前缀 `[LocalPrompt]` 标注降级）。
-- **会话释放**：切换 / 删除 / 清空对话时调用 `releaseLocalContext()`，释放该会话 Chat，
-  避免跨会话串场（nobodywho 无公开 `dispose`，`resetHistory()` 后移出缓存）。
-- **性能行**：本地模型回复气泡下方显示 `首字 X.XXs · YY.Y tok/s`
-  （首 chunk 延迟 / 生成 token 数 ÷ 生成耗时）；云端适配器不填该字段，不显示。
-- **日志**：`[LocalPrompt]` 统一输出 system token 数、历史条数、丢弃条数、预算、
-  contextUsed、是否触发裁剪；原始错误仍保留 `[LocalModel] 原始错误：…`。
-- **单测**：`test/local_prompt_builder_test.dart` 覆盖 ①超长卡压到 ≤300 token
-  ②≤6 字附加提示 ③超 4 轮被裁且 system 保留 ④裁剪不切断 user/assistant 配对。
-
-**平台限制**：nobodywho 仅 android/ios/linux/macos/windows 有实现，**无 web**。
-web 端通过条件导入 `nobodywho_adapter_stub.dart`（默认）/ `nobodywho_adapter.dart`
-（`dart.library.io`）隔离，部署型端点在 web 上返回明确错误流「当前平台（Web）不支持
-本地模型部署」，保证 `flutter build web` 可编译。部署型保存时自动注入占位模型
-`local`（本地模型），否则对话页会因「未选择模型」拦截。
-freezed 升级到 3.x 仅为消除 nobodywho（flutter_rust_bridge 链）与旧版
-`freezed_annotation ^2.4.1` 的依赖冲突，项目无 codegen 目标，`build_runner` 生成物为空集。
-
-**本地模型内置打包（自用版，2026-11-04）**：为免去「自己下模型、自己找路径」，
-把 `Qwen3.5-0.8B-Q4_K_M.gguf`（532,517,120 字节，SHA-256 前缀 `bd258782e35f`）
-直接打进 APK：
-
-- **位置**：`Virtual_app/android/app/src/main/assets/models/`（原生 assets，不走
-  Flutter asset bundle —— 单文件 508MB，`rootBundle.load()` 会整份进 Dart 堆，移动端易 OOM）
-- **不压缩**：`androidResources.noCompress 'gguf'`，以 stored 方式入包（量化 GGUF 本身
-  几乎不可压缩，压缩只会拖慢构建并在首次运行多一次解压拷贝）
-- **首次复制**：`MainActivity` 的 MethodChannel `app.bitbear.virtual/model_asset`
-  （`ensureInstalled` / `getInstalledPath`）用 256KB 缓冲流式复制到
-  `getExternalFilesDir(null)/models/`（即 `Android/data/app.bitbear.virtual/files/models/`，
-  App 专属目录、免权限），**幂等**：已存在且字节数相等即跳过；复制前校验剩余空间
-  （需求 ×1.3，不足直接报错）；先写 `.partial` 再 rename，中断不会留下半截文件被误用
-- **UI**：部署型端点的模型字段改为「内置模型」下拉（显示名 + 大小 + 是否已就绪），
-  选中后保存时自动复制并回填绝对路径；旧的手填路径若文件名匹配内置模型仍按内置处理，
-  其余识别为「自定义路径」
-- **代价**：APK 约 **568MB**（模型 508MB 占绝大部分），装机另需约 **1.3GB** 空闲空间
-  （安装期解包 + 首次复制），首次启动首次保存端点时有一次性复制耗时（真机待测）
-- **限制**：只为 `arm64-v8a` 出包（`--target-platform android-arm64` +
-  `packagingOptions.jniLibs.excludes` 剔除插件 AAR 自带的 x86_64/armeabi-v7a 原生库，
-  否则白胖 120MB+）。**不能上架应用商店**（体积与内置模型的授权/分发均不适配），
-  仅限自用分发
+> 已停用方案的实现细节（压缩角色卡 ≤300 token、历史只带最近 4 轮、75% 阈值裁剪、
+> 增量上下文、ContextShift、性能行等）不再展开；相关代码保留在
+> `lib/services/local_prompt_builder.dart` 与 `nobodywho_adapter.dart`，仅作恢复参考。
 
 **格式约定（项目级，非可选）：角色卡用 PNG，世界书用 JSON。**
 
@@ -355,13 +300,14 @@ dart run Virtual_app/tool/card_png_probe.dart <文件或目录>
 
 ### 4.2 Virtual_background（Dart Frog 后端）
 
-**已实现（23 个 API 路由）：**
+**已实现（23 个路由文件 / 26 个端点）：**
 
 | 端点 | 用途 |
 |---|---|
 | `GET /api/health` | 健康检查 |
 | `GET /api/metadata` | App 元数据（顶级数组，`api-secret` 仅在编译期注入时下发） |
 | `GET /api/app-info` | 应用介绍/下载信息 |
+| `GET /api/banners` | 首页轮播位（无数据时返回空数组，App 不渲染轮播） |
 | **角色卡** | |
 | `GET /api/characters` | 角色卡列表（**精简 9 字段**，见 4.1 的说明） |
 | `GET /api/characters/:id` | 角色卡详情（**完整 CCv3 字段** + `characterBook` 世界书原样下发） |
@@ -389,7 +335,7 @@ dart run Virtual_app/tool/card_png_probe.dart <文件或目录>
 | `GET /api/avatars/:file` | 内置角色立绘（jpg/png/webp 白名单，1 天缓存） |
 | `GET /api/uploads/:file` | 用户上传立绘（同白名单与 CORS 处理） |
 
-其他能力：全局 CORS 中间件；PostgreSQL 可选 + 失败降级内存种子（5 个角色，空库首次启动自动灌入）；角色卡 schema 已对齐 App 的完整角色模型（`characters` 表 27 列，含幂等增量迁移，**复合主键 `(id, character_version)`** 支持多版本）；社区表 `users`（含 `bio`）/ `email_codes` / `community_posts` / `post_likes` / `follows` / `post_comments`；**中文（非 ASCII）id 全链路可用** —— `slugify` 保留汉字，详情/导出路由对路径参数补解码（dart_frog 不解码，Dart `Uri.path` 也只归一化 ASCII 转义），立绘文件名对非 ASCII id 追加 FNV-1a 短哈希以免不同中文名同版本互相覆盖；立绘本地化（存相对路径，响应时按请求来源补全绝对 URL，App/Web 零改动）；api-secret 与 PUBLISH_TOKEN 编译期外置（`String.fromEnvironment`）；**72 个单元测试** + `e2e_test.py` **28 项端到端**（注册 → 发帖 → 评论 → 关注 → 用户主页 → 帖子详情 → 关注列表 → 改资料 → 改密 → 验证码重置）。
+其他能力：全局 CORS 中间件；PostgreSQL 可选 + 失败降级内存种子（5 个角色，空库首次启动自动灌入）；角色卡 schema 已对齐 App 的完整角色模型（`characters` 表 27 列，含幂等增量迁移，**复合主键 `(id, character_version)`** 支持多版本）；社区表 `users`（含 `bio`）/ `email_codes` / `community_posts` / `post_likes` / `follows` / `post_comments`；**中文（非 ASCII）id 全链路可用** —— `slugify` 保留汉字，详情/导出路由对路径参数补解码（dart_frog 不解码，Dart `Uri.path` 也只归一化 ASCII 转义），立绘文件名对非 ASCII id 追加 FNV-1a 短哈希以免不同中文名同版本互相覆盖；立绘本地化（存相对路径，响应时按请求来源补全绝对 URL，App/Web 零改动）；api-secret 与 PUBLISH_TOKEN 编译期外置（`String.fromEnvironment`）；**73 个单元测试**（7 个文件）+ `e2e_test.py` **28 项端到端**（注册 → 发帖 → 评论 → 关注 → 用户主页 → 帖子详情 → 关注列表 → 改资料 → 改密 → 验证码重置）。
 
 **帖子 JSON 的唯一映射入口**：三个端点（列表 / 详情 / 用户主页帖子列表）共用
 `lib/community_mapper.dart` 的 `postJsonFromRow()`。历史上三处各写一份映射曾导致
@@ -510,7 +456,7 @@ App 首次启动后，进入 **设置 → 后端地址**，默认 `http://localh
 | 报 `request reached max organization concurrency: N, please try again after X seconds` / `Too many requests for this free model` | 上游账号并发额度占满（同一 API Key / 免费模型档同时只允许 N 个请求，常见 N=1）。客户端按 `Retry-After`（无则 2s / 6s / 15s ±20% 退避）自动重试 3 次，且同一对话串行、快速连点第二次会被拦截；仍失败时说明额度被其它会话/进程占用，等待或换 Key / 换模型 / 换端点。详见 `Virtual_app/README.md`「4.1 上游限流与重试」 |
 | Web `npm run dev` 启动但 API 404 | 确认后端 8080 端口已启动 |
 | 用户下载到的 App 仍是旧版本 | App 分发包有**三处**（构建产物 / `Virtual_web/public/` / 服务器 `/var/www/virtual/dist/`），必须同步。用 `bash deploy/deploy_apk.sh` 一键同步 + 三层哈希校验，勿手动 `cp`。对外分发以 **GitHub Release Latest** 与官网 APK 为准 |
-| 服务器磁盘被 APK 备份占满 | 单个 APK 约 49MB。`deploy_apk.sh` 已固化「只保留最近 1 份备份」（`VIRTUAL_KEEP_APK_BACKUPS` 可调），勿手动无限制 `cp` |
+| 服务器磁盘被 APK 备份占满 | 单个 APK 约 **103MB**（1.0.27+28 为 108,003,841 B）。`deploy_apk.sh` 已固化「只保留最近 1 份备份」（`VIRTUAL_KEEP_APK_BACKUPS` 可调），勿手动无限制 `cp` |
 | 改了后端代码但接口行为没变 | `dart_frog build` 后运行时实际加载 `build/routes/**` 与 `build/lib/**` 副本，只改项目根目录可能不生效；需同步两份并 `systemctl restart virtual-backend`（JIT 冷启动约 30s，期间 502 属正常） |
 | 想确认线上某文件是否存在，返回 200 却不对 | 站点是 SPA，nginx 对不存在的路径会回退到 `index.html` 并返回 **200**，状态码不能作为存在性判据；必须比对文件内容哈希 |
 | 真机 App 连不上后端 | 改设置页后端地址为 `http://<电脑局域网IP>:8080` |
@@ -524,6 +470,11 @@ App 首次启动后，进入 **设置 → 后端地址**，默认 `http://localh
 | `docs/character-card-schema.md` | 角色卡字段映射（CCv2/v3 → App）、`mes_example` 说话人解析规则、世界书映射、Prompt 组装顺序、密度护栏 |
 | `docs/character-publish-design.md` | 角色卡发布协议设计（multipart 字段、鉴权、upsert 语义） |
 | `docs/project-analysis-2026-09-08.md` | 全项目架构分析与技术债清单 |
+| `docs/github-release-v1.0.27-2026-11-05.md` | v1.0.27 发布记录（commit/tag/Release/asset 校验） |
+| `docs/image-loading-cache-report-2026-11-05.md` | 图片缓存与降采样改造报告（1.0.25+26） |
+| `docs/discover-loading-2026-11-05-report.md` | 发现页加载优化报告（1.0.27+28） |
+| `docs/ui-polish-2026-11-05-report.md` | 首页顶栏 / 标签筛选 / 卡片与多选打磨报告（1.0.26+27） |
+| `spec.md` / `tasks.md` | **历史归档**：本地模型稳定性修复方案，已随本地部署停用；现行能力见本 README 4.1 |
 
 ## 八、开发约束
 

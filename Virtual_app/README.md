@@ -4,6 +4,17 @@ Virtual 是一个基于 Flutter 的 AI 角色聊天客户端，定位为“本�
 
 它目前的代码结构已经具备完整的客户端闭环：角色管理、聊天历史、模型端点配置、主题设置、插件/世界书/预设/正则规则等模块均在项目中实现。
 
+## 当前状态（2026-11-06）
+
+| 项 | 值 |
+|---|---|
+| 版本 | **1.0.27+28**（`pubspec.yaml`） |
+| 路由 | **43 条**（ShellRoute 内 10 条 + 根路由 33 条） |
+| 测试 | **33 个测试文件 / 277 例** |
+| 构建产物 | `app-release.apk` **108,003,841 B**（约 103MB），arm64 单 ABI |
+| 本地模型 | **已停用**（`AppFeatureFlags.localDeployEnabled = false`），APK 内 `.gguf` = 0 |
+| 端点类型 | 仅「接入」型（OpenAI 兼容 / Anthropic / Gemini） |
+
 ## 项目概览
 
 Virtual 不是一个单纯的聊天 Demo，而是一个偏 AI 客户端的应用框架，核心能力包括：
@@ -35,16 +46,23 @@ lib/
   data/
     app_database.dart          # 本地数据存储与 CRUD
   models/                      # 数据模型
-  providers/                   # 状态管理
+  providers/                   # 状态管理（6 个 ChangeNotifier）
+    auth_provider.dart
     settings_provider.dart
     metadata_provider.dart
     endpoint_provider.dart
     character_provider.dart
     chat_provider.dart
   route/
-    app_router.dart            # 路由配置
+    app_router.dart            # 路由配置（43 条）
+  config/
+    app_feature_flags.dart     # 功能开关（localDeployEnabled = false）
   services/
     api_service.dart
+    app_image_cache.dart       # 图片统一缓存/降采样
+    retry_policy.dart          # 上游限流重试
+    conversation_request_lock.dart # 对话串行锁
+    plot_option_parser.dart    # 剧情选项解析
     backend_config.dart
     model_registry_service.dart
     metadata_service.dart
@@ -58,7 +76,10 @@ lib/
     tavo_brand.dart
   utils/
     constants.dart
+    random_order.dart          # 发现页下拉刷新随机
+    multi_select.dart          # 角色页批量多选
   views/
+    common/                    # cached_app_image（统一图片组件 + 预加载器）
     onboarding/
     chat/
     character/
@@ -102,6 +123,11 @@ lib/
 - `/home`、`/home/character/:id`（角色卡详情，保留底部导航）、`/home/category/:name`、`/home/search`、`/home/tags`
 - `/discover`、`/profile`、`/characters`
 - `/chat`、`/chat/:id`
+
+**全屏根路由（不经过 Shell）**
+
+- `/login`、`/register`（登录 / 注册）
+- `/user/:id`（用户主页）、`/post/:id`（帖子详情）、`/compose`（发布动态）
 
 **二级页面（根 Navigator 独立路由，无底部导航栏）**
 
@@ -393,7 +419,7 @@ Android / Web 入口已更新为 Virtual 相关名称；包名、签名、远程
 
 Virtual 是一个具有较完整业务闭环的 Flutter AI 角色聊天应用，代码结构已经相对成熟，适合继续迭代成正式产品。当前 README 与代码的实际状态基本一致，重点是"AI 角色通信 + 多模型接入 + 本地数据管理"的组合能力。
 
-## 发现页社区功能（2026-09-10）
+## 发现页社区功能（2026-09-10 起，2026-11-05 已接真实后端）
 
 发现页从工具入口网格改为**社区聚合页**，定位为用户内容发现与社交入口。
 
@@ -401,12 +427,21 @@ Virtual 是一个具有较完整业务闭环的 Flutter AI 角色聊天应用，
 
 发现页为 `Column(TabBar + Expanded(TabBarView))` 结构（不使用内层 Scaffold，避免与 home_shell 双层 AppBar 冲突），home_shell 在 `/discover` 路由下隐藏 AppBar（`PreferredSize(height: 0)`）。
 
-两个 Tab：
+三个 Tab（`initialIndex = 1`，底栏进入时默认停在「发现」）：
 
 | Tab | 内容 | 数据来源 |
 |---|---|---|
-| 关注 | 顶部横向关注列表（头像+ID+「找更多」）→ 创作者发布的角色卡宣传 / 对话炫耀 | Mock（后续接后端 API） |
-| 推荐 | 顶部横向社区分类（治愈/冒险/恋爱/奇幻/科幻/日常/战斗/悬疑）→ 热门角色卡 + 用户对话炫耀 + 官方公告 | Mock |
+| 推荐 | 顶部横向社区分类 + 动态流（`?community=` 过滤） | 后端 `GET /api/posts` |
+| 发现 | 竖向角色卡流（一次一卡，上下滑；点卡进在线详情；点赞/转发为本地状态） | 后端 `GET /api/characters` |
+| 关注 | 已关注创作者列表 + 关注流 | 后端 `GET /api/follows`、`GET /api/posts?following=true` |
+
+**加载策略（1.0.27+28）**：
+
+- 进入发现页默认停在「发现」Tab，首屏只发 **1 个请求**（`/api/characters`）；
+- 推荐 / 关注的 3 个请求在用户**首次切到对应 Tab** 时才懒加载（`_onTabChanged`），只加载一次；
+- 角色卡流首批渲染 **12 张**，滑到本批末尾前 2 张时追加 12 张；
+- 图片预取 `lookahead = 1`（只预取下一张），并发上限 2；
+- **仅下拉刷新**才随机重排并回到第一张；进入与翻页保持后端顺序。
 
 ### 帖子类型
 
@@ -418,8 +453,8 @@ Virtual 是一个具有较完整业务闭环的 Flutter AI 角色聊天应用，
 
 ### 数据模型
 
-- `lib/models/community_post.dart`：`Creator`、`CommunityPost`、`DialogueLine`、`CommunityTag` + Mock 假数据
-- 第一版使用写死的示例数据，后续替换为后端 API 即可（模型已定义好 `fromJson` 可扩展）
+- `lib/models/community_post.dart`：`Creator`、`CommunityPost`、`DialogueLine`、`CommunityTag`（`fromJson` 对接后端）
+- 社区数据由 `CommunityApiService` 统一请求，不再使用 Mock 假数据
 
 ### 踩坑记录
 
@@ -567,8 +602,8 @@ Virtual 是一个具有较完整业务闭环的 Flutter AI 角色聊天应用，
 
 - `flutter analyze`：1 warning（与基线一致，`test/community_location_test.dart:12` 未使用参数）。
 - `flutter test`：新增 `test/tag_filter_test.dart` 9 条用例；最终全量 **256 通过 / 2 失败** —— `shell_status_bar_inset_test`（历史失败：布局 overflow，本次未改其规范）、`app_providers_test`「新建角色页加载」（并行跑时的 `did not complete` 已知 flake，单独复跑通过）。同一套用例前一轮还出现过 `settings_provider_test` / `upstream_retry_policy_test` 的加载 flake，单独复跑 20/20 通过。
-- 出包：`flutter build apk --release --target-platform android-arm64` → **103.0MB**（107,999,877 bytes），`versionName=1.0.24 / versionCode=25`，V2 签名 `CN=Tav`，工作区 `*.gguf` 数量 = 0。
-- 版本：`1.0.24+25`。
+- 当时出包（1.0.24+25）：**103.0MB**（107,999,877 bytes），`versionName=1.0.24 / versionCode=25`，V2 签名 `CN=Tav`，工作区 `*.gguf` 数量 = 0。
+- 当时版本：`1.0.24+25`（**当前为 1.0.27+28，APK 108,003,841 B**，见文首「当前状态」）。
 
 ## 图片加载与缓存策略（2026-11-05，1.0.25+26）
 
@@ -632,7 +667,8 @@ Virtual 是一个具有较完整业务闭环的 Flutter AI 角色聊天应用，
 
 - `flutter analyze`：1 warning（与基线一致，`test/community_location_test.dart:12`）。
 - `flutter test -j 1`：**276 通过 / 1 失败**，唯一失败为历史用例 `shell_status_bar_inset_test`（布局 overflow，本次未改其规范）；新增 `test/multi_select_test.dart` 7 条用例全过。并行跑时偶发 `did not complete` 的加载 flake（`world_info_binding_test` 等），单独复跑通过。
-- 出包：**103.0MB（108,004,385 B）**，`versionName=1.0.26 / versionCode=27`，V2 签名 `CN=Tav`，APK 内与工作区 `*.gguf` = 0。
+- 当时出包（1.0.26+27）：**103.0MB（108,004,385 B）**，`versionName=1.0.26 / versionCode=27`，V2 签名 `CN=Tav`，APK 内与工作区 `*.gguf` = 0。
+  （**当前 1.0.27+28 为 108,003,841 B**，见文首「当前状态」。）
 
 ## 发现页加载优化（2026-11-05，1.0.27+28）
 
