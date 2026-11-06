@@ -1339,7 +1339,8 @@ class _ErrorState extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Center(
-      child: Padding(
+      // 与角色卡流错误态一致：错误文案可能很长，滚动容器避免小屏溢出
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,

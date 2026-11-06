@@ -128,7 +128,9 @@ class _CharacterDiscoverFeedState extends State<CharacterDiscoverFeed> {
     }
     if (_error != null) {
       return Center(
-        child: Padding(
+        // 错误文案可能很长（DioException 会带上请求/响应详情），
+        // 小屏或技术信息较多时固定 Column 会溢出；改为可滚动。
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
