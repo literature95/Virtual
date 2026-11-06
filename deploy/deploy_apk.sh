@@ -18,7 +18,7 @@ SERVER="${VIRTUAL_SERVER:-root@120.55.194.238}"
 REMOTE_DIR="/var/www/virtual/dist"
 REMOTE_APK="$REMOTE_DIR/app-release.apk"
 LOCAL_APK="Virtual_app/build/app/outputs/flutter-apk/app-release.apk"
-LOCAL_SHA1="$LOCAL_APK.sha1"
+LOCAL_SHA256="$LOCAL_APK.sha256"
 WEB_APK="Virtual_web/public/app-release.apk"
 KEEP_BACKUPS="${VIRTUAL_KEEP_APK_BACKUPS:-1}"   # 保留最近 N 个备份，0 = 不留
 
@@ -35,15 +35,15 @@ LOCAL_SIZE=$(stat -c %s "$LOCAL_APK" 2>/dev/null || stat -f %z "$LOCAL_APK")
 [ "$LOCAL_SIZE" -gt 1000000 ] || die "构建产物仅 ${LOCAL_SIZE}B，疑似不完整，已中止"
 
 info "构建产物：$LOCAL_APK ($(( LOCAL_SIZE / 1024 / 1024 ))MB)"
-if [ -f "$LOCAL_SHA1" ]; then
-  EXPECTED_SHA=$(tr -d '[:space:]' < "$LOCAL_SHA1")
-  ACTUAL_SHA=$(sha1sum "$LOCAL_APK" | awk '{print $1}')
+if [ -f "$LOCAL_SHA256" ]; then
+  EXPECTED_SHA=$(tr -d '[:space:]' < "$LOCAL_SHA256")
+  ACTUAL_SHA=$(sha256sum "$LOCAL_APK" | awk '{print $1}')
   [ "$EXPECTED_SHA" = "$ACTUAL_SHA" ] \
-    || die "构建产物与其自带 .sha1 不一致（文件可能已损坏）\n  期望 $EXPECTED_SHA\n  实际 $ACTUAL_SHA"
+    || die "构建产物与其自带 .sha256 不一致（文件可能已损坏）\n  期望 $EXPECTED_SHA\n  实际 $ACTUAL_SHA"
   ok "本地哈希自检通过：$ACTUAL_SHA"
 else
-  ACTUAL_SHA=$(sha1sum "$LOCAL_APK" | awk '{print $1}')
-  info "未找到 $LOCAL_SHA1，直接计算哈希：$ACTUAL_SHA"
+  ACTUAL_SHA=$(sha256sum "$LOCAL_APK" | awk '{print $1}')
+  info "未找到 $LOCAL_SHA256，直接计算哈希：$ACTUAL_SHA"
 fi
 
 # ── 1. 同步到 Web 源 ──────────────────────────────────────────
@@ -59,7 +59,7 @@ ssh -o StrictHostKeyChecking=no "$SERVER" "cat > $REMOTE_APK.new" < "$LOCAL_APK"
 ok "上传完成"
 
 info "服务器端哈希校验"
-REMOTE_SHA=$(ssh -o StrictHostKeyChecking=no "$SERVER" "sha1sum $REMOTE_APK.new" | awk '{print $1}')
+REMOTE_SHA=$(ssh -o StrictHostKeyChecking=no "$SERVER" "sha256sum $REMOTE_APK.new" | awk '{print $1}')
 [ "$REMOTE_SHA" = "$ACTUAL_SHA" ] \
   || die "传输后哈希不一致，已保留原文件未做替换\n  本地 $ACTUAL_SHA\n  远程 $REMOTE_SHA"
 ok "哈希一致：$REMOTE_SHA"
@@ -75,7 +75,7 @@ ssh -o StrictHostKeyChecking=no "$SERVER" "
     cp -p app-release.apk \"app-release.apk.bak-\$(date +%Y%m%d%H%M%S)\"
   fi
 
-  # 轮转：只保留最近 N 个备份，其余删除（避免 49MB × N 累积占满磁盘）
+  # 轮转：只保留最近 N 个备份，其余删除（避免 103MB × N 累积占满磁盘）
   KEEP=$KEEP_BACKUPS
   if [ \"\$KEEP\" -eq 0 ]; then
     rm -f app-release.apk.bak-*
@@ -92,10 +92,10 @@ ok "线上文件已替换"
 # ── 4. 校验对外可访问（用哈希而非状态码）─────────────────────
 # ⚠️ 站点是 SPA，nginx 对不存在路径会 try_files 回退到 index.html 并返回 200，
 #    因此「状态码 200」不能证明文件存在；必须比对下载内容哈希。
-# 🔴 必须「先下载到文件再 sha1sum」，不可用管道 `curl ... | sha1sum`：
-#    实测该写法会因大流量经管道传输而丢字节（49MB 文件哈希随机不符），
+# 🔴 必须「先下载到文件再 sha256sum」，不可用管道 `curl ... | sha256sum`：
+#    实测该写法会因大流量经管道传输而丢字节（103MB 文件哈希随机不符），
 #    且与进度条无关（加 --no-progress-meter 仍错），是纯假警报来源。
-info "下载线上文件并比对哈希（约 49MB）"
+info "下载线上文件并比对哈希（约 103MB）"
 # 用 Git Bash 原生路径，规避 TMPDIR 被设为 Windows 路径（C:\Users\...）导致
 # `$TMPDIR/xxx` 拼成混合路径而失败；同时避免 -o 相对路径被路径转换破坏。
 TMP="/tmp/virtual-apk-verify.bin"
@@ -105,7 +105,7 @@ curl -fsS --noproxy '*' -o "$TMP" https://virtual.literature95.com/app-release.a
 DOWNLOADED_SIZE=$(wc -c < "$TMP" | tr -d '[:space:]')
 [ "$DOWNLOADED_SIZE" -eq "$LOCAL_SIZE" ] \
   || die "下载体积不符：本地 ${LOCAL_SIZE}B，线上 ${DOWNLOADED_SIZE}B"
-SERVED_SHA=$(sha1sum "$TMP" | awk '{print $1}' | tr -cd '0-9a-f')
+SERVED_SHA=$(sha256sum "$TMP" | awk '{print $1}' | tr -cd '0-9a-f')
 [ "$SERVED_SHA" = "$ACTUAL_SHA" ] \
   || die "线上提供的文件与本地构建不一致！\n  本地 $ACTUAL_SHA\n  线上 $SERVED_SHA"
 ok "线上校验通过：$SERVED_SHA"
