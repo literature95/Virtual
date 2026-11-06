@@ -219,6 +219,60 @@ void main() {
 
   // ── 2b. 接线验证：设置后聊天页真的会渲染背景层 ──────────────────────
 
+  // 1×1 透明 PNG（合法 data URL，用于验证立绘路径可渲染）
+  const tinyPng =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'
+      'AAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+  testWidgets('有 PNG 立绘且未设背景：默认启用立绘并铺满全屏', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.padding = const FakeViewPadding(top: 132);
+    addTearDown(tester.view.reset);
+
+    final (prefs, db) = await setup();
+    final now = DateTime.now();
+    await db.saveCharacter(Character(
+      id: 'char-portrait',
+      name: '立绘角色',
+      description: '测试用角色',
+      firstMessage: '你好呀。',
+      avatarPath: tinyPng,
+      createdAt: now,
+      updatedAt: now,
+    ));
+    await db.saveConversation(Conversation(
+      id: 'conv-portrait',
+      title: '立绘对话',
+      characterId: 'char-portrait',
+      settings: ChatSettings(),
+      createdAt: now,
+      updatedAt: now,
+    ));
+
+    await tester.pumpWidget(
+      buildAppProviders(
+        prefs: prefs,
+        database: db,
+        child: const MaterialApp(
+          home: ChatPage(conversationId: 'conv-portrait'),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+
+    expect(find.byType(ChatBackgroundLayer), findsOneWidget,
+        reason: '未设背景但有可用立绘时，默认应渲染立绘背景层');
+    expect(
+      tester.getTopLeft(find.byType(ChatBackgroundLayer).first).dy,
+      0.0,
+      reason: '立绘背景必须从屏幕顶部（状态栏之后）开始铺满',
+    );
+
+    await tester.pump(const Duration(seconds: 30));
+  });
+
   testWidgets('设过背景：顶栏避开状态栏，背景层铺到状态栏后面', (tester) async {
     // 模拟状态栏 44 逻辑像素；shell 不补 inset，页面 InsetAppBar 自避让
     tester.view.physicalSize = const Size(1080, 2340);
@@ -426,6 +480,59 @@ void main() {
       final ids = kChatBackgroundPresets.map((p) => p.id).toList();
       expect(ids.toSet().length, ids.length, reason: '预设 id 不可重复');
       expect(ids, isNotEmpty);
+    });
+
+    test('立绘开关与遮罩深度可持久化（JSON 往返）', () {
+      final theme = ChatTheme(
+        id: 'x',
+        name: 'n',
+        useCharacterPortrait: true,
+        portraitScrimOpacity: 0.7,
+      );
+      final back = ChatTheme.fromJson(theme.toJson());
+      expect(back.useCharacterPortrait, isTrue);
+      expect(back.portraitScrimOpacity, 0.7);
+
+      final off = ChatTheme.fromJson(
+        ChatTheme(id: 'x', name: 'n', useCharacterPortrait: false).toJson(),
+      );
+      expect(off.useCharacterPortrait, isFalse);
+    });
+
+    test('老数据默认值：有自定义背景保持原背景，无背景启用立绘', () {
+      expect(
+        ChatTheme.fromJson({
+          'id': 'a',
+          'name': 'n',
+          'backgroundImage': 'preset:ocean',
+        }).useCharacterPortrait,
+        isFalse,
+        reason: '已有自定义背景的历史对话不能被立绘覆盖',
+      );
+      expect(
+        ChatTheme.fromJson({'id': 'a', 'name': 'n'}).useCharacterPortrait,
+        isTrue,
+        reason: '从未设置背景的对话默认启用立绘',
+      );
+    });
+
+    test('遮罩深度越界被夹到 0%–85%', () {
+      expect(
+        ChatTheme.fromJson({'id': 'a', 'name': 'n', 'portraitScrimOpacity': 2})
+            .portraitScrimOpacity,
+        0.85,
+      );
+      expect(
+        ChatTheme.fromJson({'id': 'a', 'name': 'n', 'portraitScrimOpacity': -1})
+            .portraitScrimOpacity,
+        0.0,
+      );
+    });
+
+    test('立绘地址可用性：空值/不可识别为 null，data URL 可用', () {
+      expect(ChatBackgroundLayer.usablePortraitPath(null), isNull);
+      expect(ChatBackgroundLayer.usablePortraitPath(''), isNull);
+      expect(ChatBackgroundLayer.usablePortraitPath(tinyPng), tinyPng);
     });
   });
 }

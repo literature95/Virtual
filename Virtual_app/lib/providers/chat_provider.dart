@@ -41,6 +41,9 @@ class ChatProvider extends ChangeNotifier {
   Conversation? _currentConversation;
   Conversation? get currentConversation => _currentConversation;
 
+  /// 按 id 读取对话（含非当前对话），供背景设置页定位角色立绘
+  Conversation? conversationById(String id) => _db.getConversation(id);
+
   List<ChatMessage> _messages = [];
   List<ChatMessage> get messages => _messages;
 

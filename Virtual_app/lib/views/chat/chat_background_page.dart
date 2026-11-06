@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/chat_theme.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/character_provider.dart';
 import '../../theme/design_tokens.dart';
 import '../common/inset_app_bar.dart';
 import 'chat_background.dart';
@@ -27,6 +28,11 @@ class _ChatBackgroundPageState extends State<ChatBackgroundPage> {
   String? _image;
   double _opacity = 1.0;
   ChatBackgroundBlur _blur = ChatBackgroundBlur.none;
+  bool _usePortrait = true;
+  double _scrim = 0.55;
+
+  /// 当前对话角色的立绘地址（PNG 卡面：http / data URL / 本地文件）
+  String? _portraitPath;
   final _urlController = TextEditingController();
   bool _loaded = false;
 
@@ -35,13 +41,20 @@ class _ChatBackgroundPageState extends State<ChatBackgroundPage> {
     super.didChangeDependencies();
     if (_loaded) return;
     _loaded = true;
-    final bg = context
-        .read<ChatProvider>()
-        .conversationBackground(widget.conversationId);
+    final chat = context.read<ChatProvider>();
+    final conv = chat.conversationById(widget.conversationId);
+    _portraitPath = conv == null
+        ? null
+        : ChatBackgroundLayer.usablePortraitPath(
+            context.read<CharacterProvider>().findById(conv.characterId)?.avatarPath,
+          );
+    final bg = chat.conversationBackground(widget.conversationId);
     if (bg != null) {
       _image = bg.backgroundImage;
       _opacity = bg.backgroundOpacity;
       _blur = bg.backgroundBlur;
+      _usePortrait = bg.useCharacterPortrait;
+      _scrim = bg.portraitScrimOpacity;
       final raw = bg.backgroundImage ?? '';
       if (raw.startsWith('http://') || raw.startsWith('https://')) {
         _urlController.text = raw;
@@ -61,6 +74,8 @@ class _ChatBackgroundPageState extends State<ChatBackgroundPage> {
         backgroundImage: _image,
         backgroundOpacity: _opacity,
         backgroundBlur: _blur,
+        useCharacterPortrait: _usePortrait,
+        portraitScrimOpacity: _scrim,
       );
 
   Future<void> _pickLocalFile() async {
@@ -101,6 +116,8 @@ class _ChatBackgroundPageState extends State<ChatBackgroundPage> {
       _image = null;
       _opacity = 1.0;
       _blur = ChatBackgroundBlur.none;
+      _usePortrait = true;
+      _scrim = 0.55;
       _urlController.clear();
     });
   }
@@ -120,6 +137,8 @@ class _ChatBackgroundPageState extends State<ChatBackgroundPage> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final hasBackground = _image != null && _image!.trim().isNotEmpty;
+    final hasPortrait = _usePortrait && _portraitPath != null;
+    final hasPreview = hasBackground || hasPortrait;
 
     return Scaffold(
       appBar: InsetAppBar(
@@ -158,8 +177,11 @@ class _ChatBackgroundPageState extends State<ChatBackgroundPage> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (hasBackground)
-                    ChatBackgroundLayer(theme: _draft)
+                  if (hasPreview)
+                    ChatBackgroundLayer(
+                      theme: _draft,
+                      portraitPath: hasPortrait ? _portraitPath : null,
+                    )
                   else
                     Center(
                       child: Text(
@@ -191,10 +213,59 @@ class _ChatBackgroundPageState extends State<ChatBackgroundPage> {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            '当前来源：${ChatBackgroundLayer.describeSource(_image)}',
+            '当前来源：${hasPortrait ? '角色立绘（PNG 卡面）' : ChatBackgroundLayer.describeSource(_image)}',
             style: TextStyle(fontSize: AppFontSize.caption,
                 color: scheme.onSurfaceVariant),
           ),
+
+          _sectionTitle(context, '角色立绘背景'),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _usePortrait,
+            onChanged: _portraitPath == null
+                ? null
+                : (v) => setState(() => _usePortrait = v),
+            title: const Text('使用角色立绘作为全屏背景'),
+            subtitle: Text(
+              _portraitPath == null
+                  ? '当前角色没有可用立绘（PNG 卡面），将回落到下方背景'
+                  : '立绘铺满聊天页，优先于下方背景；关闭后恢复自定义背景',
+              style: TextStyle(fontSize: AppFontSize.caption,
+                  color: scheme.onSurfaceVariant),
+            ),
+          ),
+          if (hasPortrait) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                const Text('遮罩深度'),
+                Expanded(
+                  child: Slider(
+                    value: _scrim,
+                    min: 0,
+                    max: 0.85,
+                    divisions: 17,
+                    label: '${(_scrim * 100).round()}%',
+                    onChanged: (v) => setState(() => _scrim = v),
+                  ),
+                ),
+                SizedBox(
+                  width: 48,
+                  child: Text('${(_scrim * 100).round()}%',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(color: scheme.onSurfaceVariant)),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+              child: Text(
+                '遮罩越深，气泡文字越清晰，立绘越含蓄。默认 55%。',
+                style: TextStyle(fontSize: AppFontSize.caption,
+                    color: scheme.onSurfaceVariant),
+              ),
+            ),
+          ],
 
           _sectionTitle(context, '渐变预设'),
           Wrap(

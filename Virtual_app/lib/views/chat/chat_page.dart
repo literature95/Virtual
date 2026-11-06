@@ -8,7 +8,9 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/character.dart';
 import '../../models/chat_message.dart';
+import '../../models/chat_theme.dart';
 import '../../models/endpoint.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/character_provider.dart';
@@ -470,14 +472,32 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 仅当设置了对话背景，才让 AppBar 透明、把背景铺到全屏之后；
-    // 未设置时保持原本的不透明样式，不影响其它观感。
-    final hasBg = context.select<ChatProvider, bool>(
-      (p) => p.conversationBackground(widget.conversationId) != null,
+    // 背景有两个来源：角色立绘（默认开启，可在「对话背景」里关掉）
+    // 与自定义背景（渐变/图片）。立绘优先；立绘缺失或开关关闭时用自定义背景。
+    // 注意：ChatTheme 每次从持久化反序列化都是新对象，不能直接 select 对象，
+    // 否则每来一个 token 都会因「对象不等」重建整页；这里 select 字段签名。
+    final bgSignature = context.select<ChatProvider, String>((p) {
+      final bg = p.conversationBackground(widget.conversationId);
+      if (bg == null) return '';
+      return '${bg.backgroundImage ?? ''}|${bg.backgroundOpacity}'
+          '|${bg.backgroundBlur.name}|${bg.useCharacterPortrait}'
+          '|${bg.portraitScrimOpacity}';
+    });
+    final background = bgSignature.isEmpty
+        ? null
+        : context.read<ChatProvider>().conversationBackground(widget.conversationId);
+    final characterId = context.select<ChatProvider, String?>(
+      (p) => p.currentConversation?.characterId,
     );
-    final background = hasBg
-        ? context.read<ChatProvider>().conversationBackground(widget.conversationId)
+    final character = characterId == null
+        ? null
+        : context.select<CharacterProvider, Character?>(
+            (p) => p.findById(characterId),
+          );
+    final portraitPath = (background?.useCharacterPortrait ?? true)
+        ? ChatBackgroundLayer.usablePortraitPath(character?.avatarPath)
         : null;
+    final hasBg = background != null || portraitPath != null;
 
     // 「顶栏避让 + 背景全屏」：用 InsetAppBar 把工具栏下推状态栏；
     // 设了背景时 AppBar 区透明，背景 Positioned.fill 铺到状态栏后面。
@@ -539,9 +559,12 @@ class _ChatPageState extends State<ChatPage> {
       ),
       body: Stack(
         children: [
-          if (hasBg && background != null)
+          if (hasBg)
             Positioned.fill(
-              child: ChatBackgroundLayer(theme: background),
+              child: ChatBackgroundLayer(
+                theme: background ?? ChatTheme(id: 'portrait', name: '角色立绘'),
+                portraitPath: portraitPath,
+              ),
             ),
           Column(
             children: [

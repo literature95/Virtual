@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../models/chat_theme.dart';
+import '../../services/app_image_cache.dart';
 import '../common/cached_app_image.dart';
 
 /// 对话背景的**唯一渲染入口**
@@ -16,10 +17,21 @@ import '../common/cached_app_image.dart';
 ///  - `preset:<id>`  → 内置渐变（见 [kChatBackgroundPresets]）
 ///  - `http(s)://…`  → 网络图片
 ///  - 其它           → 本地文件路径（Web 端无法渲染，自动降级为空）
+///
+/// 若传入可用的 [portraitPath]（角色卡 PNG 立绘：http / data URL / 本地文件），
+/// 立绘优先于 [ChatTheme.backgroundImage]，并按 [ChatTheme.portraitScrimOpacity]
+/// 压暗以保证气泡可读；立绘不可用时由调用方回落到原背景。
 class ChatBackgroundLayer extends StatelessWidget {
   final ChatTheme theme;
 
-  const ChatBackgroundLayer({super.key, required this.theme});
+  /// 角色立绘地址；null 或不可渲染时走原有背景逻辑
+  final String? portraitPath;
+
+  const ChatBackgroundLayer({
+    super.key,
+    required this.theme,
+    this.portraitPath,
+  });
 
   /// 内置背景预设的 id 前缀（改动会导致存量设置失联）
   static const presetPrefix = 'preset:';
@@ -57,8 +69,40 @@ class ChatBackgroundLayer extends StatelessWidget {
     return '本地图片';
   }
 
+  /// 判断立绘地址是否真的可渲染（Web 端本地路径 / 空串 → 不可用）
+  ///
+  /// 用于聊天页提前决定「是否按有背景处理」，避免 AppBar 透明后背景却是空的。
+  static String? usablePortraitPath(String? path) {
+    if (path == null || path.trim().isEmpty) return null;
+    return AppImageCache.providerFor(path) == null ? null : path;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final portrait = portraitPath;
+    if (portrait != null && portrait.trim().isNotEmpty) {
+      final scrim = theme.portraitScrimOpacity.clamp(0.0, 0.85);
+      // 立绘只解一次：CachedAppImage 内部按「显示宽 × DPR」解码，
+      // 同一 provider 命中 Flutter image cache，重建不会重复解码。
+      return IgnorePointer(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CachedAppImage(
+              path: portrait,
+              fit: BoxFit.cover,
+              // 人物主体通常居中偏上，避免长屏只露出下半身/背景
+              alignment: const Alignment(0, -0.25),
+              placeholderColor: Colors.transparent,
+              fallback: const SizedBox.shrink(),
+            ),
+            // 可调遮罩：保证气泡与文字对比度（0 表示不压暗）
+            ColoredBox(color: Colors.black.withValues(alpha: scrim)),
+          ],
+        ),
+      );
+    }
+
     final raw = theme.backgroundImage;
     if (raw == null || raw.trim().isEmpty) return const SizedBox.shrink();
 

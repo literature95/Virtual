@@ -30,6 +30,14 @@ class ChatTheme {
   final double backgroundOpacity;
   final ChatBackgroundBlur backgroundBlur;
 
+  /// 是否用角色立绘（PNG 卡面）作为全屏背景
+  ///
+  /// 立绘可用时优先于 [backgroundImage]；立绘缺失时自动回落到原背景。
+  final bool useCharacterPortrait;
+
+  /// 立绘之上的半透明遮罩深度（0 = 不压暗，0.85 = 很暗），保证气泡可读
+  final double portraitScrimOpacity;
+
   // 角色样式
   final bool showAvatar;
   final ChatAvatarPosition avatarPosition;
@@ -58,6 +66,8 @@ class ChatTheme {
     this.backgroundImage,
     this.backgroundOpacity = 1.0,
     this.backgroundBlur = ChatBackgroundBlur.none,
+    this.useCharacterPortrait = true,
+    this.portraitScrimOpacity = 0.55,
     this.showAvatar = true,
     this.avatarPosition = ChatAvatarPosition.left,
     this.avatarSize = 36,
@@ -86,6 +96,8 @@ class ChatTheme {
     String? backgroundImage,
     double? backgroundOpacity,
     ChatBackgroundBlur? backgroundBlur,
+    bool? useCharacterPortrait,
+    double? portraitScrimOpacity,
     bool? showAvatar,
     ChatAvatarPosition? avatarPosition,
     double? avatarSize,
@@ -113,6 +125,9 @@ class ChatTheme {
       backgroundImage: backgroundImage ?? this.backgroundImage,
       backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
       backgroundBlur: backgroundBlur ?? this.backgroundBlur,
+      useCharacterPortrait: useCharacterPortrait ?? this.useCharacterPortrait,
+      portraitScrimOpacity:
+          portraitScrimOpacity ?? this.portraitScrimOpacity,
       showAvatar: showAvatar ?? this.showAvatar,
       avatarPosition: avatarPosition ?? this.avatarPosition,
       avatarSize: avatarSize ?? this.avatarSize,
@@ -142,6 +157,8 @@ class ChatTheme {
         'backgroundImage': backgroundImage,
         'backgroundOpacity': backgroundOpacity,
         'backgroundBlur': backgroundBlur.name,
+        'useCharacterPortrait': useCharacterPortrait,
+        'portraitScrimOpacity': portraitScrimOpacity,
         'showAvatar': showAvatar,
         'avatarPosition': avatarPosition.name,
         'avatarSize': avatarSize,
@@ -177,6 +194,13 @@ class ChatTheme {
           (e) => e.name == json['backgroundBlur'],
           orElse: () => ChatBackgroundBlur.none,
         ),
+        // 老数据没有该字段：已自定义过背景图的对话默认保持原背景，
+        // 从未设置背景的对话默认启用立绘（新功能即新默认观感）。
+        useCharacterPortrait: json['useCharacterPortrait'] ??
+            ((json['backgroundImage'] as String?)?.isNotEmpty != true),
+        portraitScrimOpacity:
+            ((json['portraitScrimOpacity'] as num?)?.toDouble() ?? 0.55)
+                .clamp(0.0, 0.85),
         showAvatar: json['showAvatar'] ?? true,
         avatarPosition: ChatAvatarPosition.values.firstWhere(
           (e) => e.name == json['avatarPosition'],
