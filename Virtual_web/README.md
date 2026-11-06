@@ -47,7 +47,7 @@ npm run lint    # oxlint
 
 ## 版本与发布
 
-- `public/version.json` 是官网的版本/更新说明来源，**必须与 `Virtual_app/pubspec.yaml` 的 `version` 一致**（当前 `1.0.27+28`）。
+- `public/version.json` 是官网的版本/更新说明来源，**必须与 `Virtual_app/pubspec.yaml` 的 `version` 一致**（当前 `1.0.28+29`；线上仍为 1.0.27+28，本次未部署）。
 - `public/app-release.apk` 不入库（见 `Virtual_web/.gitignore`），由部署脚本从构建产物同步；`dist/app-release.apk` 同样不入库。
 - 部署静态站：在仓库根执行 `bash deploy/push_web_dist.sh`。脚本会排除本地 `app-release.apk`、清空远端 `dist`（保留线上 APK 与备份）后再上传，避免 Web 构建覆盖正在分发的安装包。
 - 完整发版流程（升版本 → 测试 → 构建 APK → 部署静态站 → tag/Release）见根 `README.md`「发版流程」。

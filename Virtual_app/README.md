@@ -8,12 +8,12 @@ Virtual 是一个基于 Flutter 的 AI 角色聊天客户端，定位为“本�
 
 | 项 | 值 |
 |---|---|
-| 版本 | **1.0.27+28**（`pubspec.yaml`） |
+| 版本 | **1.0.30+31**（`pubspec.yaml`） |
 | 路由 | **43 条**（ShellRoute 内 10 条 + 根路由 33 条） |
-| 测试 | **33 个测试文件 / 277 例** |
-| 构建产物 | `app-release.apk` **108,003,841 B**（约 103MB），arm64 单 ABI |
-| 本地模型 | **已停用**（`AppFeatureFlags.localDeployEnabled = false`），APK 内 `.gguf` = 0 |
-| 端点类型 | 仅「接入」型（OpenAI 兼容 / Anthropic / Gemini） |
+| 测试 | **35 个测试文件 / 296 例**（**296 通过 / 0 失败**，`flutter test -j 1` 全绿） |
+| 构建产物 | 1.0.30+31 本地构建 `app-release.apk` **108,036,733 B**（约 103MB），`--target-platform android-arm64`（`libapp.so`/`libflutter.so` 仅 arm64-v8a，插件原生库另带 armeabi-v7a/x86_64 目录）；1.0.27+28 线上包 108,003,841 B |
+| 本地模型 | **已恢复**（`AppFeatureFlags.localDeployEnabled = true`）；**不打包任何模型**，GGUF 由用户自行导入，APK 内 `.gguf` = 0 |
+| 端点类型 | **接入 + 部署并存**：接入型（OpenAI 兼容 / Anthropic / Gemini）、部署型（本机 nobodywho + 用户自备 GGUF） |
 
 ## 项目概览
 
@@ -56,7 +56,7 @@ lib/
   route/
     app_router.dart            # 路由配置（43 条）
   config/
-    app_feature_flags.dart     # 功能开关（localDeployEnabled = false）
+    app_feature_flags.dart     # 功能开关（localDeployEnabled = true）
   services/
     api_service.dart
     app_image_cache.dart       # 图片统一缓存/降采样
@@ -271,21 +271,43 @@ lib/
 
 项目支持多家模型接入，当前实现中已具备 OpenAI / Anthropic / Gemini 适配器结构，说明应用设计目标是“多模型切换”，不是单一厂商绑定。
 
-#### 5.1 本地部署已停用（2026-11-04）
+#### 5.1 本地部署已恢复（2026-11-06，1.0.30+31）
 
-真机测试后确认放弃「内置 GGUF + nobodywho 本地推理」方案，改为只保留云端「接入」型端点：
+「云端接入」与「本地部署」两型端点并存；**App 不打包任何模型**，GGUF 由用户自行导入。
 
 | 项 | 状态 | 说明 |
 | --- | --- | --- |
-| 功能开关 | 关闭 | `lib/config/app_feature_flags.dart` → `AppFeatureFlags.localDeployEnabled = false`。将来恢复本地部署只需改这一处 |
-| 新建/编辑端点 | 只显示「接入」 | `endpoint_edit_page.dart` 不再渲染「接入 / 部署」选择；`_mode` 恒为 `EndpointMode.access`，部署滑杆/GPU/线程数控件不渲染。相关代码保留，由开关控制 |
-| 已存在的部署型端点 | 列表仍可见 | 进入对话时提示「本地部署已停用，请改用接入型端点」，不做本地推理（`chat_provider.dart` 的 `sendMessage` / `regenerate` 守卫） |
-| 模型打包 | 已移除 | `android/app/src/main/assets/models/*.gguf` 已删除（含空的 `assets/models`、`assets` 目录）；`build.gradle` 移除了 `noCompress 'gguf'` 与 `packagingOptions jniLibs excludes`；`gradle.properties` 的 `jvmargs` 回到 `-Xmx2G`；`MainActivity.kt` 移除了 `model_asset` 通道 |
-| 内置模型服务 | 已删除 | `lib/services/builtin_model_service.dart`（仅服务于「保存时复制内置模型」）已删；`endpoint_edit_page.dart` 的复制/回填路径整段移除 |
-| 云端角色卡路径 | 保持不变 | 云端对话仍走**完整角色卡 + 世界书 + `PromptService.assembleSystem` 两遍拼装 + `ContextWindowService.trim` 历史裁剪**；本地专用的 `local_prompt_builder.dart` 与适配器内的压缩/裁剪策略保留在代码里，但云端分支不调用 |
-| 默认参数 | 已回滚 | `LlmEndpoint` 默认值恢复为 `contextSize 4096`（改动前一致）、`maxTokens 1024`、`temperature 0.7`；本地调优的 `768 / 0.6` 已撤销，不影响云端新端点 |
+| 功能开关 | 开启 | `lib/config/app_feature_flags.dart` → `AppFeatureFlags.localDeployEnabled = true`；关闭即可整体隐藏部署入口 |
+| 新建/编辑端点 | 接入 / 部署可切换 | 部署型隐藏 baseUrl / apiKey / 平台 / 连接测试，显示本地模型文件、提示词模式与推理参数（contextSize / maxTokens / temperature / GPU 层数 / 线程数 / 重复惩罚） |
+| 已存在的部署型端点 | 可推理 | `chat_provider.dart` 的「本地部署已停用」守卫已移除，`sendMessage` / `regenerate` 正常走 nobodywho |
+| 模型来源 | **用户自备** | 端点页「选择模型文件」→ `file_picker`（SAF，无需存储权限）→ 校验 GGUF 头 → 流式复制到 `getExternalFilesDir(null)/models/` → 回填绝对路径；也可手填路径（adb 已推送的文件） |
+| 模型管理 | 最小闭环 | 显示「是否存在 + 字节数」；「更换」重新选择；「删除」二次确认且只删 App 模型目录内文件，外部路径只提示不代删 |
+| 打包体积 | 不含模型 | APK 内 `*.gguf` = 0；nobodywho 原生库仍在，1.0.30+31 为 **108,036,733 B（约 103MB）** |
 
-> 出包体积回到 60–130MB 量级，且 APK 内**不再包含 `.gguf`**。
+> 云端角色卡路径保持不变：完整角色卡 + 世界书 + `PromptService.assembleSystem` 两遍拼装 + `ContextWindowService.trim`。
+
+##### 5.1.1 GGUF 导入流程
+
+1. 入口：端点编辑页「本地模型」区 → 「选择模型文件 / 更换模型」；
+2. 选择器：`FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['gguf'], withData: false)`，
+   走 Android SAF（`ACTION_GET_CONTENT`），**不申请全盘存储权限**；
+3. 校验：读取前 8 字节，magic 必须为 `GGUF`，版本号需在 **1–3**（拒绝空文件、截断文件、改名的 PNG/ZIP）；
+4. 复制：`source.openRead()` 流式写入 `<name>.gguf.partial`，每块回调进度（1% 粒度），完成后 `rename`；
+   同名同大小直接跳过（幂等），失败/取消删除 `.partial`；
+5. 回填：成功或跳过后把绝对路径写入端点 `localModelPath`，状态行立即刷新（文件名 + 体积 + 「App 目录 / 外部路径」）；
+6. 失败可读化：文件头非法、选择器读取失败、空间不足（`ENOSPC` / Windows 112）、写入失败分别给中文提示；
+   取消导入不报错；Web 端明确提示「不支持本地模型导入」。
+
+##### 5.1.2 两档提示词模式（部署端点）
+
+| 模式 | 组装内容 | 适用 |
+| --- | --- | --- |
+| **精简（默认）** | 压缩角色卡（≤300 token）+ 最近 4 轮 + 本轮指令 | ≤2B 小模型；避免塞满上下文后答非所问 |
+| **完整** | 完整角色卡 + 世界书 + 预设 + 正常历史裁剪（复用云端 `PromptService`，按端点 `contextSize` 裁剪） | ≥3B、上下文窗口足够的模型 |
+
+- 默认精简：多数用户导入 1–2B 小模型；大模型由用户在端点里显式切换；
+- 精简模式保证**用户最新输入完整保留**（本轮内容不参与裁剪，只追加指令），system 与历史是独立段落；
+- 增量上下文（`ask` + 75% 阈值裁剪）与错误可读化沿用原实现，未回退。
 
 ### 6. 角色与详细配置
 
@@ -601,9 +623,9 @@ Virtual 是一个具有较完整业务闭环的 Flutter AI 角色聊天应用，
 ### F. 验证
 
 - `flutter analyze`：1 warning（与基线一致，`test/community_location_test.dart:12` 未使用参数）。
-- `flutter test`：新增 `test/tag_filter_test.dart` 9 条用例；最终全量 **256 通过 / 2 失败** —— `shell_status_bar_inset_test`（历史失败：布局 overflow，本次未改其规范）、`app_providers_test`「新建角色页加载」（并行跑时的 `did not complete` 已知 flake，单独复跑通过）。同一套用例前一轮还出现过 `settings_provider_test` / `upstream_retry_policy_test` 的加载 flake，单独复跑 20/20 通过。
+- `flutter test`：新增 `test/tag_filter_test.dart` 9 条用例；最终全量 **256 通过 / 2 失败** —— `shell_status_bar_inset_test`（已于 1.0.29+30 修复：发现页错误态长文案不可滚动导致 overflow）、`app_providers_test`「新建角色页加载」（并行跑时的 `did not complete` 已知 flake，单独复跑通过）。同一套用例前一轮还出现过 `settings_provider_test` / `upstream_retry_policy_test` 的加载 flake，单独复跑 20/20 通过。
 - 当时出包（1.0.24+25）：**103.0MB**（107,999,877 bytes），`versionName=1.0.24 / versionCode=25`，V2 签名 `CN=Tav`，工作区 `*.gguf` 数量 = 0。
-- 当时版本：`1.0.24+25`（**当前为 1.0.27+28，APK 108,003,841 B**，见文首「当前状态」）。
+- 当时版本：`1.0.24+25`（**当前为 1.0.30+31**，见文首「当前状态」）。
 
 ## 图片加载与缓存策略（2026-11-05，1.0.25+26）
 
@@ -666,9 +688,9 @@ Virtual 是一个具有较完整业务闭环的 Flutter AI 角色聊天应用，
 ### 验证
 
 - `flutter analyze`：1 warning（与基线一致，`test/community_location_test.dart:12`）。
-- `flutter test -j 1`：**276 通过 / 1 失败**，唯一失败为历史用例 `shell_status_bar_inset_test`（布局 overflow，本次未改其规范）；新增 `test/multi_select_test.dart` 7 条用例全过。并行跑时偶发 `did not complete` 的加载 flake（`world_info_binding_test` 等），单独复跑通过。
+- `flutter test -j 1`：**276 通过 / 1 失败**，唯一失败为 `shell_status_bar_inset_test`（**已于 1.0.29+30 修复**：发现页错误态在 360×780 下长错误文案不可滚动，Column overflow 101px）；新增 `test/multi_select_test.dart` 7 条用例全过。并行跑时偶发 `did not complete` 的加载 flake（`world_info_binding_test` 等），单独复跑通过。
 - 当时出包（1.0.26+27）：**103.0MB（108,004,385 B）**，`versionName=1.0.26 / versionCode=27`，V2 签名 `CN=Tav`，APK 内与工作区 `*.gguf` = 0。
-  （**当前 1.0.27+28 为 108,003,841 B**，见文首「当前状态」。）
+  （当前以文首「当前状态」为准。）
 
 ## 发现页加载优化（2026-11-05，1.0.27+28）
 
@@ -711,6 +733,107 @@ Virtual 是一个具有较完整业务闭环的 Flutter AI 角色聊天应用，
 - `/api/characters` 增加 `limit` / `offset` 分页（每页 10–20），并加 `ETag`；
 - 摘要里去掉 `persona` / `greeting`（客户端列表不用，改为详情接口返回）；
 - 增加 `avatar_thumb_url`（约 400px 宽），列表读缩略图、发现页大图按需取原图。
+
+## 角色立绘全屏背景（2026-11-06，1.0.28+29）
+
+聊天页新增「角色卡 PNG 立绘铺满全屏」能力，作为背景设置的一部分。
+
+### 数据与开关
+
+| 项 | 说明 |
+|---|---|
+| 存储 | 复用 `ChatTheme`（每对话 `conv-bg-<conversationId>`）：新增 `useCharacterPortrait`（bool）与 `portraitScrimOpacity`（double） |
+| 默认值 | 开关 **true**（新对话/从未设背景）；遮罩 **0.55**，clamp 到 `0.0–0.85` |
+| 老数据兼容 | `fromJson` 缺字段时：**有** `backgroundImage` → 开关 `false`（保留用户已选背景）；**无** → `true` |
+| 立绘来源 | `Character.avatarPath`：http URL（在线卡）/ `data:image/...` base64（本地导入的 PNG/CCv2 嵌入图）/ 本地文件路径 |
+| 回落规则 | 立绘不可渲染（Web 本地路径、空值、无法识别）或开关关闭 → 走原 `backgroundImage`（渐变/图片）；两者都没有 → 不套背景层 |
+
+### 渲染（`views/chat/chat_background.dart` → `ChatBackgroundLayer`）
+
+- 立绘优先于 `backgroundImage`，用 `CachedAppImage` 的 `BoxFit.cover` + `Alignment(0, -0.25)`（人物居中偏上）铺满整个 body（含状态栏下方到输入区之间的画布）；
+- 立绘之上叠 `Colors.black.withValues(alpha: portraitScrimOpacity)` 遮罩，保证气泡与文字对比度；0% 不压暗、85% 接近纯黑；
+- 解码走 `CachedAppImage` → `AppImageCache`：按「显示宽 × DPR」降采样（整屏宽 411dp/DPR 2.75 ≈ 1130px），同一 provider 命中 Flutter image cache，**只解一次**，滚动/流式输出不会重复解码；
+- `usablePortraitPath()` 先判定可渲染，聊天页据此决定 `hasBg`（AppBar 透明与 `topInset` 逻辑不变）。
+
+### 设置页（`views/chat/chat_background_page.dart`）
+
+- 新增「使用角色立绘作为全屏背景」开关（角色无可用立绘时禁用并提示会回落）；
+- 新增「遮罩深度」滑杆（0–85%，17 档 = 5% 步进），默认 55%；
+- 预览与聊天页共用 `ChatBackgroundLayer`，实时反映开关/遮罩；
+- 「当前来源」文案在立绘生效时显示「角色立绘（PNG 卡面）」。
+
+### 验证（1.0.28+29）
+
+- `flutter analyze`：仅基线 1 warning（`test/community_location_test.dart:12` 的未使用 `status` 参数），无新增；
+- `flutter test`：**281 通过 / 1 失败**，失败仅为历史用例 `shell_status_bar_inset_test`；新增 5 例（JSON 往返、老数据默认、遮罩 clamp、可用性判定、立绘层铺满）；
+- 出包：`flutter build apk --release --target-platform android-arm64` → **108,010,149 B（103.0MB）**，versionName `1.0.28` / versionCode `29`，V2 签名 `CN=Tav`（SHA-256 `3fcf3a98…d52d24`），APK 内 `*.gguf` = 0，工作区 `*.gguf` = 0。
+
+## 发现页错误态溢出修复（2026-11-06，1.0.29+30）
+
+长期失败的 `test/shell_status_bar_inset_test.dart`（`RenderFlex overflowed by 101 pixels on the bottom`）已修复，**未删用例、未 `skip`、未降低断言**。
+
+### 根因（真布局脆弱，被测试环境触发）
+
+| 证据 | 内容 |
+|---|---|
+| 出错页面 | `/discover` 的 `CharacterDiscoverFeed`（Shell body，测试窗口 1080×2340@3 → 360×780dp，状态栏 44dp） |
+| 出错 widget | `character_discover_feed.dart` 错误态 `Column`；约束 `w<=312, h<=559`，自然高度约 660dp |
+| 触发链 | 测试环境无后端 → `GET /api/characters` 返回 400 → 错误态把整段 `DioException.toString()` 直接上屏（含请求/响应详情，多行超长） |
+| 定性 | **真布局问题**：错误态用不可滚动的 `Center → Padding → Column(mainAxisSize.min)`，文案长度不可控；真机后端不可达/返回错误体时同样会溢出，只是测试环境稳定复现 |
+
+### 改动（只改页面，不动断言）
+
+- `lib/views/discover/character_discover_feed.dart` 错误态：`Center → SingleChildScrollView(padding: 24) → Column`，重试按钮不变；
+- `lib/views/discover/discover_page.dart`（`_ErrorState`，同类风险）：同样改为可滚动错误态，图标/文案/重试按钮不变；
+- 断言语义保持不变：有返回箭头的页面避开状态栏、根页面顶端为 0、高度 = 状态栏 + 56。
+
+### 验证（1.0.29+30）
+
+- 单跑 `flutter test test/shell_status_bar_inset_test.dart`：**All tests passed**；
+- 全量 `flutter test -j 1`：**282 通过 / 0 失败**（此前 `281 通过 / 1 失败`）；
+- 状态栏巡检（0 / 24 / 48dp × 10 条路由：`/home`、`/discover`、`/characters`、`/profile`、`/endpoints`、`/chat`、`/settings`、`/home/tags`、`/character/new`、沉浸式对话探针）：未发现其它 overflow；
+- `flutter analyze`：仍为基线 1 warning（`test/community_location_test.dart:12` 未使用 `status` 参数）；
+- 出包：`--target-platform android-arm64` → **108,010,353 B（103.0MB）**，versionName `1.0.29` / versionCode `30`，V2 签名 `CN=Tav`（证书 SHA-256 `560b2ac5…5fe117`），APK 内 `*.gguf` = 0。
+
+## 本地部署恢复与 GGUF 导入（2026-11-06，1.0.30+31）
+
+### 改动清单
+
+| 文件 | 改动 |
+|---|---|
+| `lib/config/app_feature_flags.dart` | `localDeployEnabled = true`，开关保留可一键关闭 |
+| `lib/providers/chat_provider.dart` | 移除 3 处「本地部署已停用」守卫；`_buildLocalPrompt` 支持精简/完整两档，完整模式复用 `PromptService.assembleSystem` + `ContextWindowService.trim`（按端点 `contextSize` 裁剪） |
+| `lib/models/endpoint.dart` | 新增 `LocalPromptMode { concise, full }` 与字段 `localPromptMode`（默认精简、JSON 兼容旧数据）、`usesFullLocalPrompt` |
+| `lib/views/endpoint/endpoint_edit_page.dart` | 恢复「接入 / 部署」切换；部署区新增模型选择/更换/删除、手填路径、文件状态（存在 + 字节数 + App 目录/外部路径）、提示词模式选择与说明 |
+| `lib/services/gguf_header.dart` | 纯 Dart GGUF 头校验（magic `GGUF` + 版本 1–3） |
+| `lib/services/local_model_service*.dart` | 条件导入的模型服务：流式复制、`.partial` → rename、同名同大小幂等跳过、进度/取消、只删 App 目录内文件；Web 走 stub 明确不支持 |
+| `test/local_model_import_test.dart` | 8 例：头校验（合法/改名/空/版本）、导入回填、幂等跳过、取消清理、非法拒绝、状态与删除边界、路径拼接 |
+| `test/local_prompt_mode_test.dart` | 6 例：模式默认/切换/JSON 兼容、用户输入不被裁剪、只保留最近 4 轮 |
+
+### 导入流程与提示词模式
+
+- 流程：选择 `.gguf`（SAF，无存储权限）→ 前 8 字节校验 → 流式写入 `getExternalFilesDir(null)/models/<name>.gguf.partial` → `rename` → 回填路径；
+- 失败提示：头非法 / 选择器失败 / 空间不足（ENOSPC、Windows 112）/ 写入失败分别有中文提示；取消不报错；
+- 精简（默认）：压缩角色卡（≤300 token）+ 最近 4 轮 + 本轮指令；完整：完整角色卡 + 世界书 + 预设 + 历史裁剪；
+- 精简模式本轮用户输入 1:1 保留，system 与历史独立；适配器的 `ask` + 75% 阈值增量上下文未改。
+
+### 验证（1.0.30+31）
+
+- `flutter test -j 1`：**296 通过 / 0 失败**（原 282 例全保留 + 新增 14 例）；
+  - 并行跑时偶发 `did not complete` / `Connection closed before test suite loaded` 加载 flake（`home_shell_compose_nav_test`、`png_card_writer_test`），单跑均通过，属既有 flake；
+- `flutter analyze`：仍为基线 1 warning（`test/community_location_test.dart:12` 未使用 `status` 参数）；
+- 出包：`--target-platform android-arm64` → **108,036,733 B（103.0MB）**，versionName `1.0.30` / versionCode `31`，
+  V2 签名 `CN=Tav`（证书 SHA-256 `560b2ac5…5fe117`），SHA-256 `A2836882…ADBECC310`，APK 内 `*.gguf` = **0**。
+
+### 真机复测点
+
+1. 新建部署端点 → 选择 1–2B GGUF（如 Qwen2.5-1.5B-Instruct Q4_K_M）→ 精简模式发消息，确认有回复且不是「复读设定」；
+2. 切换完整模式 + 3–4B 模型（如 Qwen3-4B / Gemma-3-4B），确认世界书条目命中、角色卡细节进入回复；
+3. 同一文件重复选择应提示「跳过复制」；导入中途退出/取消应无残留 `.partial`；
+4. 删除模型后路径清空；手填外部路径的文件点删除应只提示、不删除；
+5. 断网/后端不可达时聊天页、发现页错误态均可滚动，无 RenderFlex overflow。
+
+
 
 
 
